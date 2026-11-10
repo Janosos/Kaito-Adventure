@@ -120,14 +120,6 @@ class _SplashIntroOverlayState extends State<SplashIntroOverlay>
                                 child: Column(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    // Kaito App Icon Emblem + Crossed Katana Crest
-                                    Image.asset(
-                                      CartoonAssets.uiLogo,
-                                      width: 360,
-                                      height: 110,
-                                      fit: BoxFit.contain,
-                                    ),
-                                    const SizedBox(height: 6),
 
                                     // Big 2D Cartoon Title Banner: KAITO ADVENTURE
                                     Container(

@@ -382,7 +382,7 @@ class _ChapterSelectOverlayState extends State<ChapterSelectOverlay> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Top Row: Chapter Badge + Difficulty Stars
+                  // Top Row: Chapter Badge & Distance Badge
                   Row(
                     children: [
                       Container(
@@ -413,16 +413,15 @@ class _ChapterSelectOverlayState extends State<ChapterSelectOverlay> {
                           color: ComicTheme.inkBlack.withValues(alpha: 0.80),
                           borderRadius: BorderRadius.circular(4),
                           border: Border.all(
-                            color: ComicTheme.comicYellow,
+                            color: ch.accentColor,
                             width: 1.5,
                           ),
                         ),
                         child: Text(
-                          ch.difficulty,
-                          style: const TextStyle(
-                            color: ComicTheme.comicYellow,
+                          ch.distance,
+                          style: TextStyle(
+                            color: ch.accentColor,
                             fontSize: 12,
-                            letterSpacing: 2,
                             fontWeight: FontWeight.bold,
                           ),
                         ),
@@ -431,52 +430,15 @@ class _ChapterSelectOverlayState extends State<ChapterSelectOverlay> {
                   ),
                   const Spacer(),
 
-                  // Stage Title & Subtitle
+                  // Stage Title
                   Text(
                     AppLocalizations.chapterTitle(ch.level),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: ComicTheme.titleText(
-                      size: 20,
+                      size: 22,
                       color: Colors.white,
-                    ).copyWith(height: 1.1),
-                  ),
-                  const SizedBox(height: 3),
-                  Text(
-                    AppLocalizations.chapterSubtitle(ch.level),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: ComicTheme.bodyText(
-                      size: 12,
-                      color: Colors.white70,
                     ).copyWith(height: 1.15),
-                  ),
-                  const SizedBox(height: 8),
-
-                  // Environmental Hazards Badges
-                  Wrap(
-                    spacing: 6,
-                    runSpacing: 4,
-                    children: ch.hazards.map((h) {
-                      return Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 3,
-                        ),
-                        decoration: BoxDecoration(
-                          color: ComicTheme.inkBlack.withValues(alpha: 0.75),
-                          borderRadius: BorderRadius.circular(4),
-                          border: Border.all(color: ch.accentColor, width: 1.2),
-                        ),
-                        child: Text(
-                          '⚡ $h',
-                          style: ComicTheme.bodyText(
-                            size: 11,
-                            color: ch.accentColor,
-                          ),
-                        ),
-                      );
-                    }).toList(),
                   ),
                 ],
               ),

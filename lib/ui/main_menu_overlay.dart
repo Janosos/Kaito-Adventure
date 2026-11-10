@@ -73,13 +73,7 @@ class _MainMenuOverlayState extends State<MainMenuOverlay> {
                         ),
                         child: Column(
                           children: [
-                            // Stylized 2D Cartoon Game Title Logo (Clean & Uncluttered)
-                            Image.asset(
-                              CartoonAssets.uiLogo,
-                              height: 105,
-                              fit: BoxFit.contain,
-                            ),
-                            const SizedBox(height: 12),
+                            const Spacer(),
 
                             // Center Row: Left Hero Showcase Card + Right Action Buttons
                             Row(
