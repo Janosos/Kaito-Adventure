@@ -22,7 +22,7 @@ void main() async {
   PaintingBinding.instance.imageCache.maximumSize = 200;
   PaintingBinding.instance.imageCache.maximumSizeBytes = 150 << 20; // 150 MB
 
-  // Set preferred landscape orientation & immersive mode for Android/Mobile
+  // Lock orientation to horizontal landscape on Android & iOS
   await SystemChrome.setPreferredOrientations([
     DeviceOrientation.landscapeLeft,
     DeviceOrientation.landscapeRight,
@@ -67,24 +67,26 @@ class _MangaGameScreenState extends State<MangaGameScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    final media = MediaQuery.of(context);
+    final isPortraitViewport =
+        media.size.width > 0 && media.size.width < media.size.height;
+    final effectiveSize = isPortraitViewport
+        ? Size(media.size.height, media.size.width)
+        : media.size;
+    final isCompactMobile = effectiveSize.height < 460;
+
+    Widget content = Scaffold(
       backgroundColor: ComicTheme.inkBlack,
       body: Container(
-        // Outer Manga Tankobon Page Framing
-        padding: const EdgeInsets.all(8.0),
-        decoration: const BoxDecoration(
-          color: ComicTheme.inkBlack,
-        ),
+        // Adaptive Tankobon Page Framing (compact on mobile, classic on desktop/tablet)
+        padding: EdgeInsets.all(isCompactMobile ? 2.0 : 6.0),
+        color: ComicTheme.inkBlack,
         child: Container(
           decoration: BoxDecoration(
-            border: Border.all(color: Colors.white, width: 3.0),
-            boxShadow: const [
-              BoxShadow(
-                color: Colors.black,
-                blurRadius: 10,
-                offset: Offset(0, 4),
-              ),
-            ],
+            border: Border.all(
+              color: Colors.white,
+              width: isCompactMobile ? 1.5 : 2.5,
+            ),
           ),
           child: RepaintBoundary(
             child: GameWidget<MangaGame>(
@@ -111,5 +113,26 @@ class _MangaGameScreenState extends State<MangaGameScreen> {
         ),
       ),
     );
+
+    // Guarantee horizontal landscape presentation even if a mobile browser opens in portrait!
+    if (isPortraitViewport) {
+      content = RotatedBox(
+        quarterTurns: 1,
+        child: MediaQuery(
+          data: media.copyWith(
+            size: effectiveSize,
+            padding: EdgeInsets.only(
+              left: media.padding.top,
+              right: media.padding.bottom,
+              top: media.padding.right,
+              bottom: media.padding.left,
+            ),
+          ),
+          child: content,
+        ),
+      );
+    }
+
+    return content;
   }
 }

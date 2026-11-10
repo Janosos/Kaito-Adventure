@@ -36,11 +36,27 @@ class MangaGame extends FlameGame
   double currentBossGateX = 3650.0;
   double currentArenaCamX = 4140.0;
   double currentLevelWidth = 4620.0;
+  double viewportWidth = 960.0;
 
   /// Fast horizontal camera frustum check for Mali/Adreno/Web GPU culling
-  bool isInView(double worldX, [double margin = 680.0]) {
+  bool isInView(double worldX, [double margin = 740.0]) {
     if (!isLoaded) return true;
-    return (worldX - camera.viewfinder.position.x).abs() <= margin;
+    final halfView = viewportWidth * 0.5;
+    return (worldX - camera.viewfinder.position.x).abs() <=
+        (halfView + margin - 480.0);
+  }
+
+  @override
+  void onGameResize(Vector2 size) {
+    if (size.y > 0 && size.x > 0) {
+      // Adapt camera viewport width to match 16:9, 18:9, 20:9 mobile/tablet screens edge-to-edge!
+      final aspect = (size.x / size.y).clamp(1.33, 2.40);
+      viewportWidth = (540.0 * aspect).roundToDouble();
+      camera.viewport = FixedResolutionViewport(
+        resolution: Vector2(viewportWidth, 540.0),
+      );
+    }
+    super.onGameResize(size);
   }
 
   // Cut-in data
@@ -84,10 +100,12 @@ class MangaGame extends FlameGame
     // Preload all 2D Cartoon Sprite Sheets, Icons & Illustrations
     await CartoonAssets.preloadAll(images);
 
-    // Setup 960x540 Manga Camera looking at `world`
-    camera.viewport = FixedResolutionViewport(resolution: Vector2(960, 540));
+    // Setup Adaptive Landscape Camera looking at `world`
+    camera.viewport = FixedResolutionViewport(
+      resolution: Vector2(viewportWidth, 540),
+    );
     camera.viewfinder.anchor = Anchor.center;
-    camera.viewfinder.position = Vector2(480, 270);
+    camera.viewfinder.position = Vector2(viewportWidth * 0.5, 270);
 
     // Load Level 1 in the background and pause while Intro / Main Menu is shown
     await loadLevel(1, pauseForMenu: true);
@@ -284,7 +302,7 @@ class MangaGame extends FlameGame
     }
 
     _addOverlay('manga_cutin');
-    Future.delayed(const Duration(milliseconds: 2300), () {
+    Future.delayed(const Duration(milliseconds: 2200), () {
       if (overlays.isActive('manga_cutin')) {
         overlays.remove('manga_cutin');
       }
@@ -392,9 +410,10 @@ class MangaGame extends FlameGame
       );
 
       // Smoothly scroll camera horizontally along the level or lock into the Boss Arena
+      final minCamX = viewportWidth * 0.5;
       final double targetCamX = isBossArenaLocked
           ? currentArenaCamX
-          : (player.position.x + 110.0).clamp(480.0, currentArenaCamX);
+          : (player.position.x + 110.0).clamp(minCamX, currentArenaCamX);
       const double targetCamY = 270.0;
 
       final currentCam = camera.viewfinder.position;

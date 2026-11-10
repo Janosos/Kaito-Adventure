@@ -1,14 +1,112 @@
 import 'package:flame/components.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:manga_platformer/game/components/enemies/enemy_grunt.dart';
 import 'package:manga_platformer/game/components/player.dart';
 import 'package:manga_platformer/game/manga_game.dart';
 import 'package:manga_platformer/main.dart';
+import 'package:manga_platformer/ui/chapter_select_overlay.dart';
+import 'package:manga_platformer/ui/comic_hud.dart';
+import 'package:manga_platformer/ui/main_menu_overlay.dart';
+import 'package:manga_platformer/ui/manga_cutin_overlay.dart';
+import 'package:manga_platformer/ui/settings_overlay.dart';
+import 'package:manga_platformer/ui/virtual_joystick_overlay.dart';
 
 void main() {
   testWidgets('Manga platformer smoke test', (WidgetTester tester) async {
     await tester.pumpWidget(const MangaPlatformerApp());
     expect(find.byType(MangaGameScreen), findsOneWidget);
+  });
+
+  testWidgets(
+      'Mobile landscape (800x360) and portrait auto-rotate (360x800) render all UI overlays without overflow',
+      (WidgetTester tester) async {
+    final game = MangaGame();
+    await tester.runAsync(() async {
+      game.onGameResize(Vector2(800, 360));
+      await game.onLoad();
+      // ignore: invalid_use_of_internal_member
+      game.setLoaded();
+      // ignore: invalid_use_of_internal_member
+      game.setMounted();
+      game.update(0);
+      await game.ready();
+      await game.loadLevel(1);
+      game.update(0);
+      await game.ready();
+    });
+
+    // Test at compact mobile landscape resolution (800x360)
+    await tester.binding.setSurfaceSize(const Size(800, 360));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    // 1. MainMenuOverlay at 800x360
+    await tester.pumpWidget(
+      MaterialApp(
+        home: MediaQuery(
+          data: const MediaQueryData(size: Size(800, 360)),
+          child: MainMenuOverlay(game: game),
+        ),
+      ),
+    );
+    await tester.pump();
+    expect(tester.takeException(), isNull);
+
+    // 2. ChapterSelectOverlay at 800x360
+    await tester.pumpWidget(
+      MaterialApp(
+        home: MediaQuery(
+          data: const MediaQueryData(size: Size(800, 360)),
+          child: ChapterSelectOverlay(game: game),
+        ),
+      ),
+    );
+    await tester.pump();
+    expect(tester.takeException(), isNull);
+
+    // 3. SettingsOverlay at 800x360
+    await tester.pumpWidget(
+      MaterialApp(
+        home: MediaQuery(
+          data: const MediaQueryData(size: Size(800, 360)),
+          child: SettingsOverlay(game: game),
+        ),
+      ),
+    );
+    await tester.pump();
+    expect(tester.takeException(), isNull);
+
+    // 4. ComicHud + VirtualJoystickOverlay + MangaCutInOverlay with Ougi Ready & Boss Active at 800x360
+    await tester.runAsync(() async {
+      game.player.spirit = 100.0;
+      game.player.position = Vector2(game.currentBossGateX + 20, 460);
+      game.update(0.05);
+      await game.ready();
+      game.update(0.05);
+      await game.ready();
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: MediaQuery(
+          data: const MediaQueryData(size: Size(800, 360)),
+          child: Scaffold(
+            body: Stack(
+              children: [
+                ComicHud(game: game),
+                VirtualJoystickOverlay(game: game),
+                MangaCutInOverlay(game: game),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(tester.takeException(), isNull);
+
+    // Unmount repeating tickers cleanly
+    await tester.pumpWidget(const SizedBox.shrink());
   });
 
   test(

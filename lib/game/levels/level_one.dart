@@ -264,8 +264,9 @@ class MangaTiledBackdrop extends Component with HasGameReference<MangaGame> {
     const panelW = 1120.0;
     const panelH = 680.0;
     final camX = game.camera.viewfinder.position.x;
-    final firstTile = ((camX - 620.0) / panelW).floor();
-    final lastTile = ((camX + 620.0) / panelW).floor();
+    final halfView = (game.viewportWidth * 0.5) + 120.0;
+    final firstTile = ((camX - halfView) / panelW).floor();
+    final lastTile = ((camX + halfView) / panelW).floor();
 
     for (int i = firstTile; i <= lastTile; i++) {
       canvas.save();
@@ -288,7 +289,7 @@ class MangaTiledBackdrop extends Component with HasGameReference<MangaGame> {
     }
 
     canvas.drawRect(
-      Rect.fromLTWH(camX - 560.0, -60, 1120.0, 660.0),
+      Rect.fromLTWH(camX - halfView, -60, halfView * 2.0, 660.0),
       _tintPaint,
     );
   }

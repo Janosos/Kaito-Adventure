@@ -19,229 +19,245 @@ class SettingsOverlay extends StatelessWidget {
           child: Stack(
             children: [
               Positioned.fill(
-                child: CustomPaint(
-                  painter: MangaSpeedLinesPainter(
-                    lineCount: 45,
-                    color: Colors.white10,
+                child: RepaintBoundary(
+                  child: CustomPaint(
+                    painter: MangaSpeedLinesPainter(
+                      lineCount: 36,
+                      color: Colors.white10,
+                    ),
                   ),
                 ),
               ),
-              Center(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.all(12),
-                  child: Container(
-                    width: 580,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 26,
-                      vertical: 18,
-                    ),
-                    decoration: ComicTheme.panelDecoration(
-                      backgroundColor: ComicTheme.paperWhite,
-                      borderWidth: 5,
-                      shadowOffset: 10,
-                    ),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                      // Header
-                      Row(
-                        children: [
-                          Container(
-                            width: 48,
-                            height: 48,
-                            padding: const EdgeInsets.all(6),
-                            decoration: BoxDecoration(
-                              color: ComicTheme.mangaPanelBg,
-                              borderRadius: BorderRadius.circular(10),
-                              border: Border.all(
-                                color: ComicTheme.inkBlack,
-                                width: 3,
-                              ),
-                            ),
-                            child: Image.asset(
-                              CartoonAssets.uiBtnSettings,
-                              fit: BoxFit.contain,
-                            ),
-                          ),
-                          const SizedBox(width: 14),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  AppLocalizations.tr('settings_title'),
-                                  style: ComicTheme.titleText(
-                                    size: 28,
-                                    color: ComicTheme.actionRed,
-                                  ),
-                                ),
-                                Text(
-                                  AppLocalizations.tr('settings_subtitle'),
-                                  style: ComicTheme.bodyText(
-                                    size: 12,
-                                    color: ComicTheme.inkBlack,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          GestureDetector(
-                            onTap: game.closeSettings,
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 14,
-                                vertical: 8,
-                              ),
-                              decoration: ComicTheme.panelDecoration(
-                                backgroundColor: ComicTheme.actionRed,
-                                borderWidth: 3,
-                                shadowOffset: 3,
-                              ),
-                              child: Text(
-                                AppLocalizations.tr('btn_close'),
-                                style: ComicTheme.titleText(
-                                  size: 16,
-                                  color: Colors.white,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 18),
-
-                      // Language Section
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: ComicTheme.mangaPanelBg,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: ComicTheme.inkBlack,
-                            width: 3.5,
-                          ),
+              SafeArea(
+                child: Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(10),
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Container(
+                        width: 580,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 24,
+                          vertical: 16,
+                        ),
+                        decoration: ComicTheme.panelDecoration(
+                          backgroundColor: ComicTheme.paperWhite,
+                          borderWidth: 5,
+                          shadowOffset: 10,
                         ),
                         child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
                           children: [
+                            // Header
                             Row(
                               children: [
-                                const Icon(
-                                  Icons.language,
-                                  color: ComicTheme.comicYellow,
-                                  size: 22,
+                                Container(
+                                  width: 46,
+                                  height: 46,
+                                  padding: const EdgeInsets.all(6),
+                                  decoration: BoxDecoration(
+                                    color: ComicTheme.mangaPanelBg,
+                                    borderRadius: BorderRadius.circular(10),
+                                    border: Border.all(
+                                      color: ComicTheme.inkBlack,
+                                      width: 3,
+                                    ),
+                                  ),
+                                  child: Image.asset(
+                                    CartoonAssets.uiBtnSettings,
+                                    fit: BoxFit.contain,
+                                  ),
                                 ),
-                                const SizedBox(width: 8),
-                                Text(
-                                  AppLocalizations.tr('language_label'),
-                                  style: ComicTheme.titleText(
-                                    size: 18,
-                                    color: ComicTheme.comicYellow,
+                                const SizedBox(width: 14),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        AppLocalizations.tr('settings_title'),
+                                        style: ComicTheme.titleText(
+                                          size: 26,
+                                          color: ComicTheme.actionRed,
+                                        ),
+                                      ),
+                                      Text(
+                                        AppLocalizations.tr(
+                                          'settings_subtitle',
+                                        ),
+                                        style: ComicTheme.bodyText(
+                                          size: 12,
+                                          color: ComicTheme.inkBlack,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                GestureDetector(
+                                  onTap: game.closeSettings,
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 14,
+                                      vertical: 8,
+                                    ),
+                                    decoration: ComicTheme.panelDecoration(
+                                      backgroundColor: ComicTheme.actionRed,
+                                      borderWidth: 3,
+                                      shadowOffset: 3,
+                                    ),
+                                    child: Text(
+                                      AppLocalizations.tr('btn_close'),
+                                      style: ComicTheme.titleText(
+                                        size: 16,
+                                        color: Colors.white,
+                                      ),
+                                    ),
                                   ),
                                 ),
                               ],
                             ),
-                            const SizedBox(height: 12),
-                            _buildLanguageOption(
-                              lang: AppLanguage.en,
-                              current: currentLang,
-                              flagBadge: 'EN',
-                              title: 'ENGLISH',
-                              subtitle: AppLocalizations.tr('lang_en'),
-                              activeColor: ComicTheme.energyCyan,
-                            ),
-                            const SizedBox(height: 8),
-                            _buildLanguageOption(
-                              lang: AppLanguage.es,
-                              current: currentLang,
-                              flagBadge: 'ES',
-                              title: 'ESPAÑOL',
-                              subtitle: AppLocalizations.tr('lang_es'),
-                              activeColor: ComicTheme.comicYellow,
-                            ),
-                            const SizedBox(height: 8),
-                            _buildLanguageOption(
-                              lang: AppLanguage.ja,
-                              current: currentLang,
-                              flagBadge: 'JP',
-                              title: '日本語',
-                              subtitle: AppLocalizations.tr('lang_ja'),
-                              activeColor: ComicTheme.actionRed,
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 14),
+                            const SizedBox(height: 14),
 
-                      // Virtual Touch Controls Toggle
-                      ValueListenableBuilder<bool>(
-                        valueListenable: AppLocalizations.showVirtualControls,
-                        builder: (context, showTouch, _) {
-                          return GestureDetector(
-                            onTap: () {
-                              game.setVirtualControlsEnabled(!showTouch);
-                            },
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                                vertical: 12,
+                            // Language Section
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.all(14),
+                              decoration: BoxDecoration(
+                                color: ComicTheme.mangaPanelBg,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: ComicTheme.inkBlack,
+                                  width: 3.5,
+                                ),
                               ),
-                              decoration: ComicTheme.panelDecoration(
-                                backgroundColor: Colors.white,
-                                borderWidth: 3.5,
-                                shadowOffset: 4,
-                              ),
-                              child: Row(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Image.asset(
-                                    CartoonAssets.uiBtnControls,
-                                    width: 34,
-                                    height: 34,
+                                  Row(
+                                    children: [
+                                      const Icon(
+                                        Icons.language,
+                                        color: ComicTheme.comicYellow,
+                                        size: 20,
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Text(
+                                        AppLocalizations.tr('language_label'),
+                                        style: ComicTheme.titleText(
+                                          size: 17,
+                                          color: ComicTheme.comicYellow,
+                                        ),
+                                      ),
+                                    ],
                                   ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: Text(
-                                      AppLocalizations.tr(
-                                        'virtual_controls_label',
-                                      ),
-                                      style: ComicTheme.titleText(
-                                        size: 18,
-                                        color: ComicTheme.inkBlack,
-                                      ),
-                                    ),
+                                  const SizedBox(height: 10),
+                                  _buildLanguageOption(
+                                    lang: AppLanguage.en,
+                                    current: currentLang,
+                                    flagBadge: 'EN',
+                                    title: 'ENGLISH',
+                                    subtitle: AppLocalizations.tr('lang_en'),
+                                    activeColor: ComicTheme.energyCyan,
                                   ),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 14,
-                                      vertical: 6,
-                                    ),
-                                    decoration: ComicTheme.panelDecoration(
-                                      backgroundColor: showTouch
-                                          ? Colors.greenAccent.shade400
-                                          : Colors.grey.shade400,
-                                      borderWidth: 2.5,
-                                      shadowOffset: 2,
-                                    ),
-                                    child: Text(
-                                      showTouch
-                                          ? AppLocalizations.tr('enabled')
-                                          : AppLocalizations.tr('disabled'),
-                                      style: ComicTheme.titleText(
-                                        size: 15,
-                                        color: ComicTheme.inkBlack,
-                                      ),
-                                    ),
+                                  const SizedBox(height: 8),
+                                  _buildLanguageOption(
+                                    lang: AppLanguage.es,
+                                    current: currentLang,
+                                    flagBadge: 'ES',
+                                    title: 'ESPAÑOL',
+                                    subtitle: AppLocalizations.tr('lang_es'),
+                                    activeColor: ComicTheme.comicYellow,
+                                  ),
+                                  const SizedBox(height: 8),
+                                  _buildLanguageOption(
+                                    lang: AppLanguage.ja,
+                                    current: currentLang,
+                                    flagBadge: 'JP',
+                                    title: '日本語',
+                                    subtitle: AppLocalizations.tr('lang_ja'),
+                                    activeColor: ComicTheme.actionRed,
                                   ),
                                 ],
                               ),
                             ),
-                          );
-                        },
+                            const SizedBox(height: 12),
+
+                            // Virtual Touch Controls Toggle
+                            ValueListenableBuilder<bool>(
+                              valueListenable:
+                                  AppLocalizations.showVirtualControls,
+                              builder: (context, showTouch, _) {
+                                return GestureDetector(
+                                  onTap: () {
+                                    game.setVirtualControlsEnabled(!showTouch);
+                                  },
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 16,
+                                      vertical: 10,
+                                    ),
+                                    decoration: ComicTheme.panelDecoration(
+                                      backgroundColor: Colors.white,
+                                      borderWidth: 3.5,
+                                      shadowOffset: 4,
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        Image.asset(
+                                          CartoonAssets.uiBtnControls,
+                                          width: 32,
+                                          height: 32,
+                                        ),
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: Text(
+                                            AppLocalizations.tr(
+                                              'virtual_controls_label',
+                                            ),
+                                            style: ComicTheme.titleText(
+                                              size: 17,
+                                              color: ComicTheme.inkBlack,
+                                            ),
+                                          ),
+                                        ),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 14,
+                                            vertical: 6,
+                                          ),
+                                          decoration:
+                                              ComicTheme.panelDecoration(
+                                                backgroundColor: showTouch
+                                                    ? Colors
+                                                          .greenAccent
+                                                          .shade400
+                                                    : Colors.grey.shade400,
+                                                borderWidth: 2.5,
+                                                shadowOffset: 2,
+                                              ),
+                                          child: Text(
+                                            showTouch
+                                                ? AppLocalizations.tr('enabled')
+                                                : AppLocalizations.tr(
+                                                    'disabled',
+                                                  ),
+                                            style: ComicTheme.titleText(
+                                              size: 15,
+                                              color: ComicTheme.inkBlack,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                          ],
+                        ),
                       ),
-                    ],
+                    ),
                   ),
-                ),
                 ),
               ),
             ],
@@ -264,7 +280,7 @@ class SettingsOverlay extends StatelessWidget {
       onTap: () => AppLocalizations.setLanguage(lang),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 160),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
         decoration: BoxDecoration(
           color: isSelected
               ? activeColor
@@ -286,8 +302,8 @@ class SettingsOverlay extends StatelessWidget {
         child: Row(
           children: [
             Container(
-              width: 40,
-              height: 32,
+              width: 38,
+              height: 30,
               alignment: Alignment.center,
               decoration: BoxDecoration(
                 color: ComicTheme.inkBlack,
@@ -297,7 +313,7 @@ class SettingsOverlay extends StatelessWidget {
               child: Text(
                 flagBadge,
                 style: ComicTheme.titleText(
-                  size: 16,
+                  size: 15,
                   color: ComicTheme.comicYellow,
                 ),
               ),
@@ -310,7 +326,7 @@ class SettingsOverlay extends StatelessWidget {
                   Text(
                     title,
                     style: ComicTheme.titleText(
-                      size: 19,
+                      size: 18,
                       color: isSelected
                           ? (lang == AppLanguage.ja
                               ? Colors.white
@@ -352,4 +368,3 @@ class SettingsOverlay extends StatelessWidget {
     );
   }
 }
-

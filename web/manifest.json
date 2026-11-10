@@ -1,12 +1,12 @@
 {
-    "name": "manga_platformer",
-    "short_name": "manga_platformer",
+    "name": "Kaito Adventure",
+    "short_name": "Kaito Adventure",
     "start_url": ".",
-    "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
-    "orientation": "portrait-primary",
+    "display": "fullscreen",
+    "background_color": "#141419",
+    "theme_color": "#141419",
+    "description": "Kaito Adventure - 2D Cartoon Action Platformer by Janosos",
+    "orientation": "landscape",
     "prefer_related_applications": false,
     "icons": [
         {

@@ -17,161 +17,173 @@ class VictoryOverlay extends StatelessWidget {
       builder: (context, lang, _) {
         return Scaffold(
           backgroundColor: Colors.black.withValues(alpha: 0.8),
-          body: Center(
-            child: Container(
-              width: 490,
-              padding: const EdgeInsets.all(24),
-              decoration: ComicTheme.comicPanelDecoration(
-                backgroundColor: ComicTheme.paperWhite,
-                borderColor: ComicTheme.inkBlack,
-                borderWidth: 4,
-                shadowOffset: 6,
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
-                    color: ComicTheme.comicYellow,
-                    child: Text(
-                      isFinalChapter
-                          ? AppLocalizations.tr('victory_all')
-                          : AppLocalizations.tr('victory_chapter'),
-                      style: ComicTheme.mangaHeader(
-                          fontSize: 16, color: ComicTheme.inkBlack),
+          body: SafeArea(
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Container(
+                    width: 490,
+                    padding: const EdgeInsets.all(22),
+                    decoration: ComicTheme.comicPanelDecoration(
+                      backgroundColor: ComicTheme.paperWhite,
+                      borderColor: ComicTheme.inkBlack,
+                      borderWidth: 4,
+                      shadowOffset: 6,
                     ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    isFinalChapter
-                        ? AppLocalizations.tr('victory_sub_all')
-                        : AppLocalizations.tr('victory_sub_next'),
-                    textAlign: TextAlign.center,
-                    style: ComicTheme.comicTitle(
-                        fontSize: 20, color: ComicTheme.actionRed),
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Image.asset(
-                        CartoonAssets.uiBadgeSRank,
-                        width: 78,
-                        height: 78,
-                      ),
-                      const SizedBox(width: 16),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'SHINOBI RANK: S-CLASS',
-                            style: ComicTheme.comicTitle(
-                                fontSize: 18, color: ComicTheme.inkBlack),
-                          ),
-                          Text(
-                            '${AppLocalizations.tr('final_score_label')}${game.score}',
-                            style: ComicTheme.mangaHeader(
-                                fontSize: 18, color: ComicTheme.darkPurple),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 14),
-                  const Divider(thickness: 3, color: ComicTheme.inkBlack),
-                  const SizedBox(height: 12),
-                  GestureDetector(
-                    onTap: () => game.nextLevel(),
-                    child: Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.symmetric(vertical: 10),
-                      decoration: ComicTheme.comicButtonDecoration(
-                        backgroundColor: ComicTheme.comicYellow,
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Image.asset(CartoonAssets.uiBtnPlay,
-                              width: 24, height: 24),
-                          const SizedBox(width: 8),
-                          Text(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 14, vertical: 4),
+                          color: ComicTheme.comicYellow,
+                          child: Text(
                             isFinalChapter
-                                ? '${AppLocalizations.tr('btn_play_again')} ↺'
-                                : '${AppLocalizations.tr('btn_next_chapter')} (${game.currentLevelIndex + 1}/${MangaGame.totalLevels}) ▶',
-                            style: ComicTheme.comicTitle(
-                                fontSize: 19, color: ComicTheme.inkBlack),
+                                ? AppLocalizations.tr('victory_all')
+                                : AppLocalizations.tr('victory_chapter'),
+                            style: ComicTheme.mangaHeader(
+                                fontSize: 16, color: ComicTheme.inkBlack),
                           ),
-                        ],
-                      ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          isFinalChapter
+                              ? AppLocalizations.tr('victory_sub_all')
+                              : AppLocalizations.tr('victory_sub_next'),
+                          textAlign: TextAlign.center,
+                          style: ComicTheme.comicTitle(
+                              fontSize: 20, color: ComicTheme.actionRed),
+                        ),
+                        const SizedBox(height: 12),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Image.asset(
+                              CartoonAssets.uiBadgeSRank,
+                              width: 72,
+                              height: 72,
+                            ),
+                            const SizedBox(width: 16),
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'SHINOBI RANK: S-CLASS',
+                                  style: ComicTheme.comicTitle(
+                                      fontSize: 18, color: ComicTheme.inkBlack),
+                                ),
+                                Text(
+                                  '${AppLocalizations.tr('final_score_label')}${game.score}',
+                                  style: ComicTheme.mangaHeader(
+                                      fontSize: 18,
+                                      color: ComicTheme.darkPurple),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        const Divider(thickness: 3, color: ComicTheme.inkBlack),
+                        const SizedBox(height: 10),
+                        GestureDetector(
+                          onTap: () => game.nextLevel(),
+                          child: Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                            decoration: ComicTheme.comicButtonDecoration(
+                              backgroundColor: ComicTheme.comicYellow,
+                            ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Image.asset(CartoonAssets.uiBtnPlay,
+                                    width: 24, height: 24),
+                                const SizedBox(width: 8),
+                                Text(
+                                  isFinalChapter
+                                      ? '${AppLocalizations.tr('btn_play_again')} ↺'
+                                      : '${AppLocalizations.tr('btn_next_chapter')} (${game.currentLevelIndex + 1}/${MangaGame.totalLevels}) ▶',
+                                  style: ComicTheme.comicTitle(
+                                      fontSize: 18, color: ComicTheme.inkBlack),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: GestureDetector(
+                                onTap: () {
+                                  game.overlays.remove('victory');
+                                  game.overlays.add('chapter_select');
+                                },
+                                child: Container(
+                                  padding:
+                                      const EdgeInsets.symmetric(vertical: 10),
+                                  decoration: ComicTheme.comicButtonDecoration(
+                                    backgroundColor: Colors.white,
+                                  ),
+                                  child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Image.asset(CartoonAssets.uiBtnChapters,
+                                          width: 22, height: 22),
+                                      const SizedBox(width: 6),
+                                      Flexible(
+                                        child: Text(
+                                          AppLocalizations.tr(
+                                              'select_chapter_title'),
+                                          style: ComicTheme.comicTitle(
+                                              fontSize: 14,
+                                              color: ComicTheme.inkBlack),
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: GestureDetector(
+                                onTap: () => game.returnToMainMenu(),
+                                child: Container(
+                                  padding:
+                                      const EdgeInsets.symmetric(vertical: 10),
+                                  decoration: ComicTheme.comicButtonDecoration(
+                                    backgroundColor: ComicTheme.paperWhite,
+                                  ),
+                                  child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Image.asset(CartoonAssets.uiBtnHome,
+                                          width: 22, height: 22),
+                                      const SizedBox(width: 6),
+                                      Flexible(
+                                        child: Text(
+                                          AppLocalizations.tr('btn_main_menu'),
+                                          style: ComicTheme.comicTitle(
+                                              fontSize: 14,
+                                              color: ComicTheme.inkBlack),
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
                     ),
                   ),
-                  const SizedBox(height: 10),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: GestureDetector(
-                          onTap: () {
-                            game.overlays.remove('victory');
-                            game.overlays.add('chapter_select');
-                          },
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(vertical: 10),
-                            decoration: ComicTheme.comicButtonDecoration(
-                              backgroundColor: Colors.white,
-                            ),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Image.asset(CartoonAssets.uiBtnChapters,
-                                    width: 22, height: 22),
-                                const SizedBox(width: 6),
-                                Flexible(
-                                  child: Text(
-                                    AppLocalizations.tr('select_chapter_title'),
-                                    style: ComicTheme.comicTitle(
-                                        fontSize: 14,
-                                        color: ComicTheme.inkBlack),
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: GestureDetector(
-                          onTap: () => game.returnToMainMenu(),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(vertical: 10),
-                            decoration: ComicTheme.comicButtonDecoration(
-                              backgroundColor: ComicTheme.paperWhite,
-                            ),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Image.asset(CartoonAssets.uiBtnHome,
-                                    width: 22, height: 22),
-                                const SizedBox(width: 6),
-                                Flexible(
-                                  child: Text(
-                                    AppLocalizations.tr('btn_main_menu'),
-                                    style: ComicTheme.comicTitle(
-                                        fontSize: 14,
-                                        color: ComicTheme.inkBlack),
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
+                ),
               ),
             ),
           ),

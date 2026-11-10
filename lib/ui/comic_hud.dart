@@ -44,55 +44,72 @@ class _ComicHudState extends State<ComicHud>
     final game = widget.game;
     final player = game.player;
     final boss = game.activeBoss;
+    final screenSize = MediaQuery.of(context).size;
+    final double uiScale = (screenSize.height / 500.0).clamp(0.64, 1.0);
+    final bool isCompact = screenSize.height < 440;
+    final double edgePad = isCompact ? 8.0 : 14.0;
+    final double topPad = isCompact ? 6.0 : 12.0;
 
     return SafeArea(
       child: Stack(
         children: [
-          // Top Left: 2D Cartoon Player Status Card
+          // Top Left: 2D Cartoon Player Status Card (Responsive Scaled)
           Positioned(
-            top: 14,
-            left: 16,
-            child: _buildPlayerStatusCard(player),
-          ),
-
-          // Top Center: Stage Progression Bar toward the Final Boss Arena
-          if (boss == null)
-            Positioned(
-              top: 42,
-              left: 260,
-              right: 260,
-              child: _buildStageProgressBar(game),
-            ),
-
-          // Top Right: Chapter & Score Card + Pause Button
-          Positioned(
-            top: 14,
-            right: 16,
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _buildScoreCard(game),
-                const SizedBox(width: 8),
-                _buildPauseButton(game),
-              ],
+            top: topPad,
+            left: edgePad,
+            child: Transform.scale(
+              scale: uiScale,
+              alignment: Alignment.topLeft,
+              child: _buildPlayerStatusCard(player),
             ),
           ),
 
-          // Right: Dynamic Manga Combo Banner
+          // Top Center: Stage Progression Bar OR Boss Health & Stun Bar
+          // Placing the Boss Bar in the Top-Center slot keeps the bottom D-Pad,
+          // Action Buttons, and ground combat arena 100% unobstructed on mobile!
+          Positioned(
+            top: topPad,
+            left: 275 * uiScale,
+            right: 235 * uiScale,
+            child: Center(
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.topCenter,
+                child: (boss != null && !boss.isDefeated)
+                    ? _buildBossHud(boss)
+                    : _buildStageProgressBar(game),
+              ),
+            ),
+          ),
+
+          // Top Right: Chapter & Score Card + Pause Button (Responsive Scaled)
+          Positioned(
+            top: topPad,
+            right: edgePad,
+            child: Transform.scale(
+              scale: uiScale,
+              alignment: Alignment.topRight,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _buildScoreCard(game),
+                  const SizedBox(width: 8),
+                  _buildPauseButton(game),
+                ],
+              ),
+            ),
+          ),
+
+          // Right: Dynamic Manga Combo Banner (Below Score Card, Above Action Buttons)
           if (player.comboCount >= 2)
             Positioned(
-              right: 24,
-              top: 100,
-              child: _buildComboBanner(player),
-            ),
-
-          // Bottom Center: 2D Cartoon Boss Health & Break Bar
-          if (boss != null && !boss.isDefeated)
-            Positioned(
-              bottom: 24,
-              left: 30,
-              right: 30,
-              child: _buildBossHud(boss),
+              right: edgePad + 4,
+              top: topPad + (68 * uiScale),
+              child: Transform.scale(
+                scale: uiScale,
+                alignment: Alignment.topRight,
+                child: _buildComboBanner(player),
+              ),
             ),
         ],
       ),
@@ -109,7 +126,7 @@ class _ComicHudState extends State<ComicHud>
     final kunaiRatio = ((5.0 - kunaiCd) / 5.0).clamp(0.0, 1.0);
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       decoration: ComicTheme.comicPanelDecoration(
         backgroundColor: ComicTheme.paperWhite,
         borderWidth: 3,
@@ -120,8 +137,8 @@ class _ComicHudState extends State<ComicHud>
         children: [
           // 2D Cartoon Kaito Avatar Portrait
           Container(
-            width: 52,
-            height: 52,
+            width: 50,
+            height: 50,
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(6),
               border: Border.all(color: ComicTheme.inkBlack, width: 2.5),
@@ -134,7 +151,7 @@ class _ComicHudState extends State<ComicHud>
               ),
             ),
           ),
-          const SizedBox(width: 10),
+          const SizedBox(width: 9),
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
@@ -153,18 +170,18 @@ class _ComicHudState extends State<ComicHud>
                     child: Text(
                       '忍 KAITO',
                       style: ComicTheme.mangaHeader(
-                          fontSize: 13, color: Colors.white),
+                          fontSize: 12, color: Colors.white),
                     ),
                   ),
                   const SizedBox(width: 6),
                   Text(
                     'SHINOBI',
                     style: ComicTheme.comicBody(
-                        fontSize: 11, color: Colors.grey.shade800),
+                        fontSize: 10.5, color: Colors.grey.shade800),
                   ),
                 ],
               ),
-              const SizedBox(height: 4),
+              const SizedBox(height: 3),
 
               // 2D Cartoon Health Hearts
               Row(
@@ -177,13 +194,13 @@ class _ComicHudState extends State<ComicHud>
                       isFull
                           ? CartoonAssets.uiHeartFull
                           : CartoonAssets.uiHeartEmpty,
-                      width: 22,
-                      height: 22,
+                      width: 20,
+                      height: 20,
                     ),
                   );
                 }),
               ),
-              const SizedBox(height: 4),
+              const SizedBox(height: 3),
 
               // Ougi / Spirit Gauge Bar with 2D Cartoon Spirit Orb Icon
               Row(
@@ -191,23 +208,23 @@ class _ComicHudState extends State<ComicHud>
                 children: [
                   Image.asset(
                     CartoonAssets.uiSpiritOrb,
-                    width: 18,
-                    height: 18,
+                    width: 16,
+                    height: 16,
                   ),
                   const SizedBox(width: 4),
                   Text(
                     AppLocalizations.tr('hud_spirit'),
                     style: ComicTheme.mangaHeader(
-                        fontSize: 12, color: ComicTheme.inkBlack),
+                        fontSize: 11, color: ComicTheme.inkBlack),
                   ),
                   Container(
-                    width: 96,
-                    height: 12,
+                    width: 84,
+                    height: 10,
                     decoration: BoxDecoration(
                       color: ComicTheme.halftoneGray,
                       borderRadius: BorderRadius.circular(3),
                       border:
-                          Border.all(color: ComicTheme.inkBlack, width: 2),
+                          Border.all(color: ComicTheme.inkBlack, width: 1.8),
                     ),
                     child: FractionallySizedBox(
                       alignment: Alignment.centerLeft,
@@ -227,14 +244,14 @@ class _ComicHudState extends State<ComicHud>
                     Text(
                       AppLocalizations.tr('hud_ougi_ready'),
                       style: ComicTheme.comicTitle(
-                        fontSize: 12,
+                        fontSize: 11,
                         color: ComicTheme.actionRed,
                       ),
                     ),
                   ]
                 ],
               ),
-              const SizedBox(height: 3),
+              const SizedBox(height: 2),
 
               // Kunai 5-Second Cooldown Gauge
               Row(
@@ -242,20 +259,20 @@ class _ComicHudState extends State<ComicHud>
                 children: [
                   Image.asset(
                     CartoonAssets.uiSkillKunai,
-                    width: 16,
-                    height: 16,
+                    width: 15,
+                    height: 15,
                   ),
                   const SizedBox(width: 4),
                   Text(
                     AppLocalizations.tr('hud_kunai'),
                     style: ComicTheme.mangaHeader(
-                      fontSize: 11,
+                      fontSize: 10.5,
                       color: ComicTheme.inkBlack,
                     ),
                   ),
                   Container(
-                    width: 68,
-                    height: 9,
+                    width: 64,
+                    height: 8,
                     decoration: BoxDecoration(
                       color: ComicTheme.halftoneGray,
                       borderRadius: BorderRadius.circular(3),
@@ -277,13 +294,13 @@ class _ComicHudState extends State<ComicHud>
                       ),
                     ),
                   ),
-                  const SizedBox(width: 5),
+                  const SizedBox(width: 4),
                   Text(
                     kunaiReady
                         ? AppLocalizations.tr('hud_kunai_ready')
                         : '${kunaiCd.toStringAsFixed(1)}s',
                     style: ComicTheme.mangaHeader(
-                      fontSize: 11,
+                      fontSize: 10.5,
                       color: kunaiReady
                           ? Colors.green.shade800
                           : ComicTheme.actionRed,
@@ -300,7 +317,7 @@ class _ComicHudState extends State<ComicHud>
 
   Widget _buildScoreCard(MangaGame game) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: ComicTheme.comicPanelDecoration(
         backgroundColor: ComicTheme.paperWhite,
         borderWidth: 3,
@@ -311,10 +328,10 @@ class _ComicHudState extends State<ComicHud>
         children: [
           Image.asset(
             CartoonAssets.uiScoreScroll,
-            width: 28,
-            height: 28,
+            width: 26,
+            height: 26,
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 7),
           Column(
             crossAxisAlignment: CrossAxisAlignment.end,
             mainAxisSize: MainAxisSize.min,
@@ -322,12 +339,12 @@ class _ComicHudState extends State<ComicHud>
               Text(
                 '${AppLocalizations.tr('hud_stage_progress')}${game.currentLevelIndex}/${MangaGame.totalLevels}',
                 style: ComicTheme.mangaHeader(
-                    fontSize: 13, color: ComicTheme.actionRed),
+                    fontSize: 12, color: ComicTheme.actionRed),
               ),
               Text(
                 '${AppLocalizations.tr('score_label')}${game.score.toString().padLeft(6, '0')}',
                 style: ComicTheme.comicTitle(
-                    fontSize: 18, color: ComicTheme.inkBlack),
+                    fontSize: 16, color: ComicTheme.inkBlack),
               ),
             ],
           ),
@@ -340,9 +357,9 @@ class _ComicHudState extends State<ComicHud>
     return GestureDetector(
       onTap: () => game.togglePause(),
       child: Container(
-        width: 46,
-        height: 46,
-        padding: const EdgeInsets.all(7),
+        width: 44,
+        height: 44,
+        padding: const EdgeInsets.all(6),
         decoration: ComicTheme.comicButtonDecoration(
           backgroundColor: ComicTheme.comicYellow,
         ),
@@ -369,7 +386,7 @@ class _ComicHudState extends State<ComicHud>
     return Transform.rotate(
       angle: -0.08,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
         decoration: ComicTheme.comicPanelDecoration(
           backgroundColor: gradeColor,
           borderColor: ComicTheme.inkBlack,
@@ -381,11 +398,11 @@ class _ComicHudState extends State<ComicHud>
             Text(
               'COMBO x$count',
               style: ComicTheme.comicTitle(
-                  fontSize: 22, color: ComicTheme.inkBlack),
+                  fontSize: 20, color: ComicTheme.inkBlack),
             ),
             Text(
               grade,
-              style: ComicTheme.mangaHeader(fontSize: 16, color: Colors.white),
+              style: ComicTheme.mangaHeader(fontSize: 14, color: Colors.white),
             ),
           ],
         ),
@@ -395,40 +412,38 @@ class _ComicHudState extends State<ComicHud>
 
   Widget _buildStageProgressBar(MangaGame game) {
     final progress = game.stageProgress;
-    return Center(
-      child: Container(
-        width: 260,
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-        decoration: ComicTheme.comicPanelDecoration(
-          backgroundColor: ComicTheme.paperWhite,
-          borderWidth: 2.5,
-          shadowOffset: 3,
-        ),
-        child: Row(
-          children: [
-            Image.asset(CartoonAssets.uiKaitoHead, width: 22, height: 22),
-            const SizedBox(width: 6),
-            Expanded(
-              child: Container(
-                height: 10,
-                decoration: BoxDecoration(
-                  color: ComicTheme.halftoneGray,
-                  border: Border.all(color: ComicTheme.inkBlack, width: 2),
-                  borderRadius: BorderRadius.circular(3),
-                ),
-                child: FractionallySizedBox(
-                  alignment: Alignment.centerLeft,
-                  widthFactor: progress,
-                  child: Container(
-                    color: ComicTheme.actionRed,
-                  ),
+    return Container(
+      width: 240,
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: ComicTheme.comicPanelDecoration(
+        backgroundColor: ComicTheme.paperWhite,
+        borderWidth: 2.5,
+        shadowOffset: 3,
+      ),
+      child: Row(
+        children: [
+          Image.asset(CartoonAssets.uiKaitoHead, width: 20, height: 20),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Container(
+              height: 10,
+              decoration: BoxDecoration(
+                color: ComicTheme.halftoneGray,
+                border: Border.all(color: ComicTheme.inkBlack, width: 2),
+                borderRadius: BorderRadius.circular(3),
+              ),
+              child: FractionallySizedBox(
+                alignment: Alignment.centerLeft,
+                widthFactor: progress,
+                child: Container(
+                  color: ComicTheme.actionRed,
                 ),
               ),
             ),
-            const SizedBox(width: 6),
-            Image.asset(CartoonAssets.uiBossSkull, width: 22, height: 22),
-          ],
-        ),
+          ),
+          const SizedBox(width: 6),
+          Image.asset(CartoonAssets.uiBossSkull, width: 20, height: 20),
+        ],
       ),
     );
   }
@@ -448,150 +463,154 @@ class _ComicHudState extends State<ComicHud>
     final bossName = boss.name as String;
     final bossPortrait = _bossPortraitFor(bossName);
 
-    return Center(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 680),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-          decoration: ComicTheme.comicPanelDecoration(
-            backgroundColor: ComicTheme.paperWhite,
-            borderColor: ComicTheme.inkBlack,
-            borderWidth: 3,
-            shadowOffset: 4,
-          ),
-          child: Row(
-            children: [
-              // 2D Cartoon Boss Avatar
-              Container(
-                width: 54,
-                height: 54,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: ComicTheme.inkBlack, width: 2.5),
-                ),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(4),
-                  child: Image.asset(
-                    bossPortrait,
-                    fit: BoxFit.cover,
-                  ),
-                ),
+    return Container(
+      width: 390,
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: ComicTheme.comicPanelDecoration(
+        backgroundColor: ComicTheme.paperWhite,
+        borderColor: ComicTheme.inkBlack,
+        borderWidth: 3,
+        shadowOffset: 4,
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // 2D Cartoon Boss Avatar
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: ComicTheme.inkBlack, width: 2.5),
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: Image.asset(
+                bossPortrait,
+                fit: BoxFit.cover,
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 6, vertical: 1),
-                              color: ComicTheme.actionRed,
-                              child: Text(
-                                'BOSS',
-                                style: ComicTheme.mangaHeader(
-                                    fontSize: 13, color: Colors.white),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              '${boss.name}: ${boss.title}',
-                              style: ComicTheme.comicTitle(
-                                fontSize: 18,
-                                color: ComicTheme.inkBlack,
-                              ),
-                            ),
-                          ],
-                        ),
-                        Text(
-                          'PHASE ${boss.currentPhase}/${boss.maxPhases}',
-                          style: ComicTheme.mangaHeader(
-                              fontSize: 14, color: ComicTheme.inkBlack),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 5),
-
-                    // Boss Main Health Bar
-                    Container(
-                      height: 18,
-                      decoration: BoxDecoration(
-                        color: ComicTheme.halftoneGray,
-                        border:
-                            Border.all(color: ComicTheme.inkBlack, width: 2.5),
-                      ),
-                      child: Stack(
+                    Flexible(
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
                         children: [
-                          FractionallySizedBox(
-                            alignment: Alignment.centerLeft,
-                            widthFactor: hpRatio,
-                            child: Container(
-                              color: isStunned
-                                  ? ComicTheme.comicYellow
-                                  : ComicTheme.actionRed,
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 5, vertical: 1),
+                            color: ComicTheme.actionRed,
+                            child: Text(
+                              'BOSS',
+                              style: ComicTheme.mangaHeader(
+                                  fontSize: 11, color: Colors.white),
                             ),
                           ),
-                          Center(
+                          const SizedBox(width: 6),
+                          Flexible(
                             child: Text(
-                              '${(hpRatio * 100).toInt()}%',
+                              '${boss.name}: ${boss.title}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                               style: ComicTheme.comicTitle(
-                                  fontSize: 12, color: Colors.white),
+                                fontSize: 14,
+                                color: ComicTheme.inkBlack,
+                              ),
                             ),
                           ),
                         ],
                       ),
                     ),
-                    const SizedBox(height: 4),
-
-                    // Stun / Break Gauge Bar
-                    Row(
-                      children: [
-                        Text(
-                          'STUN BREAK: ',
-                          style: ComicTheme.mangaHeader(
-                              fontSize: 11, color: Colors.grey.shade800),
-                        ),
-                        Expanded(
-                          child: Container(
-                            height: 8,
-                            decoration: BoxDecoration(
-                              color: ComicTheme.halftoneGray,
-                              border: Border.all(
-                                  color: ComicTheme.inkBlack, width: 1.5),
-                            ),
-                            child: FractionallySizedBox(
-                              alignment: Alignment.centerLeft,
-                              widthFactor: stunRatio,
-                              child: Container(
-                                color: isStunned
-                                    ? Colors.redAccent
-                                    : ComicTheme.energyCyan,
-                              ),
-                            ),
-                          ),
-                        ),
-                        if (isStunned) ...[
-                          const SizedBox(width: 6),
-                          Text(
-                            'BREAK STATUS (2x DMG)!',
-                            style: ComicTheme.comicTitle(
-                              fontSize: 11,
-                              color: ComicTheme.actionRed,
-                            ),
-                          ),
-                        ]
-                      ],
+                    const SizedBox(width: 6),
+                    Text(
+                      'P${boss.currentPhase}/${boss.maxPhases}',
+                      style: ComicTheme.mangaHeader(
+                          fontSize: 12, color: ComicTheme.inkBlack),
                     ),
                   ],
                 ),
-              ),
-            ],
+                const SizedBox(height: 3),
+
+                // Boss Main Health Bar
+                Container(
+                  height: 14,
+                  decoration: BoxDecoration(
+                    color: ComicTheme.halftoneGray,
+                    border: Border.all(color: ComicTheme.inkBlack, width: 2),
+                  ),
+                  child: Stack(
+                    children: [
+                      FractionallySizedBox(
+                        alignment: Alignment.centerLeft,
+                        widthFactor: hpRatio,
+                        child: Container(
+                          color: isStunned
+                              ? ComicTheme.comicYellow
+                              : ComicTheme.actionRed,
+                        ),
+                      ),
+                      Center(
+                        child: Text(
+                          '${(hpRatio * 100).toInt()}%',
+                          style: ComicTheme.comicTitle(
+                              fontSize: 10, color: Colors.white),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 3),
+
+                // Stun / Break Gauge Bar
+                Row(
+                  children: [
+                    Text(
+                      'BREAK: ',
+                      style: ComicTheme.mangaHeader(
+                          fontSize: 10, color: Colors.grey.shade800),
+                    ),
+                    Expanded(
+                      child: Container(
+                        height: 6,
+                        decoration: BoxDecoration(
+                          color: ComicTheme.halftoneGray,
+                          border: Border.all(
+                              color: ComicTheme.inkBlack, width: 1.5),
+                        ),
+                        child: FractionallySizedBox(
+                          alignment: Alignment.centerLeft,
+                          widthFactor: stunRatio,
+                          child: Container(
+                            color: isStunned
+                                ? Colors.redAccent
+                                : ComicTheme.energyCyan,
+                          ),
+                        ),
+                      ),
+                    ),
+                    if (isStunned) ...[
+                      const SizedBox(width: 4),
+                      Text(
+                        '2x DMG!',
+                        style: ComicTheme.comicTitle(
+                          fontSize: 10,
+                          color: ComicTheme.actionRed,
+                        ),
+                      ),
+                    ]
+                  ],
+                ),
+              ],
+            ),
           ),
-        ),
+        ],
       ),
     );
   }
