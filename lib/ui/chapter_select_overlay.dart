@@ -20,7 +20,6 @@ class _ChapterSelectOverlayState extends State<ChapterSelectOverlay> {
     _ChapterInfo(
       level: 1,
       difficulty: '★☆☆☆☆',
-      distance: '4.6 KM',
       accentColor: ComicTheme.energyCyan,
       bgAsset: CartoonAssets.bgLevel1,
       bossPortrait: CartoonAssets.portraitKurokage,
@@ -29,7 +28,6 @@ class _ChapterSelectOverlayState extends State<ChapterSelectOverlay> {
     _ChapterInfo(
       level: 2,
       difficulty: '★★☆☆☆',
-      distance: '5.0 KM',
       accentColor: ComicTheme.actionRed,
       bgAsset: CartoonAssets.bgLevel2,
       bossPortrait: CartoonAssets.portraitRyuKotei,
@@ -38,7 +36,6 @@ class _ChapterSelectOverlayState extends State<ChapterSelectOverlay> {
     _ChapterInfo(
       level: 3,
       difficulty: '★★★☆☆',
-      distance: '5.4 KM',
       accentColor: Color(0xFF00E676),
       bgAsset: CartoonAssets.bgLevel3,
       bossPortrait: CartoonAssets.portraitHebiHime,
@@ -47,7 +44,6 @@ class _ChapterSelectOverlayState extends State<ChapterSelectOverlay> {
     _ChapterInfo(
       level: 4,
       difficulty: '★★★★☆',
-      distance: '5.8 KM',
       accentColor: Color(0xFF40C4FF),
       bgAsset: CartoonAssets.bgLevel4,
       bossPortrait: CartoonAssets.portraitYukiOni,
@@ -56,7 +52,6 @@ class _ChapterSelectOverlayState extends State<ChapterSelectOverlay> {
     _ChapterInfo(
       level: 5,
       difficulty: '★★★★★',
-      distance: '6.4 KM',
       accentColor: ComicTheme.comicYellow,
       bgAsset: CartoonAssets.bgLevel5,
       bossPortrait: CartoonAssets.portraitMuzanKai,
@@ -290,7 +285,7 @@ class _ChapterSelectOverlayState extends State<ChapterSelectOverlay> {
                         });
                       },
                       child: Container(
-                        padding: const EdgeInsets.symmetric(vertical: 6),
+                        padding: const EdgeInsets.symmetric(vertical: 8),
                         decoration: ComicTheme.panelDecoration(
                           backgroundColor: isSelected
                               ? ch.accentColor
@@ -298,24 +293,14 @@ class _ChapterSelectOverlayState extends State<ChapterSelectOverlay> {
                           borderWidth: isSelected ? 3.0 : 2.0,
                           shadowOffset: isSelected ? 3 : 1,
                         ),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              'STAGE ${ch.level}',
-                              style: ComicTheme.titleText(
-                                size: 13,
-                                color: ComicTheme.inkBlack,
-                              ),
+                        child: Center(
+                          child: Text(
+                            'STAGE ${ch.level}',
+                            style: ComicTheme.titleText(
+                              size: 14,
+                              color: ComicTheme.inkBlack,
                             ),
-                            Text(
-                              ch.distance,
-                              style: ComicTheme.bodyText(
-                                size: 10,
-                                color: ComicTheme.inkBlack,
-                              ),
-                            ),
-                          ],
+                          ),
                         ),
                       ),
                     ),
@@ -382,7 +367,7 @@ class _ChapterSelectOverlayState extends State<ChapterSelectOverlay> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Top Row: Chapter Badge & Distance Badge
+                  // Top Row: Chapter Badge
                   Row(
                     children: [
                       Container(
@@ -400,29 +385,6 @@ class _ChapterSelectOverlayState extends State<ChapterSelectOverlay> {
                           style: ComicTheme.titleText(
                             size: 13,
                             color: ComicTheme.inkBlack,
-                          ),
-                        ),
-                      ),
-                      const Spacer(),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: ComicTheme.inkBlack.withValues(alpha: 0.80),
-                          borderRadius: BorderRadius.circular(4),
-                          border: Border.all(
-                            color: ch.accentColor,
-                            width: 1.5,
-                          ),
-                        ),
-                        child: Text(
-                          ch.distance,
-                          style: TextStyle(
-                            color: ch.accentColor,
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
                           ),
                         ),
                       ),
@@ -531,7 +493,7 @@ class _ChapterSelectOverlayState extends State<ChapterSelectOverlay> {
                           ),
                         ),
                         child: Text(
-                          'WARLORD ARENA GATE',
+                          AppLocalizations.tr('arena_gate_badge'),
                           style: ComicTheme.titleText(
                             size: 11,
                             color: Colors.white,
@@ -540,7 +502,7 @@ class _ChapterSelectOverlayState extends State<ChapterSelectOverlay> {
                       ),
                       const SizedBox(height: 6),
                       Text(
-                        'Defeat this warlord at the end of the stage to claim the sacred ink seal and unlock the next trial!',
+                        AppLocalizations.tr('arena_gate_desc'),
                         style: ComicTheme.bodyText(
                           size: 11.5,
                           color: Colors.white70,
@@ -549,7 +511,7 @@ class _ChapterSelectOverlayState extends State<ChapterSelectOverlay> {
                       ),
                       const SizedBox(height: 6),
                       Text(
-                        '💡 TIP: Dash behind the boss during parry stances for a Backstab Pierce!',
+                        '💡 ${AppLocalizations.tr('tip_label')}: ${AppLocalizations.chapterTip(ch.level)}',
                         style: ComicTheme.bodyText(
                           size: 11,
                           color: ComicTheme.comicYellow,
@@ -604,7 +566,6 @@ class _ChapterSelectOverlayState extends State<ChapterSelectOverlay> {
 class _ChapterInfo {
   final int level;
   final String difficulty;
-  final String distance;
   final Color accentColor;
   final String bgAsset;
   final String bossPortrait;
@@ -613,7 +574,6 @@ class _ChapterInfo {
   const _ChapterInfo({
     required this.level,
     required this.difficulty,
-    required this.distance,
     required this.accentColor,
     required this.bgAsset,
     required this.bossPortrait,

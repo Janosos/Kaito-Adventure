@@ -196,6 +196,7 @@ class AppLocalizations {
   static String chapterTitle(int chapter) => tr('ch${chapter}_title');
   static String chapterSubtitle(int chapter) => tr('ch${chapter}_sub');
   static String chapterBoss(int chapter) => tr('ch${chapter}_boss');
+  static String chapterTip(int chapter) => tr('ch${chapter}_tip');
 
   static const Map<AppLanguage, Map<String, String>> _translations = {
     AppLanguage.en: {
@@ -271,23 +272,37 @@ class AppLocalizations {
           'ADVANCE THROUGH 5 PROGRESSIVE STAGES & DEFEAT THE 5 WARLORDS!',
       'boss_prefix': 'BOSS: ',
       'btn_play_chapter': 'PLAY',
+      'tip_label': 'TIP',
+      'arena_gate_badge': 'WARLORD ARENA GATE',
+      'arena_gate_desc':
+          'Defeat this warlord at the end of the stage to claim the sacred ink seal and unlock the next trial!',
 
       // Chapter Names & Bosses
-      'ch1_title': 'CHAPTER 1: NEO-TOKYO ROOFTOPS (4.6 KM)',
+      'ch1_title': 'CHAPTER 1: NEO-TOKYO ROOFTOPS',
       'ch1_sub': 'Neon Zipline Rails, Wall-Jump Chimneys & Taiko Sky-Chains',
       'ch1_boss': 'KUROKAGE (Shadow Executioner)',
-      'ch2_title': 'CHAPTER 2: CRIMSON CITADEL (5.0 KM)',
+      'ch1_tip':
+          'Dash behind Kurokage during his Shadow Parry for a Backstab Pierce!',
+      'ch2_title': 'CHAPTER 2: CRIMSON CITADEL',
       'ch2_sub': 'Erupting Magma Geysers, Vertical Forge Lifts & Twin-Orb Gates',
       'ch2_boss': 'RYU-KOTEI (Dragon Shogun)',
-      'ch3_title': 'CHAPTER 3: MYSTIC BAMBOO SHRINE (5.4 KM)',
+      'ch2_tip':
+          'Ryu Kotei deflects frontal hits with Dragon Aegis. Dash behind him to pierce his defense!',
+      'ch3_title': 'CHAPTER 3: MYSTIC BAMBOO SHRINE',
       'ch3_sub': 'High-Altitude Wind Canopy, Poison Spore Vents & Swinging Rafts',
       'ch3_boss': 'HEBI-HIME (The Venom Empress)',
-      'ch4_title': 'CHAPTER 4: FROSTFANG PEAKS (5.8 KM)',
+      'ch3_tip':
+          'Jump to high platforms to evade poison pools and strike Hebi Hime from behind during Viper Coil!',
+      'ch4_title': 'CHAPTER 4: FROSTFANG PEAKS',
       'ch4_sub': 'Slippery Ice Physics, Falling Ceiling Icicles & Blizzard Gusts',
       'ch4_boss': 'YUKI-ONI (The Glacial Titan)',
-      'ch5_title': 'CHAPTER 5: ECLIPSE BLOOD SANCTUM (6.4 KM)',
+      'ch4_tip':
+          "Yuki Oni's Frost Armor absorbs frontal hits. Dash behind him before his ice slam!",
+      'ch5_title': 'CHAPTER 5: ECLIPSE BLOOD SANCTUM',
       'ch5_sub': 'Dimensional Warp Portals, Blood Pillars & Grand Emperor Trial',
       'ch5_boss': 'MUZAN-KAI (Lord of the Eclipse)',
+      'ch5_tip':
+          "Muzan's Void Barrier counters frontal hits. Backstab him and unleash Ougi when Stunned!",
 
       // HUD
       'hud_ougi_ready': 'READY! [U]',
@@ -397,23 +412,37 @@ class AppLocalizations {
           '¡AVANZA POR 5 ETAPAS PROGRESIVAS Y DERROTA A LOS 5 JEFES!',
       'boss_prefix': 'JEFE: ',
       'btn_play_chapter': 'JUGAR',
+      'tip_label': 'CONSEJO',
+      'arena_gate_badge': 'PUERTA DE ARENA DEL JEFE',
+      'arena_gate_desc':
+          '¡Derrota a este señor de la guerra al final de la etapa para reclamar el sello sagrado y avanzar al siguiente desafío!',
 
       // Chapter Names & Bosses
-      'ch1_title': 'CAPÍTULO 1: TEJADOS DE NEO-TOKIO (4.6 KM)',
+      'ch1_title': 'CAPÍTULO 1: TEJADOS DE NEO-TOKIO',
       'ch1_sub': 'Tirolesas Neón, Chimeneas de Salto en Pared y Tambores Taiko',
       'ch1_boss': 'KUROKAGE (Ejecutor de las Sombras)',
-      'ch2_title': 'CAPÍTULO 2: CIUDADELA CARMESÍ (5.0 KM)',
+      'ch1_tip':
+          '¡Haz Dash detrás de Kurokage durante su Shadow Parry para un Backstab Pierce!',
+      'ch2_title': 'CAPÍTULO 2: CIUDADELA CARMESÍ',
       'ch2_sub': 'Géiseres de Magma, Elevadores Verticales y Puertas Dobles',
       'ch2_boss': 'RYU-KOTEI (Shogun Dragón)',
-      'ch3_title': 'CAPÍTULO 3: SANTUARIO DE BAMBÚ MÍSTICO (5.4 KM)',
+      'ch2_tip':
+          '¡Ryu Kotei desvía golpes frontales con Dragon Aegis. Haz Dash detrás de él para atravesar su guardia!',
+      'ch3_title': 'CAPÍTULO 3: SANTUARIO DE BAMBÚ MÍSTICO',
       'ch3_sub': 'Corrientes en las Copas, Esporas Venenosas y Balsas Móviles',
       'ch3_boss': 'HEBI-HIME (La Emperatriz del Veneno)',
-      'ch4_title': 'CAPÍTULO 4: CUMBRES COLMILLO HELADO (5.8 KM)',
+      'ch3_tip':
+          '¡Salta a plataformas altas para evadir charcos de veneno y golpea a Hebi Hime por la espalda en Viper Coil!',
+      'ch4_title': 'CAPÍTULO 4: CUMBRES COLMILLO HELADO',
       'ch4_sub': 'Física de Hielo Resbaladizo, Estalactitas y Ventiscas',
       'ch4_boss': 'YUKI-ONI (El Titán Glacial)',
-      'ch5_title': 'CAPÍTULO 5: SANTUARIO DEL ECLIPSE SANGRIENTO (6.4 KM)',
+      'ch4_tip':
+          '¡La Frost Armor de Yuki Oni absorbe daño frontal. Haz Dash detrás de él antes de su golpe congelante!',
+      'ch5_title': 'CAPÍTULO 5: SANTUARIO DEL ECLIPSE SANGRIENTO',
       'ch5_sub': 'Portales Dimensionales, Pilares Sangrientos y Gran Prueba Final',
       'ch5_boss': 'MUZAN-KAI (Señor del Eclipse)',
+      'ch5_tip':
+          '¡La Void Barrier de Muzan contraataca de frente. Haz Backstab y desata tu Ougi cuando esté aturdido!',
 
       // HUD
       'hud_ougi_ready': '¡LISTO! [U]',
@@ -522,23 +551,32 @@ class AppLocalizations {
       'select_chapter_sub': '5つのステージを突破し、5人の闇武将を打ち倒せ！',
       'boss_prefix': 'ボス：',
       'btn_play_chapter': '出陣',
+      'tip_label': '攻略のヒント',
+      'arena_gate_badge': '武将決戦の門',
+      'arena_gate_desc':
+          'ステージ最深部の武将を討伐し、聖なる墨の封印を解放して次なる試練へ進め！',
 
       // Chapter Names & Bosses
-      'ch1_title': '第1章：ネオ東京の屋根裏 (4.6 KM)',
+      'ch1_title': '第1章：ネオ東京の屋根裏',
       'ch1_sub': 'ネオン滑空レール・壁蹴り煙突と空中太鼓チェーン',
       'ch1_boss': 'クロカゲ (影の処刑人)',
-      'ch2_title': '第2章：紅蓮の城塞 (5.0 KM)',
+      'ch1_tip': '影パリィ中にダッシュで背後に回り込み「バックスタブ」を決めろ！',
+      'ch2_title': '第2章：紅蓮の城塞',
       'ch2_sub': '噴き上がる溶岩間欠泉・昇降リフトと二重封印門',
       'ch2_boss': 'リュウ＝コウテイ (炎龍将軍)',
-      'ch3_title': '第3章：幽玄の竹林社 (5.4 KM)',
+      'ch2_tip': '竜帝の正面防御をダッシュで回り込み、背後から突き刺せ！',
+      'ch3_title': '第3章：幽玄の竹林社',
       'ch3_sub': '樹冠の上昇気流・猛毒胞子トラップと揺れる竹筏',
       'ch3_boss': 'ヘビ姫 (毒蛇の女帝)',
-      'ch4_title': '第4章：氷牙の霊峰 (5.8 KM)',
+      'ch3_tip': '高い足場へ跳び毒溜まりを回避し、蛇の構え中に背後から奇襲せよ！',
+      'ch4_title': '第4章：氷牙の霊峰',
       'ch4_sub': '滑る氷床・落下する氷柱トラップと猛吹雪の横風',
       'ch4_boss': 'ユキ鬼 (氷河の巨鬼)',
-      'ch5_title': '第5章：紅き日食の聖殿 (6.4 KM)',
+      'ch4_tip': '雪鬼の氷結鎧は正面無効。ダッシュで背後を取り破壊せよ！',
+      'ch5_title': '第5章：紅き日食の聖殿',
       'ch5_sub': '次元転移ポータル・血蝕の火柱と最終試練',
       'ch5_boss': 'ムザン＝カイ (紅き日食の覇王)',
+      'ch5_tip': '無惨魁の虚空障壁は正面反撃！背後攻撃でスタンさせ奥義を叩き込め！',
 
       // HUD
       'hud_ougi_ready': '奥義発動可! [U]',

@@ -263,14 +263,14 @@ class BossHebiHime extends BossBase {
     isGuarding = false;
     isCounterStance = false;
     final r = _rnd.nextDouble();
-    if (r < 0.28) {
+    if (r < 0.22) {
       state = HebiState.slitherDash;
       game.add(MangaTextEffect(
         position: position.clone(),
         text: 'SHAA!!',
         fillColor: Colors.greenAccent,
       ));
-    } else if (r < 0.52) {
+    } else if (r < 0.44) {
       state = HebiState.coilingAmbush;
       game.add(MangaDustEffect(position: position.clone()));
       game.add(MangaTextEffect(
@@ -278,15 +278,25 @@ class BossHebiHime extends BossBase {
         text: 'COILING AMBUSH!!',
         fillColor: ComicTheme.comicYellow,
       ));
-    } else if (r < 0.78) {
+    } else if (r < 0.68) {
       state = HebiState.venomBarrage;
-    } else {
+    } else if (r < 0.85) {
       state = HebiState.fangEruption;
+    } else {
+      isGuarding = true;
+      isCounterStance = true;
+      state = HebiState.recovering;
+      game.add(MangaTextEffect(
+        position: Vector2(position.x, position.y - size.y - 10),
+        text: 'VIPER COIL! (BACKSTAB!)',
+        fillColor: Colors.greenAccent,
+      ));
     }
   }
 
   SpriteAnimationTicker get _activeTicker {
     if (isStunned) return _stunTicker;
+    if (isGuarding || isCounterStance) return _castTicker;
     switch (state) {
       case HebiState.slitherDash:
       case HebiState.viperRecoilDash:
