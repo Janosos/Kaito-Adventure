@@ -168,10 +168,10 @@ class _SplashIntroOverlayState extends State<SplashIntroOverlay>
                                     ),
                                     const SizedBox(height: 22),
 
-                                    // DEVELOPED BY JANOSOS (Clean Cartoon Badge)
+                                    // DEVELOPED BY JANOSOS with Creator's Photo Icon
                                     Container(
                                       padding: const EdgeInsets.symmetric(
-                                        horizontal: 26,
+                                        horizontal: 22,
                                         vertical: 12,
                                       ),
                                       decoration: ComicTheme.panelDecoration(
@@ -179,40 +179,77 @@ class _SplashIntroOverlayState extends State<SplashIntroOverlay>
                                         borderWidth: 4.5,
                                         shadowOffset: 8,
                                       ),
-                                      child: Column(
+                                      child: Row(
                                         mainAxisSize: MainAxisSize.min,
                                         children: [
+                                          // Creator Janosos Avatar Photo Icon
                                           Container(
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 10,
-                                              vertical: 3,
-                                            ),
+                                            width: 58,
+                                            height: 58,
                                             decoration: BoxDecoration(
-                                              color: ComicTheme.actionRed,
+                                              color: ComicTheme.mangaPanelBg,
                                               borderRadius:
-                                                  BorderRadius.circular(4),
+                                                  BorderRadius.circular(12),
                                               border: Border.all(
                                                 color: ComicTheme.inkBlack,
-                                                width: 2,
+                                                width: 3.5,
                                               ),
+                                              boxShadow: const [
+                                                BoxShadow(
+                                                  color: ComicTheme.inkBlack,
+                                                  offset: Offset(3, 3),
+                                                ),
+                                              ],
                                             ),
-                                            child: Text(
-                                              'CREATOR & DEVELOPER',
-                                              style: ComicTheme.titleText(
-                                                size: 11,
-                                                color: Colors.white,
+                                            child: ClipRRect(
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
+                                              child: Image.asset(
+                                                CartoonAssets.uiJanososAvatar,
+                                                fit: BoxFit.cover,
                                               ),
                                             ),
                                           ),
-                                          const SizedBox(height: 6),
-                                          Text(
-                                            AppLocalizations.tr(
-                                              'developed_by',
-                                            ),
-                                            style: ComicTheme.titleText(
-                                              size: 25,
-                                              color: ComicTheme.inkBlack,
-                                            ),
+                                          const SizedBox(width: 16),
+                                          Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Container(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      horizontal: 8,
+                                                      vertical: 2,
+                                                    ),
+                                                decoration: BoxDecoration(
+                                                  color: ComicTheme.actionRed,
+                                                  borderRadius:
+                                                      BorderRadius.circular(4),
+                                                  border: Border.all(
+                                                    color: ComicTheme.inkBlack,
+                                                    width: 2,
+                                                  ),
+                                                ),
+                                                child: Text(
+                                                  'CREATOR & DEVELOPER',
+                                                  style: ComicTheme.titleText(
+                                                    size: 11,
+                                                    color: Colors.white,
+                                                  ),
+                                                ),
+                                              ),
+                                              const SizedBox(height: 4),
+                                              Text(
+                                                AppLocalizations.tr(
+                                                  'developed_by',
+                                                ),
+                                                style: ComicTheme.titleText(
+                                                  size: 25,
+                                                  color: ComicTheme.inkBlack,
+                                                ),
+                                              ),
+                                            ],
                                           ),
                                         ],
                                       ),
