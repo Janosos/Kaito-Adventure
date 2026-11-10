@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'package:flame/camera.dart';
 import 'package:flame/components.dart';
 import 'package:flame/events.dart';
@@ -28,6 +29,7 @@ class MangaGame extends FlameGame
   int score = 0;
   Vector2 currentSpawnPoint = Vector2(80, 470);
   Component? _currentLevelComponent;
+  bool _hasShownInitialSplash = false;
 
   // World & Arena Bounds (Dynamic per Level!)
   double minPlayerX = 24.0;
@@ -49,14 +51,66 @@ class MangaGame extends FlameGame
   @override
   void onGameResize(Vector2 size) {
     if (size.y > 0 && size.x > 0) {
-      // Adapt camera viewport width to match 16:9, 18:9, 20:9 mobile/tablet screens edge-to-edge!
-      final aspect = (size.x / size.y).clamp(1.33, 2.40);
-      viewportWidth = (540.0 * aspect).roundToDouble();
-      camera.viewport = FixedResolutionViewport(
-        resolution: Vector2(viewportWidth, 540.0),
-      );
+      // Always compute landscape aspect using max/min so transient portrait sizes
+      // during Android Home/Recents transitions never distort or reset the camera!
+      final w = math.max(size.x, size.y);
+      final h = math.min(size.x, size.y);
+      final aspect = (w / h).clamp(1.33, 2.40);
+      final nextWidth = (540.0 * aspect).roundToDouble();
+      if (!isLoaded || (nextWidth - viewportWidth).abs() > 2.0) {
+        viewportWidth = nextWidth;
+        camera.viewport = FixedResolutionViewport(
+          resolution: Vector2(viewportWidth, 540.0),
+        );
+      }
     }
     super.onGameResize(size);
+  }
+
+  @override
+  void lifecycleStateChange(AppLifecycleState state) {
+    super.lifecycleStateChange(state);
+    // Prevent Flame's default lifecycle handler from resetting or unpausing menus!
+    if (state != AppLifecycleState.resumed) {
+      _pressedKeys.clear();
+      if (isLoaded && world.children.contains(player)) {
+        player.touchMoveInput = 0.0;
+        player.keyboardMoveInput = 0.0;
+      }
+      // If the player was in active gameplay, pause safely without losing progress!
+      final inActiveGameplay = overlays.isActive('hud') &&
+          !overlays.isActive('pause') &&
+          !overlays.isActive('settings') &&
+          !overlays.isActive('game_over') &&
+          !overlays.isActive('victory') &&
+          !overlays.isActive('main_menu') &&
+          !overlays.isActive('intro') &&
+          !overlays.isActive('story_intro') &&
+          !overlays.isActive('chapter_select');
+      if (inActiveGameplay) {
+        pauseEngine();
+        _addOverlay('pause');
+      } else {
+        pauseEngine();
+      }
+    } else {
+      // Only resume engine if we are in active gameplay with no modal/menu open
+      final shouldResume = overlays.isActive('hud') &&
+          !overlays.isActive('pause') &&
+          !overlays.isActive('settings') &&
+          !overlays.isActive('game_over') &&
+          !overlays.isActive('victory') &&
+          !overlays.isActive('main_menu') &&
+          !overlays.isActive('intro') &&
+          !overlays.isActive('story_intro') &&
+          !overlays.isActive('chapter_select') &&
+          !AppLocalizations.isEditingHudLayout.value;
+      if (shouldResume) {
+        resumeEngine();
+      } else {
+        pauseEngine();
+      }
+    }
   }
 
   // Cut-in data
@@ -109,6 +163,11 @@ class MangaGame extends FlameGame
 
     // Load Level 1 in the background and pause while Intro / Main Menu is shown
     await loadLevel(1, pauseForMenu: true);
+
+    if (!_hasShownInitialSplash) {
+      _hasShownInitialSplash = true;
+      _addOverlay('intro');
+    }
   }
 
   void _addOverlay(String name) {
@@ -213,6 +272,7 @@ class MangaGame extends FlameGame
   }
 
   void returnToMainMenu() {
+    AppLocalizations.isEditingHudLayout.value = false;
     overlays.remove('pause');
     overlays.remove('settings');
     overlays.remove('story_intro');
@@ -246,8 +306,30 @@ class MangaGame extends FlameGame
     overlays.remove('settings');
   }
 
+  void openHudLayoutEditor() {
+    overlays.remove('settings');
+    pauseEngine();
+    AppLocalizations.showVirtualControls.value = true;
+    AppLocalizations.isEditingHudLayout.value = true;
+    _addOverlay('virtual_controls');
+  }
+
+  void closeHudLayoutEditor() {
+    AppLocalizations.isEditingHudLayout.value = false;
+    AppLocalizations.saveSettings();
+    if (overlays.isActive('main_menu') || overlays.isActive('pause')) {
+      if (!overlays.isActive('hud')) {
+        overlays.remove('virtual_controls');
+      }
+      _addOverlay('settings');
+    } else if (overlays.isActive('hud')) {
+      resumeEngine();
+    }
+  }
+
   void setVirtualControlsEnabled(bool enabled) {
     AppLocalizations.showVirtualControls.value = enabled;
+    AppLocalizations.saveSettings();
     if (overlays.isActive('hud')) {
       if (enabled) {
         _addOverlay('virtual_controls');

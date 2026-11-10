@@ -1,9 +1,88 @@
-import 'package:flutter/foundation.dart';
+import 'dart:convert';
+import 'package:flutter/material.dart';
+import 'local_storage.dart';
 
 enum AppLanguage {
   en, // English (Default)
   es, // Español
   ja, // 日本語 (Japanese)
+}
+
+class HudControlsConfig {
+  final double buttonScale;
+  final double buttonOpacity;
+  final Map<String, Offset> buttonPositions;
+
+  static const Map<String, Offset> defaultPositions = {
+    'slash': Offset(0.91, 0.63),
+    'jump': Offset(0.91, 0.84),
+    'kunai': Offset(0.80, 0.63),
+    'dash': Offset(0.80, 0.84),
+    'ougi': Offset(0.69, 0.84),
+  };
+
+  const HudControlsConfig({
+    this.buttonScale = 1.0,
+    this.buttonOpacity = 0.85,
+    this.buttonPositions = defaultPositions,
+  });
+
+  Offset posFor(String id) {
+    return buttonPositions[id] ??
+        defaultPositions[id] ??
+        const Offset(0.85, 0.75);
+  }
+
+  HudControlsConfig copyWith({
+    double? buttonScale,
+    double? buttonOpacity,
+    Map<String, Offset>? buttonPositions,
+  }) {
+    return HudControlsConfig(
+      buttonScale: (buttonScale ?? this.buttonScale).clamp(0.60, 1.40),
+      buttonOpacity: (buttonOpacity ?? this.buttonOpacity).clamp(0.25, 1.00),
+      buttonPositions: buttonPositions ?? Map<String, Offset>.from(this.buttonPositions),
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    final posMap = <String, dynamic>{};
+    for (final entry in buttonPositions.entries) {
+      posMap[entry.key] = {'x': entry.value.dx, 'y': entry.value.dy};
+    }
+    return {
+      'buttonScale': buttonScale,
+      'buttonOpacity': buttonOpacity,
+      'buttonPositions': posMap,
+    };
+  }
+
+  factory HudControlsConfig.fromJson(Map<String, dynamic> json) {
+    final rawScale = (json['buttonScale'] as num?)?.toDouble() ?? 1.0;
+    final rawOpacity = (json['buttonOpacity'] as num?)?.toDouble() ?? 0.85;
+    final positions = Map<String, Offset>.from(defaultPositions);
+    final rawPos = json['buttonPositions'];
+    if (rawPos is Map) {
+      for (final key in defaultPositions.keys) {
+        final item = rawPos[key];
+        if (item is Map) {
+          final x = (item['x'] as num?)?.toDouble();
+          final y = (item['y'] as num?)?.toDouble();
+          if (x != null && y != null) {
+            positions[key] = Offset(
+              x.clamp(0.06, 0.94),
+              y.clamp(0.12, 0.92),
+            );
+          }
+        }
+      }
+    }
+    return HudControlsConfig(
+      buttonScale: rawScale.clamp(0.60, 1.40),
+      buttonOpacity: rawOpacity.clamp(0.25, 1.00),
+      buttonPositions: positions,
+    );
+  }
 }
 
 class AppLocalizations {
@@ -15,10 +94,84 @@ class AppLocalizations {
   static final ValueNotifier<bool> showVirtualControls =
       ValueNotifier<bool>(true);
 
+  /// Global reactive HUD button customization (position, size, transparency)
+  static final ValueNotifier<HudControlsConfig> hudConfig =
+      ValueNotifier<HudControlsConfig>(const HudControlsConfig());
+
+  /// Whether the interactive HUD button position drag editor is currently active
+  static final ValueNotifier<bool> isEditingHudLayout =
+      ValueNotifier<bool>(false);
+
   static AppLanguage get current => languageNotifier.value;
+
+  static void loadSettings() {
+    try {
+      final raw = LocalStorage.readSettingsJson();
+      if (raw == null || raw.isEmpty) return;
+      final decoded = jsonDecode(raw);
+      if (decoded is! Map<String, dynamic>) return;
+
+      final langStr = decoded['language'] as String?;
+      if (langStr == 'es') {
+        languageNotifier.value = AppLanguage.es;
+      } else if (langStr == 'ja') {
+        languageNotifier.value = AppLanguage.ja;
+      } else {
+        languageNotifier.value = AppLanguage.en;
+      }
+
+      final showTouch = decoded['showVirtualControls'] as bool?;
+      if (showTouch != null) {
+        showVirtualControls.value = showTouch;
+      }
+
+      final hudMap = decoded['hudConfig'];
+      if (hudMap is Map<String, dynamic>) {
+        hudConfig.value = HudControlsConfig.fromJson(hudMap);
+      }
+    } catch (_) {}
+  }
+
+  static void saveSettings() {
+    try {
+      final payload = jsonEncode({
+        'language': languageNotifier.value.name,
+        'showVirtualControls': showVirtualControls.value,
+        'hudConfig': hudConfig.value.toJson(),
+      });
+      LocalStorage.writeSettingsJson(payload);
+    } catch (_) {}
+  }
 
   static void setLanguage(AppLanguage lang) {
     languageNotifier.value = lang;
+    saveSettings();
+  }
+
+  static void updateButtonScale(double scale) {
+    hudConfig.value = hudConfig.value.copyWith(buttonScale: scale);
+    saveSettings();
+  }
+
+  static void updateButtonOpacity(double opacity) {
+    hudConfig.value = hudConfig.value.copyWith(buttonOpacity: opacity);
+    saveSettings();
+  }
+
+  static void updateButtonPosition(String id, Offset normalizedPos) {
+    final nextMap =
+        Map<String, Offset>.from(hudConfig.value.buttonPositions);
+    nextMap[id] = Offset(
+      normalizedPos.dx.clamp(0.06, 0.94),
+      normalizedPos.dy.clamp(0.14, 0.92),
+    );
+    hudConfig.value = hudConfig.value.copyWith(buttonPositions: nextMap);
+    saveSettings();
+  }
+
+  static void resetHudLayout() {
+    hudConfig.value = const HudControlsConfig();
+    saveSettings();
   }
 
   static String tr(String key) {
@@ -57,6 +210,13 @@ class AppLocalizations {
       'lang_es': 'ESPAÑOL (SPANISH)',
       'lang_ja': '日本語 (JAPANESE)',
       'virtual_controls_label': 'ON-SCREEN TOUCH CONTROLS',
+      'hud_custom_title': 'BUTTONS SIZE, OPACITY & POSITION',
+      'btn_size_label': 'BUTTON SIZE',
+      'btn_opacity_label': 'OPACITY / TRANSPARENCY',
+      'btn_edit_positions': 'EDIT BUTTON POSITIONS',
+      'btn_reset_layout': 'RESET DEFAULT',
+      'editor_banner_title': 'DRAG ANY BUTTON TO MOVE IT!',
+      'btn_save_layout': 'SAVE & DONE',
       'enabled': 'ENABLED',
       'disabled': 'DISABLED',
       'btn_close': 'CLOSE',
@@ -176,6 +336,13 @@ class AppLocalizations {
       'lang_es': 'ESPAÑOL (ACTIVO)',
       'lang_ja': '日本語 (JAPONÉS)',
       'virtual_controls_label': 'CONTROLES TÁCTILES EN PANTALLA',
+      'hud_custom_title': 'TAMAÑO, TRANSPARENCIA Y POSICIÓN DE BOTONES',
+      'btn_size_label': 'TAMAÑO DE BOTONES',
+      'btn_opacity_label': 'TRANSPARENCIA / OPACIDAD',
+      'btn_edit_positions': 'EDITAR POSICIÓN DE BOTONES',
+      'btn_reset_layout': 'RESTABLECER',
+      'editor_banner_title': '¡ARRASTRA CUALQUIER BOTÓN PARA MOVERLO!',
+      'btn_save_layout': 'GUARDAR Y SALIR',
       'enabled': 'ACTIVADO',
       'disabled': 'DESACTIVADO',
       'btn_close': 'CERRAR',
@@ -295,6 +462,13 @@ class AppLocalizations {
       'lang_es': 'ESPAÑOL (スペイン語)',
       'lang_ja': '日本語 (現在選択中)',
       'virtual_controls_label': '画面タッチコントロール',
+      'hud_custom_title': 'ボタンのサイズ・透明度・配置',
+      'btn_size_label': 'ボタンサイズ',
+      'btn_opacity_label': '透明度 / 不透明度',
+      'btn_edit_positions': 'ボタン配置を編集',
+      'btn_reset_layout': '初期設定に戻す',
+      'editor_banner_title': 'ボタンをドラッグして好きな位置へ移動！',
+      'btn_save_layout': '保存して完了',
       'enabled': 'オン (ON)',
       'disabled': 'オフ (OFF)',
       'btn_close': '閉じる',
@@ -388,4 +562,3 @@ class AppLocalizations {
     },
   };
 }
-

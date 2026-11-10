@@ -5,6 +5,7 @@ import 'package:manga_platformer/game/components/enemies/enemy_grunt.dart';
 import 'package:manga_platformer/game/components/player.dart';
 import 'package:manga_platformer/game/manga_game.dart';
 import 'package:manga_platformer/main.dart';
+import 'package:manga_platformer/ui/app_localizations.dart';
 import 'package:manga_platformer/ui/chapter_select_overlay.dart';
 import 'package:manga_platformer/ui/comic_hud.dart';
 import 'package:manga_platformer/ui/main_menu_overlay.dart';
@@ -179,6 +180,7 @@ void main() {
       // Move player right next to the first grunt and perform Slash
       final firstGrunt = grunts.first;
       final initialHp = firstGrunt.hp;
+      expect(initialHp, greaterThanOrEqualTo(80.0));
       final initialX = firstGrunt.position.x;
 
       game.player.position =
@@ -202,5 +204,39 @@ void main() {
       expect(game.isBossArenaLocked, isTrue);
       expect(game.activeBoss, isNotNull);
     }
+
+    // Verify local persistence of button size, opacity, and custom positions
+    AppLocalizations.updateButtonScale(1.25);
+    AppLocalizations.updateButtonOpacity(0.65);
+    AppLocalizations.updateButtonPosition('slash', const Offset(0.82, 0.48));
+    AppLocalizations.saveSettings();
+
+    // Reset in-memory and reload from local storage
+    AppLocalizations.hudConfig.value = const HudControlsConfig();
+    AppLocalizations.loadSettings();
+    expect(AppLocalizations.hudConfig.value.buttonScale, closeTo(1.25, 0.01));
+    expect(AppLocalizations.hudConfig.value.buttonOpacity, closeTo(0.65, 0.01));
+    expect(
+      AppLocalizations.hudConfig.value.posFor('slash').dx,
+      closeTo(0.82, 0.01),
+    );
+    AppLocalizations.resetHudLayout();
+
+    // Verify minimizing / app-switching / Home button preserves level, position, score & boss without resetting
+    game.score = 4500;
+    final savedLevel = game.currentLevelIndex;
+    final savedPos = game.player.position.clone();
+    final savedBoss = game.activeBoss;
+
+    // Simulate OS reporting transient portrait dimensions during Home/Recents + lifecycle pause
+    game.onGameResize(Vector2(360, 800));
+    game.lifecycleStateChange(AppLifecycleState.paused);
+    game.onGameResize(Vector2(960, 540));
+    game.lifecycleStateChange(AppLifecycleState.resumed);
+
+    expect(game.currentLevelIndex, equals(savedLevel));
+    expect(game.player.position.x, closeTo(savedPos.x, 0.01));
+    expect(game.score, equals(4500));
+    expect(game.activeBoss, same(savedBoss));
   });
 }

@@ -13,18 +13,20 @@ enum MuzanState {
   idle,
   teleportStrike,
   eclipseSlash,
+  judgmentCutChain,
   astralPillars,
   voidNova,
+  eclipseCounterMirror,
   recovering
 }
 
 class BossMuzanKai extends BossBase {
   MuzanState state = MuzanState.idle;
   double _stateTimer = 0.0;
-  int _facing = -1;
   final Random _rnd = Random();
-  double _actionInterval = 2.0;
+  double _actionInterval = 1.65;
   double _groundY = 0.0;
+  int _chainBlinksRemaining = 0;
   bool _phase2Done = false;
   bool _phase3Done = false;
 
@@ -41,7 +43,7 @@ class BossMuzanKai extends BossBase {
   }) : super(
           name: 'MUZAN-KAI',
           title: 'THE ECLIPSE INK EMPEROR',
-          maxHp: 520.0,
+          maxHp: 800.0,
           size: Vector2(74, 98),
         ) {
     maxPhases = 3;
@@ -96,11 +98,23 @@ class BossMuzanKai extends BossBase {
   }
 
   @override
+  void onCounterTriggered() {
+    super.onCounterTriggered();
+    // Teleport behind Kaito on parry counter!
+    final behind = game.player.facingDirection == 1 ? -68.0 : 68.0;
+    position.x =
+        (game.player.position.x + behind).clamp(arenaMinX, arenaMaxX);
+    facing = game.player.position.x > position.x ? 1 : -1;
+    state = MuzanState.eclipseSlash;
+    _stateTimer = 0.0;
+  }
+
+  @override
   void checkPhaseTransition() {
     if (!_phase2Done && currentHp <= maxHp * 0.66) {
       _phase2Done = true;
       currentPhase = 2;
-      _actionInterval = 1.55;
+      _actionInterval = 1.30;
       game.triggerBossCutIn(
         bossName: 'MUZAN-KAI',
         quote: 'THE BLOOD ECLIPSE OBEYS MY BRUSH! KNEEL, MORTAL!!',
@@ -116,7 +130,7 @@ class BossMuzanKai extends BossBase {
     } else if (!_phase3Done && currentHp <= maxHp * 0.33) {
       _phase3Done = true;
       currentPhase = 3;
-      _actionInterval = 1.15;
+      _actionInterval = 0.95;
       game.triggerBossCutIn(
         bossName: 'MUZAN-KAI',
         quote: 'CELESTIAL INK APOCALYPSE!! BE ERASED FROM THIS MANGA!!',
@@ -145,8 +159,8 @@ class BossMuzanKai extends BossBase {
 
     _stateTimer += dt;
     final player = game.player;
-    if (state == MuzanState.idle) {
-      _facing = player.position.x > position.x ? 1 : -1;
+    if (state == MuzanState.idle || state == MuzanState.eclipseCounterMirror) {
+      facing = player.position.x > position.x ? 1 : -1;
     }
 
     switch (state) {
@@ -156,11 +170,20 @@ class BossMuzanKai extends BossBase {
         }
         break;
 
+      case MuzanState.eclipseCounterMirror:
+        if (_stateTimer >= 0.95) {
+          isCounterStance = false;
+          isGuarding = false;
+          state = MuzanState.voidNova;
+          _stateTimer = 0.0;
+        }
+        break;
+
       case MuzanState.teleportStrike:
-        if (_stateTimer >= 0.35) {
+        if (_stateTimer >= 0.30) {
           final behind = player.facingDirection == 1 ? -70.0 : 70.0;
           position.x = (player.position.x + behind).clamp(arenaMinX, arenaMaxX);
-          _facing = player.position.x > position.x ? 1 : -1;
+          facing = player.position.x > position.x ? 1 : -1;
           game.add(MangaDustEffect(position: position.clone()));
           state = MuzanState.eclipseSlash;
           _stateTimer = 0.0;
@@ -168,48 +191,86 @@ class BossMuzanKai extends BossBase {
         break;
 
       case MuzanState.eclipseSlash:
-        if (_stateTimer >= 0.32) {
+        if (_stateTimer >= 0.28) {
           game.add(SlashArcEffect(
-            position: Vector2(position.x + _facing * 40, position.y - 48),
-            slashFlipped: _facing < 0,
+            position: Vector2(position.x + facing * 40, position.y - 48),
+            slashFlipped: facing < 0,
             slashColor: ComicTheme.actionRed,
-            radius: 72,
+            radius: 74,
           ));
           game.add(BossDarkSlashWave(
-            position: Vector2(position.x + _facing * 32, position.y - 30),
-            velocity: Vector2(_facing * 420.0, 0),
+            position: Vector2(position.x + facing * 32, position.y - 30),
+            velocity: Vector2(facing * 435.0, 0),
           ));
-          if ((player.position.x - position.x).abs() < 90 &&
+          if ((player.position.x - position.x).abs() < 92 &&
               (player.position.y - position.y).abs() < 65) {
             player.takeDamage(1);
           }
-          state = MuzanState.recovering;
+          // In Phase 2/3, chain multi-blink Judgment Cuts!
+          if (_chainBlinksRemaining > 0) {
+            _chainBlinksRemaining--;
+            state = MuzanState.judgmentCutChain;
+            _stateTimer = 0.0;
+          } else {
+            state = MuzanState.recovering;
+            _stateTimer = 0.0;
+          }
+        }
+        break;
+
+      case MuzanState.judgmentCutChain:
+        if (_stateTimer >= 0.26) {
+          final side = (_chainBlinksRemaining % 2 == 0) ? 85.0 : -85.0;
+          position.x = (player.position.x + side).clamp(arenaMinX, arenaMaxX);
+          facing = player.position.x > position.x ? 1 : -1;
+          game.add(MangaDustEffect(position: position.clone()));
+          game.add(MangaTextEffect(
+            position: Vector2(position.x, position.y - size.y),
+            text: 'ECLIPSE FLASH!!',
+            fillColor: ComicTheme.comicYellow,
+          ));
+          state = MuzanState.eclipseSlash;
           _stateTimer = 0.0;
         }
         break;
 
       case MuzanState.astralPillars:
-        if (_stateTimer >= 0.4) {
-          for (final offset in [-150.0, 0.0, 150.0]) {
+        if (_stateTimer >= 0.36) {
+          final offsets = currentPhase >= 2
+              ? [-210.0, -70.0, 70.0, 210.0]
+              : [-150.0, 0.0, 150.0];
+          for (final offset in offsets) {
             game.add(BossFlamePillar(
               position: Vector2(
                 (player.position.x + offset).clamp(arenaMinX, arenaMaxX),
                 _groundY,
               ),
-              eruptDelay: 0.65,
+              eruptDelay: 0.56,
             ));
           }
+          // Simultaneous twin shockwaves!
+          game.add(BossDarkSlashWave(
+            position: Vector2(position.x - 28, _groundY - 26),
+            velocity: Vector2(-390.0, 0),
+          ));
+          game.add(BossDarkSlashWave(
+            position: Vector2(position.x + 28, _groundY - 26),
+            velocity: Vector2(390.0, 0),
+          ));
           state = MuzanState.recovering;
           _stateTimer = 0.0;
         }
         break;
 
       case MuzanState.voidNova:
-        if (_stateTimer >= 0.45) {
-          for (final a in [-0.45, -0.22, 0.0, 0.22, 0.45]) {
+        if (_stateTimer >= 0.38) {
+          final angles = currentPhase >= 2
+              ? [-0.52, -0.34, -0.17, 0.0, 0.17, 0.34, 0.52]
+              : [-0.45, -0.22, 0.0, 0.22, 0.45];
+          for (final a in angles) {
             game.add(BossEnergyOrb(
-              position: Vector2(position.x + _facing * 30, position.y - 54),
-              velocity: Vector2(_facing * cos(a) * 350, sin(a) * 350),
+              position: Vector2(position.x + facing * 30, position.y - 54),
+              velocity: Vector2(facing * cos(a) * 370, sin(a) * 370),
             ));
           }
           state = MuzanState.recovering;
@@ -218,7 +279,7 @@ class BossMuzanKai extends BossBase {
         break;
 
       case MuzanState.recovering:
-        if (_stateTimer >= (currentPhase == 3 ? 0.38 : 0.7)) {
+        if (_stateTimer >= (currentPhase == 3 ? 0.34 : 0.62)) {
           state = MuzanState.idle;
           _stateTimer = 0.0;
         }
@@ -231,27 +292,40 @@ class BossMuzanKai extends BossBase {
   void _decideAction() {
     _stateTimer = 0.0;
     isGuarding = false;
+    isCounterStance = false;
     final r = _rnd.nextDouble();
-    if (r < 0.3) {
+    if (r < 0.28) {
+      _chainBlinksRemaining = currentPhase >= 2 ? 2 : 1;
       state = MuzanState.teleportStrike;
-    } else if (r < 0.55) {
+    } else if (r < 0.48) {
+      _chainBlinksRemaining = 0;
       state = MuzanState.eclipseSlash;
-    } else if (r < 0.8) {
+    } else if (r < 0.68) {
       state = MuzanState.astralPillars;
-    } else {
+    } else if (r < 0.85) {
       state = MuzanState.voidNova;
+    } else {
+      isGuarding = true;
+      isCounterStance = true;
+      state = MuzanState.eclipseCounterMirror;
+      game.add(MangaTextEffect(
+        position: Vector2(position.x, position.y - size.y - 12),
+        text: 'ECLIPSE MIRROR! (DASH BEHIND!)',
+        fillColor: ComicTheme.actionRed,
+      ));
     }
   }
 
   SpriteAnimationTicker get _activeTicker {
     if (isStunned) return _stunTicker;
-    if (isGuarding) return _guardTicker;
+    if (isGuarding || isCounterStance) return _guardTicker;
     switch (state) {
       case MuzanState.eclipseSlash:
         return _slashTicker;
       case MuzanState.astralPillars:
       case MuzanState.voidNova:
       case MuzanState.teleportStrike:
+      case MuzanState.judgmentCutChain:
         return _castTicker;
       default:
         return _idleTicker;
@@ -267,7 +341,7 @@ class BossMuzanKai extends BossBase {
 
     canvas.save();
     canvas.translate(size.x / 2, size.y + 6);
-    if (_facing < 0) {
+    if (facing < 0) {
       canvas.scale(-1, 1);
     }
 
@@ -286,4 +360,3 @@ class BossMuzanKai extends BossBase {
     canvas.restore();
   }
 }
-

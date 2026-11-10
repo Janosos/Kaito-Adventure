@@ -13,8 +13,8 @@ class EnemyDrone extends PositionComponent
     with CollisionCallbacks, HasGameReference<MangaGame> {
   final double flyRange;
   final double flySpeed;
-  double hp = 30.0;
-  final double maxHp = 30.0;
+  double hp = 70.0;
+  final double maxHp = 70.0;
 
   Vector2 _basePos = Vector2.zero();
   double _timer = 0.0;

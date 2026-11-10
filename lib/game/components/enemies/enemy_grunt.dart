@@ -15,8 +15,8 @@ class EnemyGrunt extends PositionComponent
   final double speed;
   final double? minXBound;
   final double? maxXBound;
-  double maxHp = 40.0;
-  double hp = 40.0;
+  double maxHp = 80.0;
+  double hp = 80.0;
 
   double _startX = 0.0;
   double _minX = 0.0;
@@ -39,12 +39,13 @@ class EnemyGrunt extends PositionComponent
     this.speed = 65.0,
     this.minXBound,
     this.maxXBound,
-    this.maxHp = 40.0,
+    this.maxHp = 80.0,
   }) : super(
           position: position,
           size: Vector2(34, 46),
           anchor: Anchor.bottomCenter,
         ) {
+    maxHp = maxHp < 80.0 ? (maxHp * 1.65).clamp(80.0, 220.0) : maxHp;
     hp = maxHp;
     priority = 700;
   }

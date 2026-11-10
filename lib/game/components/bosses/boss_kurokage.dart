@@ -13,18 +13,21 @@ enum KurokageState {
   idle,
   charging,
   cleaving,
+  crossDashSlash,
+  aerialDivePrep,
+  aerialDivePlunge,
   shockwave,
   teleporting,
+  counterStance,
   recovering
 }
 
 class BossKurokage extends BossBase {
   KurokageState state = KurokageState.idle;
   double _stateTimer = 0.0;
-  int _facing = -1; // -1 = facing left, 1 = facing right
   final Random _rnd = Random();
-
-  double _actionInterval = 2.4;
+  double _groundY = 0.0;
+  double _actionInterval = 2.0;
 
   late final SpriteAnimationTicker _idleTicker;
   late final SpriteAnimationTicker _chargeTicker;
@@ -39,10 +42,11 @@ class BossKurokage extends BossBase {
   }) : super(
           name: 'KUROKAGE',
           title: 'THE SHADOW EXECUTIONER',
-          maxHp: 240.0,
+          maxHp: 380.0,
           size: Vector2(58, 76),
         ) {
     maxPhases = 2;
+    _groundY = position.y;
   }
 
   @override
@@ -97,7 +101,7 @@ class BossKurokage extends BossBase {
   void checkPhaseTransition() {
     if (currentPhase == 1 && currentHp <= maxHp * 0.5) {
       currentPhase = 2;
-      _actionInterval = 1.7;
+      _actionInterval = 1.35;
       game.triggerBossCutIn(
         bossName: 'KUROKAGE',
         quote: 'FOOL! THE TRUE SHADOW CONSUMES ALL!!',
@@ -106,7 +110,7 @@ class BossKurokage extends BossBase {
       );
       game.add(MangaTextEffect(
         position: Vector2(position.x, position.y - size.y - 30),
-        text: 'PHASE 2: ENRAGED!!',
+        text: 'PHASE 2: SHADOW MIRAGE!!',
         fillColor: ComicTheme.actionRed,
         targetScale: 1.8,
       ));
@@ -119,6 +123,7 @@ class BossKurokage extends BossBase {
     if (isDefeated) return;
 
     if (isStunned) {
+      position.y = _groundY;
       state = KurokageState.recovering;
       _stunTicker.update(dt);
       return;
@@ -127,8 +132,8 @@ class BossKurokage extends BossBase {
     _stateTimer += dt;
     final player = game.player;
 
-    if (state == KurokageState.idle) {
-      _facing = player.position.x > position.x ? 1 : -1;
+    if (state == KurokageState.idle || state == KurokageState.counterStance) {
+      facing = player.position.x > position.x ? 1 : -1;
     }
 
     switch (state) {
@@ -138,16 +143,26 @@ class BossKurokage extends BossBase {
         }
         break;
 
+      case KurokageState.counterStance:
+        if (_stateTimer >= 1.05) {
+          isCounterStance = false;
+          isGuarding = false;
+          state = KurokageState.shockwave;
+          _chargeTicker.reset();
+          _stateTimer = 0.0;
+        }
+        break;
+
       case KurokageState.teleporting:
-        if (_stateTimer >= 0.4) {
-          final behindOffset = player.facingDirection == 1 ? -65.0 : 65.0;
+        if (_stateTimer >= 0.34) {
+          final behindOffset = player.facingDirection == 1 ? -68.0 : 68.0;
           position.x =
               (player.position.x + behindOffset).clamp(arenaMinX, arenaMaxX);
-          _facing = player.position.x > position.x ? 1 : -1;
+          facing = player.position.x > position.x ? 1 : -1;
 
           game.add(MangaTextEffect(
             position: position.clone(),
-            text: 'SHING!',
+            text: 'SHADOW BLINK!',
             fillColor: ComicTheme.energyCyan,
           ));
           game.add(MangaDustEffect(position: position.clone()));
@@ -159,28 +174,96 @@ class BossKurokage extends BossBase {
         break;
 
       case KurokageState.charging:
-        if (_stateTimer >= (currentPhase == 2 ? 0.35 : 0.6)) {
+        if (_stateTimer >= (currentPhase == 2 ? 0.32 : 0.50)) {
           _executeCleave();
         }
         break;
 
       case KurokageState.cleaving:
-        if (_stateTimer >= 0.45) {
-          state = KurokageState.recovering;
-          _stateTimer = 0.0;
+        if (_stateTimer >= 0.36) {
+          // In Phase 2, chain a cross-up shadow dash right after cleaving!
+          if (currentPhase == 2 && _rnd.nextDouble() < 0.65) {
+            state = KurokageState.crossDashSlash;
+            facing = player.position.x > position.x ? 1 : -1;
+            _stateTimer = 0.0;
+            game.add(MangaTextEffect(
+              position: Vector2(position.x, position.y - size.y),
+              text: 'DOUBLE SHADOW CROSS!!',
+              fillColor: ComicTheme.comicYellow,
+            ));
+          } else {
+            state = KurokageState.recovering;
+            _stateTimer = 0.0;
+          }
         }
         break;
 
-      case KurokageState.shockwave:
-        if (_stateTimer >= 0.35) {
+      case KurokageState.crossDashSlash:
+        position.x = (position.x + facing * 540.0 * dt)
+            .clamp(arenaMinX, arenaMaxX);
+        if ((player.position.x - position.x).abs() < 48 &&
+            (player.position.y - position.y).abs() < 55) {
+          player.takeDamage(1);
+        }
+        if (_stateTimer >= 0.34) {
           _fireShockwave();
           state = KurokageState.recovering;
           _stateTimer = 0.0;
         }
         break;
 
+      case KurokageState.aerialDivePrep:
+        position.y = (_groundY - 165.0 * (_stateTimer / 0.38).clamp(0.0, 1.0));
+        position.x +=
+            ((player.position.x - position.x).clamp(-220.0, 220.0)) * dt * 2.4;
+        position.x = position.x.clamp(arenaMinX, arenaMaxX);
+        if (_stateTimer >= 0.42) {
+          state = KurokageState.aerialDivePlunge;
+          _stateTimer = 0.0;
+          game.add(MangaTextEffect(
+            position: Vector2(position.x, position.y - 30),
+            text: 'GUILLOTINE DROP!!',
+            fillColor: ComicTheme.actionRed,
+          ));
+        }
+        break;
+
+      case KurokageState.aerialDivePlunge:
+        position.y += 720.0 * dt;
+        if (position.y >= _groundY) {
+          position.y = _groundY;
+          game.add(MangaDustEffect(position: position.clone()));
+          // Twin left & right ground shockwaves on impact!
+          game.add(BossDarkSlashWave(
+            position: Vector2(position.x - 24, _groundY - 26),
+            velocity: Vector2(-380.0, 0),
+          ));
+          game.add(BossDarkSlashWave(
+            position: Vector2(position.x + 24, _groundY - 26),
+            velocity: Vector2(380.0, 0),
+          ));
+          state = KurokageState.recovering;
+          _stateTimer = 0.0;
+        }
+        break;
+
+      case KurokageState.shockwave:
+        if (_stateTimer >= 0.32) {
+          _fireShockwave();
+          if (currentPhase == 2) {
+            // Second high-arcing orb in Phase 2 so player must time their jump
+            game.add(BossEnergyOrb(
+              position: Vector2(position.x + facing * 30, position.y - 68),
+              velocity: Vector2(facing * 320.0, -35.0),
+            ));
+          }
+          state = KurokageState.recovering;
+          _stateTimer = 0.0;
+        }
+        break;
+
       case KurokageState.recovering:
-        if (_stateTimer >= (currentPhase == 2 ? 0.4 : 0.8)) {
+        if (_stateTimer >= (currentPhase == 2 ? 0.38 : 0.72)) {
           state = KurokageState.idle;
           _stateTimer = 0.0;
         }
@@ -192,12 +275,15 @@ class BossKurokage extends BossBase {
 
   SpriteAnimationTicker get _activeTicker {
     if (isStunned) return _stunTicker;
-    if (isGuarding) return _guardTicker;
+    if (isGuarding || isCounterStance) return _guardTicker;
     switch (state) {
       case KurokageState.charging:
       case KurokageState.shockwave:
+      case KurokageState.aerialDivePrep:
         return _chargeTicker;
       case KurokageState.cleaving:
+      case KurokageState.crossDashSlash:
+      case KurokageState.aerialDivePlunge:
         return _cleaveTicker;
       default:
         return _idleTicker;
@@ -206,12 +292,18 @@ class BossKurokage extends BossBase {
 
   void _decideNextAction() {
     _stateTimer = 0.0;
+    isGuarding = false;
+    isCounterStance = false;
 
     final player = game.player;
     final dist = (player.position.x - position.x).abs();
+    final r = _rnd.nextDouble();
 
-    if (dist > 180 || _rnd.nextDouble() < 0.4) {
-      if (_rnd.nextBool()) {
+    if (dist > 175 || r < 0.35) {
+      if (r < 0.18) {
+        state = KurokageState.aerialDivePrep;
+        game.add(MangaDustEffect(position: position.clone()));
+      } else if (_rnd.nextBool()) {
         state = KurokageState.teleporting;
         game.add(MangaDustEffect(position: position.clone()));
       } else {
@@ -219,18 +311,19 @@ class BossKurokage extends BossBase {
         _chargeTicker.reset();
       }
     } else {
-      if (_rnd.nextDouble() < 0.35 && currentPhase == 1) {
+      if (r < 0.28) {
+        isCounterStance = true;
         isGuarding = true;
-        state = KurokageState.idle;
-        _actionInterval = 1.2;
+        state = KurokageState.counterStance;
         game.add(MangaTextEffect(
           position: Vector2(position.x, position.y - size.y - 10),
-          text: 'DEFENSE STANCE!',
+          text: 'SHADOW PARRY! (DASH BEHIND!)',
           fillColor: ComicTheme.comicYellow,
           initialScale: 0.6,
         ));
+      } else if (r < 0.55) {
+        state = KurokageState.aerialDivePrep;
       } else {
-        isGuarding = false;
         state = KurokageState.charging;
         _chargeTicker.reset();
       }
@@ -243,14 +336,14 @@ class BossKurokage extends BossBase {
     _stateTimer = 0.0;
 
     game.add(SlashArcEffect(
-      position: Vector2(position.x + _facing * 35, position.y - size.y * 0.5),
-      slashFlipped: _facing < 0,
-      radius: 65,
+      position: Vector2(position.x + facing * 35, position.y - size.y * 0.5),
+      slashFlipped: facing < 0,
+      radius: 68,
       slashColor: ComicTheme.darkPurple,
     ));
 
     game.add(MangaTextEffect(
-      position: Vector2(position.x + _facing * 40, position.y - size.y * 0.7),
+      position: Vector2(position.x + facing * 40, position.y - size.y * 0.7),
       text: 'ZUBATTO!!',
       fillColor: ComicTheme.actionRed,
       targetScale: 1.5,
@@ -258,9 +351,9 @@ class BossKurokage extends BossBase {
 
     final player = game.player;
     final dx = player.position.x - position.x;
-    final inFront = (_facing > 0 && dx > 0) || (_facing < 0 && dx < 0);
+    final inFront = (facing > 0 && dx > 0) || (facing < 0 && dx < 0);
     if (inFront &&
-        dx.abs() < 90 &&
+        dx.abs() < 92 &&
         (player.position.y - position.y).abs() < 60) {
       player.takeDamage(1);
     }
@@ -268,8 +361,8 @@ class BossKurokage extends BossBase {
 
   void _fireShockwave() {
     game.add(BossDarkSlashWave(
-      position: Vector2(position.x + _facing * 25, position.y - 26),
-      velocity: Vector2(_facing * 360.0, 0),
+      position: Vector2(position.x + facing * 25, position.y - 26),
+      velocity: Vector2(facing * 390.0, 0),
     ));
 
     game.add(MangaTextEffect(
@@ -289,7 +382,7 @@ class BossKurokage extends BossBase {
 
     canvas.save();
     canvas.translate(size.x / 2, size.y + 6);
-    if (_facing < 0) {
+    if (facing < 0) {
       canvas.scale(-1, 1);
     }
 

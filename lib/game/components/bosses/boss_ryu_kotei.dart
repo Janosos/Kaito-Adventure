@@ -13,21 +13,23 @@ enum RyuState {
   idle,
   chargingDash,
   dashing,
+  reboundDash,
   leaping,
   stomping,
   firingPillars,
   laserOverdrive,
+  dragonGuard,
   recovering
 }
 
 class BossRyuKotei extends BossBase {
   RyuState state = RyuState.idle;
   double _stateTimer = 0.0;
-  int _facing = -1;
   final Random _rnd = Random();
 
-  double _actionInterval = 2.5;
+  double _actionInterval = 2.0;
   double _stompY = 0.0;
+  double _dashTrailTimer = 0.0;
   bool _phase2Triggered = false;
   bool _phase3Triggered = false;
 
@@ -44,7 +46,7 @@ class BossRyuKotei extends BossBase {
   }) : super(
           name: 'RYU-KOTEI',
           title: 'THE DRAGON SHOGUN',
-          maxHp: 340.0,
+          maxHp: 520.0,
           position: position,
           size: Vector2(74, 96),
         ) {
@@ -104,7 +106,7 @@ class BossRyuKotei extends BossBase {
     if (!_phase2Triggered && currentHp <= maxHp * 0.66) {
       _phase2Triggered = true;
       currentPhase = 2;
-      _actionInterval = 2.0;
+      _actionInterval = 1.55;
       game.triggerBossCutIn(
         bossName: 'RYU-KOTEI',
         quote: 'IGNITE THE CRUCIBLE! NONE ESCAPE MY DRAGON FORGE!!',
@@ -120,7 +122,7 @@ class BossRyuKotei extends BossBase {
     } else if (!_phase3Triggered && currentHp <= maxHp * 0.33) {
       _phase3Triggered = true;
       currentPhase = 3;
-      _actionInterval = 1.4;
+      _actionInterval = 1.15;
       game.triggerBossCutIn(
         bossName: 'RYU-KOTEI',
         quote: 'DRAGON OVERDRIVE!! ASHES TO ASHES!!',
@@ -142,6 +144,7 @@ class BossRyuKotei extends BossBase {
     if (isDefeated) return;
 
     if (isStunned) {
+      position.y = _stompY;
       state = RyuState.recovering;
       _stunTicker.update(dt);
       return;
@@ -150,8 +153,8 @@ class BossRyuKotei extends BossBase {
     _stateTimer += dt;
     final player = game.player;
 
-    if (state == RyuState.idle) {
-      _facing = player.position.x > position.x ? 1 : -1;
+    if (state == RyuState.idle || state == RyuState.dragonGuard) {
+      facing = player.position.x > position.x ? 1 : -1;
     }
 
     switch (state) {
@@ -161,43 +164,90 @@ class BossRyuKotei extends BossBase {
         }
         break;
 
+      case RyuState.dragonGuard:
+        if (_stateTimer >= 1.0) {
+          isGuarding = false;
+          isCounterStance = false;
+          state = RyuState.firingPillars;
+          _stateTimer = 0.0;
+        }
+        break;
+
       case RyuState.chargingDash:
-        if (_stateTimer >= 0.5) {
+        if (_stateTimer >= 0.42) {
           state = RyuState.dashing;
           _stateTimer = 0.0;
+          _dashTrailTimer = 0.0;
           game.add(MangaTextEffect(
             position: position.clone(),
-            text: 'DODODO!!',
+            text: 'DRAGON CHARGE!!',
             fillColor: ComicTheme.actionRed,
           ));
         }
         break;
 
       case RyuState.dashing:
-        position.x += _facing * 520.0 * dt;
+        position.x += facing * 550.0 * dt;
+        _dashTrailTimer += dt;
+        // Leave erupting magma pillars in his wake during Phase 2 & 3!
+        if (currentPhase >= 2 && _dashTrailTimer >= 0.18) {
+          _dashTrailTimer = 0.0;
+          game.add(BossFlamePillar(
+            position: Vector2(position.x, _stompY),
+            eruptDelay: 0.55,
+          ));
+        }
         final dist = (player.position.x - position.x).abs();
-        if (dist < 50 && (player.position.y - position.y).abs() < 50) {
+        if (dist < 52 && (player.position.y - position.y).abs() < 52) {
           player.takeDamage(1);
         }
-        if (_stateTimer >= 0.45 ||
-            position.x < arenaMinX ||
-            position.x > arenaMaxX) {
+        if (_stateTimer >= 0.44 ||
+            position.x <= arenaMinX ||
+            position.x >= arenaMaxX) {
           position.x = position.x.clamp(arenaMinX, arenaMaxX);
+          if (currentPhase >= 2 && _rnd.nextDouble() < 0.65) {
+            // Rebound off the arena edge for a second reverse dash!
+            facing = player.position.x > position.x ? 1 : -1;
+            state = RyuState.reboundDash;
+            _stateTimer = 0.0;
+            game.add(MangaTextEffect(
+              position: Vector2(position.x, position.y - size.y),
+              text: 'REBOUND RUSH!!',
+              fillColor: ComicTheme.comicYellow,
+            ));
+          } else {
+            state = RyuState.recovering;
+            _stateTimer = 0.0;
+          }
+        }
+        break;
+
+      case RyuState.reboundDash:
+        position.x = (position.x + facing * 580.0 * dt)
+            .clamp(arenaMinX, arenaMaxX);
+        if ((player.position.x - position.x).abs() < 52 &&
+            (player.position.y - position.y).abs() < 52) {
+          player.takeDamage(1);
+        }
+        if (_stateTimer >= 0.36) {
           state = RyuState.recovering;
           _stateTimer = 0.0;
         }
         break;
 
       case RyuState.leaping:
-        position.y -= 300.0 * dt;
-        if (_stateTimer >= 0.4) {
+        position.y -= 340.0 * dt;
+        position.x +=
+            ((player.position.x - position.x).clamp(-200.0, 200.0)) * dt * 2.0;
+        position.x = position.x.clamp(arenaMinX, arenaMaxX);
+        if (_stateTimer >= 0.40) {
           state = RyuState.stomping;
           _stateTimer = 0.0;
         }
         break;
 
       case RyuState.stomping:
-        position.y += 650.0 * dt;
+        position.y += 690.0 * dt;
         if (position.y >= _stompY) {
           position.y = _stompY;
           _triggerGroundTremor();
@@ -207,7 +257,7 @@ class BossRyuKotei extends BossBase {
         break;
 
       case RyuState.firingPillars:
-        if (_stateTimer >= 0.4) {
+        if (_stateTimer >= 0.36) {
           _spawnFlameVents();
           state = RyuState.recovering;
           _stateTimer = 0.0;
@@ -215,7 +265,7 @@ class BossRyuKotei extends BossBase {
         break;
 
       case RyuState.laserOverdrive:
-        if (_stateTimer >= 0.7) {
+        if (_stateTimer >= 0.52) {
           _fireEnergySpread();
           state = RyuState.recovering;
           _stateTimer = 0.0;
@@ -223,7 +273,7 @@ class BossRyuKotei extends BossBase {
         break;
 
       case RyuState.recovering:
-        if (_stateTimer >= (currentPhase == 3 ? 0.4 : 0.8)) {
+        if (_stateTimer >= (currentPhase == 3 ? 0.36 : 0.68)) {
           state = RyuState.idle;
           _stateTimer = 0.0;
         }
@@ -238,12 +288,14 @@ class BossRyuKotei extends BossBase {
     switch (state) {
       case RyuState.chargingDash:
       case RyuState.dashing:
+      case RyuState.reboundDash:
         return _dashTicker;
       case RyuState.leaping:
       case RyuState.stomping:
         return _stompTicker;
       case RyuState.firingPillars:
       case RyuState.laserOverdrive:
+      case RyuState.dragonGuard:
         return _castTicker;
       default:
         return _idleTicker;
@@ -252,29 +304,44 @@ class BossRyuKotei extends BossBase {
 
   void _decideNextAction() {
     _stateTimer = 0.0;
+    isGuarding = false;
+    isCounterStance = false;
     final r = _rnd.nextDouble();
 
     if (currentPhase == 1) {
-      if (r < 0.5) {
+      if (r < 0.38) {
         state = RyuState.chargingDash;
-      } else {
+      } else if (r < 0.72) {
         state = RyuState.leaping;
+      } else {
+        state = RyuState.firingPillars;
       }
     } else if (currentPhase == 2) {
-      if (r < 0.35) {
+      if (r < 0.22) {
+        isGuarding = true;
+        isCounterStance = true;
+        state = RyuState.dragonGuard;
+        game.add(MangaTextEffect(
+          position: Vector2(position.x, position.y - size.y - 10),
+          text: 'DRAGON AEGIS! (BACKSTAB!)',
+          fillColor: ComicTheme.comicYellow,
+        ));
+      } else if (r < 0.48) {
         state = RyuState.firingPillars;
-      } else if (r < 0.7) {
+      } else if (r < 0.76) {
         state = RyuState.chargingDash;
       } else {
         state = RyuState.leaping;
       }
     } else {
-      if (r < 0.4) {
+      if (r < 0.36) {
         state = RyuState.laserOverdrive;
-      } else if (r < 0.7) {
+      } else if (r < 0.65) {
         state = RyuState.firingPillars;
-      } else {
+      } else if (r < 0.85) {
         state = RyuState.chargingDash;
+      } else {
+        state = RyuState.leaping;
       }
     }
   }
@@ -290,25 +357,36 @@ class BossRyuKotei extends BossBase {
 
     game.add(BossDarkSlashWave(
       position: Vector2(position.x - 30, position.y - 20),
-      velocity: Vector2(-380, 0),
+      velocity: Vector2(-410, 0),
     ));
     game.add(BossDarkSlashWave(
       position: Vector2(position.x + 30, position.y - 20),
-      velocity: Vector2(380, 0),
+      velocity: Vector2(410, 0),
+    ));
+    // Also erupt a flame pillar at Kaito's position on stomp!
+    game.add(BossFlamePillar(
+      position: Vector2(
+        game.player.position.x.clamp(arenaMinX, arenaMaxX),
+        _stompY,
+      ),
+      eruptDelay: 0.60,
     ));
   }
 
   void _spawnFlameVents() {
     final player = game.player;
-    game.add(BossFlamePillar(
-      position: Vector2(player.position.x, _stompY),
-    ));
-    game.add(BossFlamePillar(
-      position: Vector2(player.position.x - 140, _stompY),
-    ));
-    game.add(BossFlamePillar(
-      position: Vector2(player.position.x + 140, _stompY),
-    ));
+    final offsets = currentPhase >= 2
+        ? [-180.0, -60.0, 60.0, 180.0]
+        : [-130.0, 0.0, 130.0];
+    for (final off in offsets) {
+      game.add(BossFlamePillar(
+        position: Vector2(
+          (player.position.x + off).clamp(arenaMinX, arenaMaxX),
+          _stompY,
+        ),
+        eruptDelay: 0.62,
+      ));
+    }
   }
 
   void _fireEnergySpread() {
@@ -318,16 +396,21 @@ class BossRyuKotei extends BossBase {
       fillColor: ComicTheme.energyCyan,
     ));
 
-    final angles = [-0.35, 0.0, 0.35];
+    final angles = [-0.42, -0.20, 0.0, 0.20, 0.42];
     for (final a in angles) {
-      final vx = _facing * cos(a) * 320.0;
-      final vy = sin(a) * 320.0;
+      final vx = facing * cos(a) * 350.0;
+      final vy = sin(a) * 350.0;
       game.add(BossEnergyOrb(
         position:
-            Vector2(position.x + _facing * 35, position.y - size.y * 0.5),
+            Vector2(position.x + facing * 35, position.y - size.y * 0.5),
         velocity: Vector2(vx, vy),
       ));
     }
+    // Simultaneous ground wave!
+    game.add(BossDarkSlashWave(
+      position: Vector2(position.x + facing * 30, _stompY - 24),
+      velocity: Vector2(facing * 390.0, 0),
+    ));
   }
 
   @override
@@ -340,7 +423,7 @@ class BossRyuKotei extends BossBase {
 
     canvas.save();
     canvas.translate(size.x / 2, size.y + 6);
-    if (_facing < 0) {
+    if (facing < 0) {
       canvas.scale(-1, 1);
     }
 
@@ -352,7 +435,6 @@ class BossRyuKotei extends BossBase {
           BlendMode.srcATop,
         );
     } else if (currentPhase == 3) {
-      // Phase 3 Overdrive Golden-Crimson Aura Tint
       overridePaint = Paint()
         ..colorFilter = ColorFilter.mode(
           ComicTheme.actionRed.withValues(alpha: 0.22),

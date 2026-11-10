@@ -31,12 +31,13 @@ class EnemyOniArcher extends PositionComponent
   EnemyOniArcher({
     required Vector2 position,
     this.patrolRange = 45.0,
-    this.maxHp = 55.0,
+    this.maxHp = 105.0,
   }) : super(
           position: position,
           size: Vector2(36, 50),
           anchor: Anchor.bottomCenter,
         ) {
+    maxHp = maxHp < 105.0 ? (maxHp * 1.65).clamp(105.0, 250.0) : maxHp;
     hp = maxHp;
     priority = 705;
   }
