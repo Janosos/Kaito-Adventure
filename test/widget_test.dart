@@ -105,6 +105,19 @@ void main() {
     await tester.pump(const Duration(milliseconds: 200));
     expect(tester.takeException(), isNull);
 
+    // 5. Verify floating joystick only appears on left-side touch and disappears on release
+    expect(game.player.moveInput, equals(0.0));
+    final TestGesture gesture =
+        await tester.startGesture(const Offset(140, 250));
+    await tester.pump();
+    await gesture.moveBy(const Offset(55, 0));
+    await tester.pump();
+    expect(game.player.moveInput, greaterThan(0.8));
+    await gesture.up();
+    await tester.pump();
+    expect(game.player.moveInput, equals(0.0));
+    expect(tester.takeException(), isNull);
+
     // Unmount repeating tickers cleanly
     await tester.pumpWidget(const SizedBox.shrink());
   });

@@ -45,10 +45,10 @@ class _ComicHudState extends State<ComicHud>
     final player = game.player;
     final boss = game.activeBoss;
     final screenSize = MediaQuery.of(context).size;
-    final double uiScale = (screenSize.height / 500.0).clamp(0.64, 1.0);
+    final double uiScale = (screenSize.height / 540.0).clamp(0.58, 0.94);
     final bool isCompact = screenSize.height < 440;
-    final double edgePad = isCompact ? 8.0 : 14.0;
-    final double topPad = isCompact ? 6.0 : 12.0;
+    final double edgePad = isCompact ? 6.0 : 12.0;
+    final double topPad = isCompact ? 4.0 : 10.0;
 
     return SafeArea(
       child: Stack(
@@ -128,9 +128,9 @@ class _ComicHudState extends State<ComicHud>
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       decoration: ComicTheme.comicPanelDecoration(
-        backgroundColor: ComicTheme.paperWhite,
-        borderWidth: 3,
-        shadowOffset: 4,
+        backgroundColor: ComicTheme.paperWhite.withValues(alpha: 0.86),
+        borderWidth: 2.5,
+        shadowOffset: 3,
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -319,9 +319,9 @@ class _ComicHudState extends State<ComicHud>
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: ComicTheme.comicPanelDecoration(
-        backgroundColor: ComicTheme.paperWhite,
-        borderWidth: 3,
-        shadowOffset: 4,
+        backgroundColor: ComicTheme.paperWhite.withValues(alpha: 0.86),
+        borderWidth: 2.5,
+        shadowOffset: 3,
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -467,10 +467,10 @@ class _ComicHudState extends State<ComicHud>
       width: 390,
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: ComicTheme.comicPanelDecoration(
-        backgroundColor: ComicTheme.paperWhite,
+        backgroundColor: ComicTheme.paperWhite.withValues(alpha: 0.86),
         borderColor: ComicTheme.inkBlack,
-        borderWidth: 3,
-        shadowOffset: 4,
+        borderWidth: 2.5,
+        shadowOffset: 3,
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
