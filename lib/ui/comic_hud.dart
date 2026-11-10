@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../game/cartoon_assets.dart';
 import '../game/manga_game.dart';
+import 'app_localizations.dart';
 import 'comic_theme.dart';
 
 class ComicHud extends StatefulWidget {
@@ -14,6 +15,7 @@ class ComicHud extends StatefulWidget {
 class _ComicHudState extends State<ComicHud>
     with SingleTickerProviderStateMixin {
   late final AnimationController _ticker;
+  int _lastTickMs = 0;
 
   @override
   void initState() {
@@ -22,7 +24,12 @@ class _ComicHudState extends State<ComicHud>
         AnimationController(vsync: this, duration: const Duration(seconds: 1))
           ..repeat();
     _ticker.addListener(() {
-      setState(() {});
+      // Throttle HUD widget rebuilds to ~20 FPS for smooth Mali/Adreno/Web performance
+      final now = DateTime.now().millisecondsSinceEpoch;
+      if (now - _lastTickMs >= 50) {
+        _lastTickMs = now;
+        if (mounted) setState(() {});
+      }
     });
   }
 
@@ -47,6 +54,15 @@ class _ComicHudState extends State<ComicHud>
             left: 16,
             child: _buildPlayerStatusCard(player),
           ),
+
+          // Top Center: Stage Progression Bar toward the Final Boss Arena
+          if (boss == null)
+            Positioned(
+              top: 42,
+              left: 260,
+              right: 260,
+              child: _buildStageProgressBar(game),
+            ),
 
           // Top Right: Chapter & Score Card + Pause Button
           Positioned(
@@ -88,6 +104,9 @@ class _ComicHudState extends State<ComicHud>
     final maxHp = player.maxHp as int;
     final spirit = (player.spirit as double).clamp(0.0, 100.0);
     final isUltReady = spirit >= 100.0;
+    final kunaiCd = (player.kunaiCooldown as double).clamp(0.0, 5.0);
+    final kunaiReady = kunaiCd <= 0.01;
+    final kunaiRatio = ((5.0 - kunaiCd) / 5.0).clamp(0.0, 1.0);
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
@@ -177,7 +196,7 @@ class _ComicHudState extends State<ComicHud>
                   ),
                   const SizedBox(width: 4),
                   Text(
-                    'OUGI: ',
+                    AppLocalizations.tr('hud_spirit'),
                     style: ComicTheme.mangaHeader(
                         fontSize: 12, color: ComicTheme.inkBlack),
                   ),
@@ -206,13 +225,70 @@ class _ComicHudState extends State<ComicHud>
                   if (isUltReady) ...[
                     const SizedBox(width: 4),
                     Text(
-                      'MAX!!',
+                      AppLocalizations.tr('hud_ougi_ready'),
                       style: ComicTheme.comicTitle(
-                        fontSize: 13,
+                        fontSize: 12,
                         color: ComicTheme.actionRed,
                       ),
                     ),
                   ]
+                ],
+              ),
+              const SizedBox(height: 3),
+
+              // Kunai 5-Second Cooldown Gauge
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Image.asset(
+                    CartoonAssets.uiSkillKunai,
+                    width: 16,
+                    height: 16,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    AppLocalizations.tr('hud_kunai'),
+                    style: ComicTheme.mangaHeader(
+                      fontSize: 11,
+                      color: ComicTheme.inkBlack,
+                    ),
+                  ),
+                  Container(
+                    width: 68,
+                    height: 9,
+                    decoration: BoxDecoration(
+                      color: ComicTheme.halftoneGray,
+                      borderRadius: BorderRadius.circular(3),
+                      border: Border.all(
+                        color: ComicTheme.inkBlack,
+                        width: 1.5,
+                      ),
+                    ),
+                    child: FractionallySizedBox(
+                      alignment: Alignment.centerLeft,
+                      widthFactor: kunaiRatio,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: kunaiReady
+                              ? Colors.greenAccent.shade400
+                              : Colors.orangeAccent,
+                          borderRadius: BorderRadius.circular(1.5),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 5),
+                  Text(
+                    kunaiReady
+                        ? AppLocalizations.tr('hud_kunai_ready')
+                        : '${kunaiCd.toStringAsFixed(1)}s',
+                    style: ComicTheme.mangaHeader(
+                      fontSize: 11,
+                      color: kunaiReady
+                          ? Colors.green.shade800
+                          : ComicTheme.actionRed,
+                    ),
+                  ),
                 ],
               ),
             ],
@@ -244,12 +320,12 @@ class _ComicHudState extends State<ComicHud>
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                'CHAPTER ${game.currentLevelIndex}',
+                '${AppLocalizations.tr('hud_stage_progress')}${game.currentLevelIndex}/${MangaGame.totalLevels}',
                 style: ComicTheme.mangaHeader(
                     fontSize: 13, color: ComicTheme.actionRed),
               ),
               Text(
-                'SCORE: ${game.score.toString().padLeft(6, '0')}',
+                '${AppLocalizations.tr('score_label')}${game.score.toString().padLeft(6, '0')}',
                 style: ComicTheme.comicTitle(
                     fontSize: 18, color: ComicTheme.inkBlack),
               ),
@@ -317,14 +393,60 @@ class _ComicHudState extends State<ComicHud>
     );
   }
 
+  Widget _buildStageProgressBar(MangaGame game) {
+    final progress = game.stageProgress;
+    return Center(
+      child: Container(
+        width: 260,
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: ComicTheme.comicPanelDecoration(
+          backgroundColor: ComicTheme.paperWhite,
+          borderWidth: 2.5,
+          shadowOffset: 3,
+        ),
+        child: Row(
+          children: [
+            Image.asset(CartoonAssets.uiKaitoHead, width: 22, height: 22),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Container(
+                height: 10,
+                decoration: BoxDecoration(
+                  color: ComicTheme.halftoneGray,
+                  border: Border.all(color: ComicTheme.inkBlack, width: 2),
+                  borderRadius: BorderRadius.circular(3),
+                ),
+                child: FractionallySizedBox(
+                  alignment: Alignment.centerLeft,
+                  widthFactor: progress,
+                  child: Container(
+                    color: ComicTheme.actionRed,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 6),
+            Image.asset(CartoonAssets.uiBossSkull, width: 22, height: 22),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _bossPortraitFor(String bossName) {
+    if (bossName.contains('KUROKAGE')) return CartoonAssets.portraitKurokage;
+    if (bossName.contains('RYU')) return CartoonAssets.portraitRyuKotei;
+    if (bossName.contains('HEBI')) return CartoonAssets.portraitHebiHime;
+    if (bossName.contains('YUKI')) return CartoonAssets.portraitYukiOni;
+    return CartoonAssets.portraitMuzanKai;
+  }
+
   Widget _buildBossHud(dynamic boss) {
     final double hpRatio = (boss.currentHp / boss.maxHp).clamp(0.0, 1.0);
     final double stunRatio = (boss.stunGauge / 100.0).clamp(0.0, 1.0);
     final isStunned = boss.isStunned as bool;
     final bossName = boss.name as String;
-    final bossPortrait = bossName.contains('KUROKAGE')
-        ? CartoonAssets.portraitKurokage
-        : CartoonAssets.portraitRyuKotei;
+    final bossPortrait = _bossPortraitFor(bossName);
 
     return Center(
       child: ConstrainedBox(

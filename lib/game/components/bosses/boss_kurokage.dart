@@ -34,6 +34,8 @@ class BossKurokage extends BossBase {
 
   BossKurokage({
     required super.position,
+    super.arenaMinX = 2540.0,
+    super.arenaMaxX = 3340.0,
   }) : super(
           name: 'KUROKAGE',
           title: 'THE SHADOW EXECUTIONER',
@@ -45,9 +47,6 @@ class BossKurokage extends BossBase {
 
   @override
   Future<void> onLoad() async {
-    await super.onLoad();
-    add(RectangleHitbox());
-
     final imgs = game.images;
     _idleTicker = CartoonAssets.animation(
       imgs,
@@ -89,6 +88,9 @@ class BossKurokage extends BossBase {
       textureSize: Vector2(200, 180),
       stepTime: 0.11,
     ).createTicker();
+
+    await super.onLoad();
+    add(RectangleHitbox());
   }
 
   @override
@@ -139,7 +141,8 @@ class BossKurokage extends BossBase {
       case KurokageState.teleporting:
         if (_stateTimer >= 0.4) {
           final behindOffset = player.facingDirection == 1 ? -65.0 : 65.0;
-          position.x = (player.position.x + behindOffset).clamp(2020.0, 2760.0);
+          position.x =
+              (player.position.x + behindOffset).clamp(arenaMinX, arenaMaxX);
           _facing = player.position.x > position.x ? 1 : -1;
 
           game.add(MangaTextEffect(

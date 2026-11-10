@@ -9,6 +9,8 @@ abstract class BossBase extends PositionComponent
   final String name;
   final String title;
   final double maxHp;
+  final double arenaMinX;
+  final double arenaMaxX;
   late double currentHp;
 
   int currentPhase = 1;
@@ -30,6 +32,8 @@ abstract class BossBase extends PositionComponent
     required this.maxHp,
     required Vector2 position,
     required Vector2 size,
+    this.arenaMinX = 2540.0,
+    this.arenaMaxX = 3340.0,
   }) : super(
           position: position,
           size: size,
@@ -46,11 +50,20 @@ abstract class BossBase extends PositionComponent
     game.activeBoss = this;
   }
 
-  void takeDamage(double amount) {
+  void takeDamage(
+    double amount, {
+    int knockbackDir = 0,
+    double knockbackForce = 6.0,
+  }) {
     if (isDefeated || isInvulnerable) return;
 
+    final pushDir =
+        knockbackDir != 0 ? knockbackDir : (game.player.position.x < position.x ? 1 : -1);
+
     if (isGuarding) {
-      // Guard blocks frontal damage and gives "GUARD!!" popup
+      // Guard blocks frontal damage and gives "BLOCKED!" popup + slight push
+      position.x =
+          (position.x + pushDir * (knockbackForce * 0.5)).clamp(arenaMinX, arenaMaxX);
       stunGauge += amount * 1.5;
       game.add(MangaTextEffect(
         position: Vector2(position.x, position.y - size.y - 10),
@@ -65,18 +78,22 @@ abstract class BossBase extends PositionComponent
 
     final finalDamage = isStunned ? amount * 1.8 : amount;
     currentHp = (currentHp - finalDamage).clamp(0.0, maxHp);
-    hitFlashTimer = 0.15;
+    hitFlashTimer = 0.16;
 
-    stunGauge = (stunGauge + amount * 0.8).clamp(0.0, maxStun);
+    // Slight knockback push when slashed
+    position.x =
+        (position.x + pushDir * knockbackForce).clamp(arenaMinX, arenaMaxX);
+
+    stunGauge = (stunGauge + amount * 0.85).clamp(0.0, maxStun);
     if (!isStunned && stunGauge >= maxStun) {
       breakGuard();
     }
 
     game.add(MangaTextEffect(
       position: Vector2(position.x, position.y - size.y * 0.7),
-      text: isStunned ? 'CRITICAL!!' : 'BAM!',
+      text: isStunned ? 'CRITICAL!! -${finalDamage.toInt()}' : 'BAM! -${finalDamage.toInt()}',
       fillColor: isStunned ? ComicTheme.comicYellow : ComicTheme.actionRed,
-      targetScale: isStunned ? 1.6 : 1.2,
+      targetScale: isStunned ? 1.5 : 1.15,
     ));
 
     checkPhaseTransition();

@@ -4,6 +4,7 @@ import '../tool/sprite_gen/gen_characters.dart';
 import '../tool/sprite_gen/gen_bosses.dart';
 import '../tool/sprite_gen/gen_skills_env.dart';
 import '../tool/sprite_gen/gen_ui_icons.dart';
+import '../tool/sprite_gen/gen_expansion.dart';
 
 void main() {
   test('Generate all 2D Cartoon Sprite Sheets and UI Assets', () async {
@@ -11,6 +12,7 @@ void main() {
     await GenBosses.generateAll();
     await GenSkillsEnv.generateAll();
     await GenUiIcons.generateAll();
+    await GenExpansion.generateAll();
 
     // Copy the 5 AI-generated 2D cartoon illustrations into assets/images/illustrations/
     final illustrationsDir = Directory('assets/images/illustrations');

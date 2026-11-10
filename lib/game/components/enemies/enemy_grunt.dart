@@ -13,15 +13,20 @@ class EnemyGrunt extends PositionComponent
     with CollisionCallbacks, HasGameReference<MangaGame> {
   final double patrolDistance;
   final double speed;
+  final double? minXBound;
+  final double? maxXBound;
   double maxHp = 40.0;
   double hp = 40.0;
 
   double _startX = 0.0;
+  double _minX = 0.0;
+  double _maxX = 0.0;
   int _direction = 1; // 1 = right, -1 = left
   bool _isAggro = false;
   double _attackCooldown = 0.0;
   double _attackAnimTimer = 0.0;
   double _hitFlashTimer = 0.0;
+  double _knockbackVelX = 0.0;
   bool _isDying = false;
 
   late final SpriteAnimationTicker _walkTicker;
@@ -30,21 +35,25 @@ class EnemyGrunt extends PositionComponent
 
   EnemyGrunt({
     required Vector2 position,
-    this.patrolDistance = 140.0,
+    this.patrolDistance = 80.0,
     this.speed = 65.0,
+    this.minXBound,
+    this.maxXBound,
+    this.maxHp = 40.0,
   }) : super(
           position: position,
           size: Vector2(34, 46),
           anchor: Anchor.bottomCenter,
         ) {
+    hp = maxHp;
     priority = 700;
   }
 
   @override
   Future<void> onLoad() async {
-    await super.onLoad();
     _startX = position.x;
-    add(RectangleHitbox());
+    _minX = minXBound ?? (_startX - patrolDistance);
+    _maxX = maxXBound ?? (_startX + patrolDistance);
 
     final imgs = game.images;
     _walkTicker = CartoonAssets.animation(
@@ -71,20 +80,30 @@ class EnemyGrunt extends PositionComponent
       stepTime: 0.06,
       loop: false,
     ).createTicker();
+
+    await super.onLoad();
+    add(RectangleHitbox());
   }
 
-  void takeDamage(double amount) {
+  void takeDamage(
+    double amount, {
+    int knockbackDir = 0,
+    double knockbackForce = 12.0,
+  }) {
     if (_isDying) return;
 
     hp -= amount;
-    _hitFlashTimer = 0.15;
+    _hitFlashTimer = 0.18;
 
-    position.x -= _direction * 18;
+    final pushDir =
+        knockbackDir != 0 ? knockbackDir : (game.player.position.x < position.x ? 1 : -1);
+    position.x = (position.x + pushDir * knockbackForce).clamp(_minX, _maxX);
+    _knockbackVelX = pushDir * 95.0;
 
     game.add(MangaTextEffect(
       position: Vector2(position.x, position.y - size.y - 10),
-      text: hp <= 0 ? 'CRITICAL!!' : 'BAM!',
-      fillColor: ComicTheme.actionRed,
+      text: hp <= 0 ? 'CRITICAL!!' : '-${amount.toInt()}',
+      fillColor: hp <= 0 ? ComicTheme.comicYellow : ComicTheme.actionRed,
     ));
 
     if (hp <= 0) {
@@ -95,7 +114,7 @@ class EnemyGrunt extends PositionComponent
   void _die() {
     _isDying = true;
     game.addScore(150);
-    game.addSpirit(10);
+    game.addSpirit(12);
     game.add(MangaDustEffect(position: position.clone()));
 
     if (Random().nextBool()) {
@@ -109,16 +128,22 @@ class EnemyGrunt extends PositionComponent
   void update(double dt) {
     super.update(dt);
     if (_isDying) return;
+    if (!game.isInView(position.x, 760.0)) return;
 
     if (_hitFlashTimer > 0) _hitFlashTimer -= dt;
     if (_attackCooldown > 0) _attackCooldown -= dt;
     if (_attackAnimTimer > 0) _attackAnimTimer -= dt;
 
+    if (_knockbackVelX.abs() > 5.0) {
+      position.x = (position.x + _knockbackVelX * dt).clamp(_minX, _maxX);
+      _knockbackVelX *= pow(0.01, dt).toDouble();
+    }
+
     final player = game.player;
     final distToPlayer = (player.position.x - position.x).abs();
     final yDiff = (player.position.y - position.y).abs();
 
-    if (distToPlayer < 180 && yDiff < 60) {
+    if (distToPlayer < 170 && yDiff < 65) {
       if (!_isAggro) {
         _isAggro = true;
         game.add(MangaTextEffect(
@@ -129,10 +154,13 @@ class EnemyGrunt extends PositionComponent
         ));
       }
       _direction = player.position.x > position.x ? 1 : -1;
-      position.x += _direction * (speed * 1.6) * dt;
+      if (_hitFlashTimer <= 0) {
+        position.x =
+            (position.x + _direction * (speed * 1.45) * dt).clamp(_minX, _maxX);
+      }
 
-      if (distToPlayer < 36 && _attackCooldown <= 0) {
-        _attackCooldown = 1.4;
+      if (distToPlayer < 38 && _attackCooldown <= 0 && _hitFlashTimer <= 0) {
+        _attackCooldown = 1.35;
         _attackAnimTimer = 0.28;
         _attackTicker.reset();
         player.takeDamage(1);
@@ -151,8 +179,12 @@ class EnemyGrunt extends PositionComponent
     } else {
       _isAggro = false;
       position.x += _direction * speed * dt;
-      if ((position.x - _startX).abs() >= patrolDistance) {
-        _direction *= -1;
+      if (position.x <= _minX) {
+        position.x = _minX;
+        _direction = 1;
+      } else if (position.x >= _maxX) {
+        position.x = _maxX;
+        _direction = -1;
       }
     }
 
@@ -167,6 +199,7 @@ class EnemyGrunt extends PositionComponent
 
   @override
   void render(Canvas canvas) {
+    if (!game.isInView(position.x, 600.0)) return;
     final SpriteAnimationTicker activeTicker = _attackAnimTimer > 0
         ? _attackTicker
         : (_isAggro ? _aggroTicker : _walkTicker);

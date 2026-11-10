@@ -7,8 +7,10 @@ import '../cartoon_assets.dart';
 import '../manga_game.dart';
 import '../../ui/comic_theme.dart';
 import 'manga_effects.dart';
+import 'collectibles.dart';
 import 'enemies/enemy_grunt.dart';
 import 'enemies/enemy_drone.dart';
+import 'enemies/enemy_oni_archer.dart';
 import 'bosses/boss_base.dart';
 
 /// Kunai thrown by the player
@@ -35,8 +37,6 @@ class InkKunai extends PositionComponent
 
   @override
   Future<void> onLoad() async {
-    await super.onLoad();
-    add(RectangleHitbox());
     _ticker = CartoonAssets.animation(
       game.images,
       'skills/proj_kunai.png',
@@ -44,6 +44,8 @@ class InkKunai extends PositionComponent
       textureSize: Vector2(96, 48),
       stepTime: 0.06,
     ).createTicker();
+    await super.onLoad();
+    add(RectangleHitbox());
   }
 
   @override
@@ -73,14 +75,24 @@ class InkKunai extends PositionComponent
       Set<Vector2> intersectionPoints, PositionComponent other) {
     super.onCollisionStart(intersectionPoints, other);
 
+    final kbDir = velocity.x >= 0 ? 1 : -1;
     if (other is EnemyGrunt) {
-      other.takeDamage(damage);
+      other.takeDamage(damage, knockbackDir: kbDir, knockbackForce: 8.0);
       _impact(other.position);
     } else if (other is EnemyDrone) {
-      other.takeDamage(damage);
+      other.takeDamage(damage, knockbackDir: kbDir, knockbackForce: 8.0);
+      _impact(other.position);
+    } else if (other is EnemyOniArcher) {
+      other.takeDamage(damage, knockbackDir: kbDir, knockbackForce: 8.0);
       _impact(other.position);
     } else if (other is BossBase) {
-      other.takeDamage(damage);
+      other.takeDamage(damage, knockbackDir: kbDir, knockbackForce: 4.0);
+      _impact(other.position);
+    } else if (other is BreakableCrate) {
+      other.hit();
+      _impact(other.position);
+    } else if (other is SwitchOrb) {
+      other.triggerSwitch();
       _impact(other.position);
     }
   }
@@ -119,8 +131,6 @@ class BossDarkSlashWave extends PositionComponent
 
   @override
   Future<void> onLoad() async {
-    await super.onLoad();
-    add(RectangleHitbox());
     _ticker = CartoonAssets.animation(
       game.images,
       'skills/proj_dark_wave.png',
@@ -128,6 +138,8 @@ class BossDarkSlashWave extends PositionComponent
       textureSize: Vector2(120, 140),
       stepTime: 0.07,
     ).createTicker();
+    await super.onLoad();
+    add(RectangleHitbox());
   }
 
   @override
@@ -197,9 +209,7 @@ class BossFlamePillar extends PositionComponent
 
   @override
   Future<void> onLoad() async {
-    await super.onLoad();
     _hitbox = RectangleHitbox()..collisionType = CollisionType.inactive;
-    add(_hitbox);
     _ticker = CartoonAssets.animation(
       game.images,
       'skills/proj_flame_pillar.png',
@@ -207,6 +217,8 @@ class BossFlamePillar extends PositionComponent
       textureSize: Vector2(120, 320),
       stepTime: 0.06,
     ).createTicker();
+    await super.onLoad();
+    add(_hitbox);
   }
 
   @override
@@ -323,8 +335,6 @@ class BossEnergyOrb extends PositionComponent
 
   @override
   Future<void> onLoad() async {
-    await super.onLoad();
-    add(CircleHitbox());
     _ticker = CartoonAssets.animation(
       game.images,
       'skills/proj_energy_orb.png',
@@ -332,6 +342,8 @@ class BossEnergyOrb extends PositionComponent
       textureSize: Vector2(96, 96),
       stepTime: 0.06,
     ).createTicker();
+    await super.onLoad();
+    add(CircleHitbox());
   }
 
   @override

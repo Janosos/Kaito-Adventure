@@ -28,7 +28,7 @@ class EnemyDrone extends PositionComponent
 
   EnemyDrone({
     required Vector2 position,
-    this.flyRange = 100.0,
+    this.flyRange = 90.0,
     this.flySpeed = 1.8,
   }) : super(
           position: position,
@@ -40,9 +40,7 @@ class EnemyDrone extends PositionComponent
 
   @override
   Future<void> onLoad() async {
-    await super.onLoad();
     _basePos = position.clone();
-    add(CircleHitbox());
 
     final imgs = game.images;
     _flyTicker = CartoonAssets.animation(
@@ -60,17 +58,29 @@ class EnemyDrone extends PositionComponent
       textureSize: Vector2(128, 128),
       stepTime: 0.07,
     ).createTicker();
+
+    await super.onLoad();
+    add(CircleHitbox());
   }
 
-  void takeDamage(double amount) {
+  void takeDamage(
+    double amount, {
+    int knockbackDir = 0,
+    double knockbackForce = 10.0,
+  }) {
     if (_isDying) return;
 
     hp -= amount;
-    _hitFlashTimer = 0.15;
+    _hitFlashTimer = 0.18;
+
+    final pushDir =
+        knockbackDir != 0 ? knockbackDir : (game.player.position.x < position.x ? 1 : -1);
+    _basePos.x += pushDir * knockbackForce;
+    position.x += pushDir * knockbackForce;
 
     game.add(MangaTextEffect(
       position: position.clone(),
-      text: hp <= 0 ? 'KABOOM!!' : 'WHACK!',
+      text: hp <= 0 ? 'KABOOM!!' : '-${amount.toInt()}',
       fillColor: ComicTheme.comicYellow,
     ));
 
@@ -82,10 +92,10 @@ class EnemyDrone extends PositionComponent
   void _die() {
     _isDying = true;
     game.addScore(200);
-    game.addSpirit(12);
+    game.addSpirit(14);
     game.add(MangaDustEffect(position: position.clone()));
 
-    if (Random().nextDouble() < 0.4) {
+    if (Random().nextDouble() < 0.45) {
       game.add(RamenBowl(position: position.clone()));
     }
     removeFromParent();
@@ -95,21 +105,22 @@ class EnemyDrone extends PositionComponent
   void update(double dt) {
     super.update(dt);
     if (_isDying) return;
+    if (!game.isInView(position.x, 760.0)) return;
 
     if (_hitFlashTimer > 0) _hitFlashTimer -= dt;
     if (_attackAnimTimer > 0) _attackAnimTimer -= dt;
 
     _timer += dt * flySpeed;
     position.x = _basePos.x + sin(_timer) * flyRange;
-    position.y = _basePos.y + cos(_timer * 2.2) * 18;
+    position.y = _basePos.y + cos(_timer * 2.2) * 16;
 
     final player = game.player;
     final xDiff = (player.position.x - position.x).abs();
     final yDiff = player.position.y - position.y;
 
     _shootCooldown -= dt;
-    if (xDiff < 70 && yDiff > 20 && yDiff < 220 && _shootCooldown <= 0) {
-      _shootCooldown = 2.4;
+    if (xDiff < 90 && yDiff > 10 && yDiff < 240 && _shootCooldown <= 0) {
+      _shootCooldown = 2.2;
       _attackAnimTimer = 0.35;
       _attackTicker.reset();
       game.add(DroneInkNeedle(
@@ -133,6 +144,7 @@ class EnemyDrone extends PositionComponent
 
   @override
   void render(Canvas canvas) {
+    if (!game.isInView(position.x, 600.0)) return;
     final activeTicker = _attackAnimTimer > 0 ? _attackTicker : _flyTicker;
     final sprite = activeTicker.getSprite();
 
@@ -151,6 +163,21 @@ class EnemyDrone extends PositionComponent
       size: Vector2.all(renderSize),
       overridePaint: overridePaint,
     );
+
+    if (hp < maxHp) {
+      final barWidth = size.x + 6;
+      final hpRatio = (hp / maxHp).clamp(0.0, 1.0);
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+            Rect.fromLTWH(-3, -18, barWidth, 5), const Radius.circular(2)),
+        Paint()..color = ComicTheme.inkBlack,
+      );
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(Rect.fromLTWH(-3, -18, barWidth * hpRatio, 5),
+            const Radius.circular(2)),
+        Paint()..color = ComicTheme.actionRed,
+      );
+    }
   }
 }
 
@@ -163,7 +190,7 @@ class DroneInkNeedle extends PositionComponent
 
   DroneInkNeedle({
     required Vector2 position,
-    this.speed = 220.0,
+    this.speed = 230.0,
   }) : super(
           position: position,
           size: Vector2(14, 26),
@@ -174,8 +201,6 @@ class DroneInkNeedle extends PositionComponent
 
   @override
   Future<void> onLoad() async {
-    await super.onLoad();
-    add(RectangleHitbox());
     _ticker = CartoonAssets.animation(
       game.images,
       'skills/proj_drone_needle.png',
@@ -183,6 +208,8 @@ class DroneInkNeedle extends PositionComponent
       textureSize: Vector2(48, 80),
       stepTime: 0.07,
     ).createTicker();
+    await super.onLoad();
+    add(RectangleHitbox());
   }
 
   @override

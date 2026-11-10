@@ -12,8 +12,54 @@ class ComicTheme {
   static const Color energyCyan = Color(0xFF00E5FF);
   static const Color darkPurple = Color(0xFF4A148C);
   static const Color shadowBorder = Color(0xFF101014);
+  static const Color mangaPanelBg = Color(0xFF1F1630);
 
   // Manga Typography Helpers
+  static TextStyle titleText({
+    double size = 28,
+    Color color = inkBlack,
+    double letterSpacing = 1.8,
+    List<Shadow>? shadows,
+  }) {
+    return GoogleFonts.bangers(
+      fontSize: size,
+      letterSpacing: letterSpacing,
+      fontWeight: FontWeight.bold,
+      color: color,
+      shadows: shadows,
+    );
+  }
+
+  static TextStyle bodyText({
+    double size = 14,
+    Color color = inkBlack,
+    FontWeight weight = FontWeight.bold,
+    double? height,
+  }) {
+    return GoogleFonts.comicNeue(
+      fontSize: size,
+      fontWeight: weight,
+      color: color,
+      height: height,
+    );
+  }
+
+  static BoxDecoration panelDecoration({
+    Color? backgroundColor,
+    Color color = paperWhite,
+    Color borderColor = inkBlack,
+    double borderWidth = 3.0,
+    double shadowOffset = 4.0,
+    BorderRadius? borderRadius,
+  }) {
+    return comicPanelDecoration(
+      backgroundColor: backgroundColor ?? color,
+      borderColor: borderColor,
+      borderWidth: borderWidth,
+      shadowOffset: shadowOffset,
+      borderRadius: borderRadius,
+    );
+  }
   static TextStyle comicTitle({
     double fontSize = 28,
     Color color = inkBlack,
@@ -187,6 +233,64 @@ class SpeedLinesPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant SpeedLinesPainter oldDelegate) =>
       oldDelegate.progress != progress;
+}
+
+class MangaSpeedLinesPainter extends SpeedLinesPainter {
+  MangaSpeedLinesPainter({
+    super.color = const Color(0x44000000),
+    int? lineCount,
+    int count = 24,
+    super.progress = 0.0,
+  }) : super(count: lineCount ?? count);
+}
+
+class ComicButton extends StatelessWidget {
+  final String label;
+  final Color color;
+  final Color textColor;
+  final String? iconAsset;
+  final VoidCallback? onTap;
+  final VoidCallback? onPressed;
+  final double? width;
+  final double fontSize;
+
+  const ComicButton({
+    super.key,
+    required this.label,
+    this.color = ComicTheme.comicYellow,
+    this.textColor = ComicTheme.inkBlack,
+    this.iconAsset,
+    this.onTap,
+    this.onPressed,
+    this.width,
+    this.fontSize = 18,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap ?? onPressed,
+      child: Container(
+        width: width,
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+        decoration: ComicTheme.comicButtonDecoration(backgroundColor: color),
+        child: Row(
+          mainAxisSize: width != null ? MainAxisSize.max : MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            if (iconAsset != null) ...[
+              Image.asset(iconAsset!, width: 22, height: 22),
+              const SizedBox(width: 8),
+            ],
+            Text(
+              label,
+              style: ComicTheme.titleText(size: fontSize, color: textColor),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 // Spiky Comic Speech Bubble Path

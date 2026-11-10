@@ -36,8 +36,6 @@ class MangaTextEffect extends PositionComponent {
 
   @override
   Future<void> onLoad() async {
-    await super.onLoad();
-
     final textSpanFill = TextSpan(
       text: text,
       style: TextStyle(
@@ -78,6 +76,7 @@ class MangaTextEffect extends PositionComponent {
     size = Vector2(_fillPainter.width, _fillPainter.height);
     angle = rotationAngle;
     scale = Vector2.all(initialScale);
+    await super.onLoad();
   }
 
   @override
@@ -101,20 +100,14 @@ class MangaTextEffect extends PositionComponent {
 
   @override
   void render(Canvas canvas) {
-    final progress = (_timer / maxLifetime).clamp(0.0, 1.0);
-    final alpha =
-        progress > 0.7 ? ((1.0 - progress) / 0.3).clamp(0.0, 1.0) : 1.0;
-
+    // Fast direct painting without canvas.saveLayer(null, ...)
+    // Eliminates full-screen offscreen FBO allocation on Mali (MediaTek), Adreno (Snapdragon), and Web GPUs!
     canvas.save();
     canvas.translate(-size.x / 2, -size.y / 2);
-
-    final opacityPaint = Paint()..color = Colors.black.withValues(alpha: alpha);
-    canvas.saveLayer(null, opacityPaint);
 
     _strokePainter.paint(canvas, Offset.zero);
     _fillPainter.paint(canvas, Offset.zero);
 
-    canvas.restore();
     canvas.restore();
   }
 }
@@ -142,7 +135,6 @@ class SlashArcEffect extends PositionComponent
 
   @override
   Future<void> onLoad() async {
-    await super.onLoad();
     String sheet = 'skills/slash_arc_yellow.png';
     if (slashColor == ComicTheme.energyCyan) {
       sheet = 'skills/slash_arc_cyan.png';
@@ -160,6 +152,7 @@ class SlashArcEffect extends PositionComponent
       stepTime: maxLifetime / 5.0,
       loop: false,
     ).createTicker();
+    await super.onLoad();
   }
 
   @override
@@ -208,7 +201,6 @@ class MangaDustEffect extends PositionComponent
 
   @override
   Future<void> onLoad() async {
-    await super.onLoad();
     _ticker = CartoonAssets.animation(
       game.images,
       'skills/vfx_dust_puff.png',
@@ -217,6 +209,7 @@ class MangaDustEffect extends PositionComponent
       stepTime: maxLifetime / 6.0,
       loop: false,
     ).createTicker();
+    await super.onLoad();
   }
 
   @override

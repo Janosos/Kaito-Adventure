@@ -12,6 +12,7 @@ import 'traps.dart';
 import 'collectibles.dart';
 import 'enemies/enemy_grunt.dart';
 import 'enemies/enemy_drone.dart';
+import 'enemies/enemy_oni_archer.dart';
 
 enum PlayerAction {
   idle,
@@ -36,12 +37,13 @@ class MangaPlayer extends PositionComponent
 
   // Physics
   Vector2 velocity = Vector2.zero();
-  final double moveSpeed = 230.0;
-  final double jumpForce = -470.0;
+  final double moveSpeed = 240.0;
+  final double jumpForce = -485.0;
   final double gravity = 1100.0;
   bool isOnGround = false;
   bool isTouchingWall = false;
   int wallDirection = 0; // -1 left, 1 right
+  ComicPlatform? _standingPlatform;
 
   // Movement & State
   int facingDirection = 1; // 1 = right, -1 = left
@@ -58,7 +60,9 @@ class MangaPlayer extends PositionComponent
   int comboIndex = 0; // 0, 1, 2
   double attackCooldown = 0.0;
   double attackAnimTimer = 0.0;
+  static const double maxKunaiCooldown = 5.0;
   double kunaiCooldown = 0.0;
+  double externalWindX = 0.0;
 
   // Invulnerability & Hurt
   double invulnerableTimer = 0.0;
@@ -83,9 +87,6 @@ class MangaPlayer extends PositionComponent
 
   @override
   Future<void> onLoad() async {
-    await super.onLoad();
-    add(RectangleHitbox(size: Vector2(24, 48), position: Vector2(5, 4)));
-
     final imgs = game.images;
     _tickers = {
       PlayerAction.idle: CartoonAssets.animation(
@@ -155,6 +156,8 @@ class MangaPlayer extends PositionComponent
         stepTime: 0.08,
       ).createTicker(),
     };
+    await super.onLoad();
+    add(RectangleHitbox(size: Vector2(24, 48), position: Vector2(5, 4)));
   }
 
   // Input Handling
@@ -192,6 +195,7 @@ class MangaPlayer extends PositionComponent
     if (isOnGround) {
       velocity.y = jumpForce;
       isOnGround = false;
+      _standingPlatform = null;
       game.add(MangaDustEffect(position: position.clone()));
       game.add(MangaTextEffect(
         position: Vector2(position.x, position.y - size.y - 10),
@@ -219,7 +223,7 @@ class MangaPlayer extends PositionComponent
   void performDash() {
     isDashing = true;
     dashTimer = dashDuration;
-    dashCooldown = 0.7;
+    dashCooldown = 0.65;
     velocity.y = 0;
     velocity.x = facingDirection * dashSpeed;
     action = PlayerAction.dashing;
@@ -239,7 +243,7 @@ class MangaPlayer extends PositionComponent
   }
 
   void performAttack() {
-    attackCooldown = 0.28;
+    attackCooldown = 0.25;
     attackAnimTimer = 0.26;
 
     comboIndex = (comboIndex + 1) % 3;
@@ -251,6 +255,10 @@ class MangaPlayer extends PositionComponent
     action = attackActions[comboIndex];
     _tickers[action]?.reset();
 
+    // Subtle forward lunge on slash
+    position.x = (position.x + facingDirection * 4.0)
+        .clamp(game.minPlayerX, game.maxPlayerX);
+
     final texts = ['SLASH!', 'SHING!!', 'ZUBATTO!!!'];
     final colors = [
       ComicTheme.comicYellow,
@@ -260,10 +268,10 @@ class MangaPlayer extends PositionComponent
 
     game.add(SlashArcEffect(
       position: Vector2(
-          position.x + facingDirection * 26, position.y - size.y * 0.5),
+          position.x + facingDirection * 28, position.y - size.y * 0.5),
       slashFlipped: facingDirection < 0,
       slashColor: colors[comboIndex],
-      radius: 46.0 + comboIndex * 6,
+      radius: 48.0 + comboIndex * 6,
     ));
 
     game.add(MangaTextEffect(
@@ -278,15 +286,26 @@ class MangaPlayer extends PositionComponent
   }
 
   void performThrowKunai() {
-    kunaiCooldown = 0.35;
+    if (kunaiCooldown > 0) return;
+    kunaiCooldown = maxKunaiCooldown;
     attackAnimTimer = 0.18;
     action = PlayerAction.attack1;
     _tickers[action]?.reset();
 
+    game.add(MangaTextEffect(
+      position: Vector2(
+          position.x + facingDirection * 24, position.y - size.y * 0.75),
+      text: 'KUNAI!!',
+      fillColor: ComicTheme.energyCyan,
+      initialScale: 0.4,
+      targetScale: 0.95,
+    ));
+
     game.add(InkKunai(
       position: Vector2(
           position.x + facingDirection * 15, position.y - size.y * 0.55),
-      velocity: Vector2(facingDirection * 620.0, 0),
+      velocity: Vector2(facingDirection * 640.0, 0),
+      damage: 32.0,
     ));
   }
 
@@ -320,47 +339,118 @@ class MangaPlayer extends PositionComponent
       ));
     }
 
-    for (final grunt in game.children.whereType<EnemyGrunt>()) {
-      grunt.takeDamage(100);
+    for (final grunt in game.queryWorld<EnemyGrunt>().toList()) {
+      if ((grunt.position.x - position.x).abs() < 420) {
+        grunt.takeDamage(100, knockbackDir: facingDirection, knockbackForce: 20);
+      }
     }
-    for (final drone in game.children.whereType<EnemyDrone>()) {
-      drone.takeDamage(100);
+    for (final drone in game.queryWorld<EnemyDrone>().toList()) {
+      if ((drone.position.x - position.x).abs() < 420) {
+        drone.takeDamage(100, knockbackDir: facingDirection, knockbackForce: 20);
+      }
+    }
+    for (final archer in game.queryWorld<EnemyOniArcher>().toList()) {
+      if ((archer.position.x - position.x).abs() < 420) {
+        archer.takeDamage(100, knockbackDir: facingDirection, knockbackForce: 20);
+      }
     }
     if (game.activeBoss != null && !game.activeBoss!.isDefeated) {
-      game.activeBoss!.takeDamage(85);
+      game.activeBoss!.takeDamage(
+        90,
+        knockbackDir: facingDirection,
+        knockbackForce: 14,
+      );
       game.activeBoss!.breakGuard();
     }
   }
 
+  bool _isInSlashArc(Vector2 targetCenter, {double extraReach = 0.0}) {
+    final playerCenterY = position.y - size.y * 0.5;
+    final dx = (targetCenter.x - position.x) * facingDirection;
+    final dy = (targetCenter.y - playerCenterY).abs();
+    return dx >= -22.0 && dx <= (92.0 + extraReach) && dy <= (68.0 + extraReach);
+  }
+
   void _checkMeleeHit() {
-    const range = 65.0;
-    final hitCenter = position.x + facingDirection * 30;
+    final kbForce = 11.0 + comboIndex * 3.0;
 
-    for (final grunt in game.children.whereType<EnemyGrunt>()) {
-      if ((grunt.position.x - hitCenter).abs() < range &&
-          (grunt.position.y - position.y).abs() < 50) {
-        final dmg = 20.0 + comboIndex * 12.0;
-        grunt.takeDamage(dmg);
+    // 1. Hit Enemy Grunts (Shadow Ninjas)
+    for (final grunt in game.queryWorld<EnemyGrunt>().toList()) {
+      final center = Vector2(grunt.position.x, grunt.position.y - grunt.size.y * 0.5);
+      if (_isInSlashArc(center)) {
+        final dmg = 22.0 + comboIndex * 10.0;
+        grunt.takeDamage(
+          dmg,
+          knockbackDir: facingDirection,
+          knockbackForce: kbForce,
+        );
         _registerHit();
       }
     }
 
-    for (final drone in game.children.whereType<EnemyDrone>()) {
-      if ((drone.position.x - hitCenter).abs() < range &&
-          (drone.position.y - position.y).abs() < 60) {
+    // 2. Hit Enemy Drones (Tengu Flyers - Anchor.center)
+    for (final drone in game.queryWorld<EnemyDrone>().toList()) {
+      if (_isInSlashArc(drone.position, extraReach: 12.0)) {
         final dmg = 25.0 + comboIndex * 10.0;
-        drone.takeDamage(dmg);
+        drone.takeDamage(
+          dmg,
+          knockbackDir: facingDirection,
+          knockbackForce: kbForce,
+        );
         _registerHit();
       }
     }
 
+    // 3. Hit Enemy Oni Archers
+    for (final archer in game.queryWorld<EnemyOniArcher>().toList()) {
+      final center =
+          Vector2(archer.position.x, archer.position.y - archer.size.y * 0.5);
+      if (_isInSlashArc(center)) {
+        final dmg = 24.0 + comboIndex * 10.0;
+        archer.takeDamage(
+          dmg,
+          knockbackDir: facingDirection,
+          knockbackForce: kbForce,
+        );
+        _registerHit();
+      }
+    }
+
+    // 4. Hit Active Boss
     final boss = game.activeBoss;
     if (boss != null && !boss.isDefeated) {
-      if ((boss.position.x - hitCenter).abs() < 75 &&
-          (boss.position.y - position.y).abs() < 70) {
-        final dmg = 18.0 + comboIndex * 14.0;
-        boss.takeDamage(dmg);
+      final bossCenter =
+          Vector2(boss.position.x, boss.position.y - boss.size.y * 0.5);
+      if (_isInSlashArc(bossCenter, extraReach: 22.0)) {
+        final dmg = 20.0 + comboIndex * 12.0;
+        boss.takeDamage(
+          dmg,
+          knockbackDir: facingDirection,
+          knockbackForce: 7.0 + comboIndex * 2.0,
+        );
         _registerHit();
+      }
+    }
+
+    // 5. Smash Breakable Supply Crates
+    for (final crate in game.queryWorld<BreakableCrate>().toList()) {
+      final center =
+          Vector2(crate.position.x, crate.position.y - crate.size.y * 0.5);
+      if (_isInSlashArc(center)) {
+        crate.hit();
+      }
+    }
+
+    // 6. Activate Switch Orbs & Taiko Bounce Drums with Slash!
+    for (final sw in game.queryWorld<SwitchOrb>().toList()) {
+      final center = Vector2(sw.position.x, sw.position.y - sw.size.y * 0.5);
+      if (_isInSlashArc(center)) {
+        sw.triggerSwitch();
+      }
+    }
+    for (final drum in game.queryWorld<TaikoBounceDrum>().toList()) {
+      if (_isInSlashArc(drum.position, extraReach: 10.0)) {
+        drum.triggerBounce();
       }
     }
   }
@@ -368,7 +458,7 @@ class MangaPlayer extends PositionComponent
   void _registerHit() {
     comboCount++;
     comboTimer = 2.5;
-    spirit = (spirit + 8.0).clamp(0.0, 100.0);
+    spirit = (spirit + 9.0).clamp(0.0, 100.0);
     game.addScore(50 * comboCount);
   }
 
@@ -379,8 +469,8 @@ class MangaPlayer extends PositionComponent
     invulnerableTimer = 1.3;
     hurtAnimTimer = 0.35;
     action = PlayerAction.hurt;
-    velocity.y = -260;
-    velocity.x = -facingDirection * 180;
+    velocity.y = -250;
+    velocity.x = -facingDirection * 150;
 
     game.add(MangaTextEffect(
       position: Vector2(position.x, position.y - size.y * 0.7),
@@ -414,10 +504,16 @@ class MangaPlayer extends PositionComponent
       }
     }
 
+    // Follow moving platform if standing on one
+    if (isOnGround && _standingPlatform != null) {
+      position += _standingPlatform!.frameDelta;
+    }
+
     // Dash update
     if (isDashing) {
       dashTimer -= dt;
-      position.x += velocity.x * dt;
+      position.x = (position.x + velocity.x * dt)
+          .clamp(game.minPlayerX, game.maxPlayerX);
       action = PlayerAction.dashing;
       _tickers[action]?.update(dt);
       if (dashTimer <= 0) {
@@ -426,12 +522,31 @@ class MangaPlayer extends PositionComponent
       return;
     }
 
-    // Horizontal Movement
-    if (moveInput.abs() > 0.1) {
-      velocity.x = moveInput * moveSpeed;
-      facingDirection = moveInput > 0 ? 1 : -1;
+    // Horizontal Movement (with Slippery Ice Physics on Frostfang Ice Platforms!)
+    final bool onSlipperyIce =
+        isOnGround && (_standingPlatform?.isSlipperyIce ?? false);
+    if (onSlipperyIce) {
+      if (moveInput.abs() > 0.1) {
+        final targetVx = moveInput * moveSpeed * 1.15;
+        velocity.x += (targetVx - velocity.x) * (dt * 4.5).clamp(0.0, 1.0);
+        facingDirection = moveInput > 0 ? 1 : -1;
+      } else if (hurtAnimTimer <= 0) {
+        velocity.x *= (1.0 - dt * 1.85).clamp(0.0, 1.0);
+        if (velocity.x.abs() < 6.0) velocity.x = 0.0;
+      }
     } else {
-      velocity.x = 0;
+      if (moveInput.abs() > 0.1) {
+        velocity.x = moveInput * moveSpeed;
+        facingDirection = moveInput > 0 ? 1 : -1;
+      } else if (hurtAnimTimer <= 0) {
+        velocity.x = 0;
+      }
+    }
+
+    // Apply Environmental Crosswind (e.g. Level 4 Blizzard Gusts)
+    if (externalWindX.abs() > 0.1 && !isDashing) {
+      position.x += externalWindX * dt;
+      externalWindX = 0.0;
     }
 
     // Determine active animation state
@@ -456,11 +571,15 @@ class MangaPlayer extends PositionComponent
     }
 
     position += velocity * dt;
+    position.x = position.x.clamp(game.minPlayerX, game.maxPlayerX);
 
-    if (position.y > 1200) {
+    // Pit fall respawn
+    if (position.y > 590) {
       takeDamage(1);
-      position = Vector2(game.currentSpawnPoint.x, game.currentSpawnPoint.y);
-      velocity = Vector2.zero();
+      if (hp > 0) {
+        position = game.currentSpawnPoint.clone();
+        velocity = Vector2.zero();
+      }
     }
   }
 
@@ -472,21 +591,30 @@ class MangaPlayer extends PositionComponent
       final playerBottom = position.y;
       final platformTop = other.position.y;
 
-      if (velocity.y > 0 && (playerBottom - platformTop).abs() < 18) {
+      if (velocity.y >= 0 && (playerBottom - platformTop).abs() < 22) {
         position.y = platformTop;
         velocity.y = 0;
         isOnGround = true;
+        _standingPlatform = other;
         other.stepOn();
-      } else if (position.y > other.position.y + 10) {
+      } else if (position.y > other.position.y + 12) {
         isTouchingWall = true;
         wallDirection = (position.x < other.position.x) ? 1 : -1;
       }
     } else if (other is MangaSpringPad) {
-      if (velocity.y > 0) {
+      if (velocity.y >= 0) {
         other.triggerSpring();
         velocity.y = -other.launchPower;
         isOnGround = false;
+        _standingPlatform = null;
       }
+    } else if (other is TaikoBounceDrum) {
+      other.triggerBounce();
+      _standingPlatform = null;
+    } else if (other is CheckpointLantern) {
+      other.activate();
+    } else if (other is SwitchOrb) {
+      other.triggerSwitch();
     } else if (other is SpikeTrap || other is InkSawBlade) {
       takeDamage(1);
     } else if (other is InkScroll) {
@@ -502,6 +630,9 @@ class MangaPlayer extends PositionComponent
   void onCollisionEnd(PositionComponent other) {
     super.onCollisionEnd(other);
     if (other is ComicPlatform) {
+      if (_standingPlatform == other) {
+        _standingPlatform = null;
+      }
       isOnGround = false;
       isTouchingWall = false;
     }
@@ -525,7 +656,6 @@ class MangaPlayer extends PositionComponent
     const renderH = 72.0;
 
     canvas.save();
-    // Anchor.bottomCenter: origin in local render is (size.x/2, size.y)
     canvas.translate(size.x / 2, size.y + 5);
     if (facingDirection < 0) {
       canvas.scale(-1, 1);

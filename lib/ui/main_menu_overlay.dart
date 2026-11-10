@@ -1,0 +1,521 @@
+import 'package:flutter/material.dart';
+import '../game/cartoon_assets.dart';
+import '../game/manga_game.dart';
+import 'app_localizations.dart';
+import 'comic_theme.dart';
+
+class MainMenuOverlay extends StatefulWidget {
+  final MangaGame game;
+
+  const MainMenuOverlay({super.key, required this.game});
+
+  @override
+  State<MainMenuOverlay> createState() => _MainMenuOverlayState();
+}
+
+class _MainMenuOverlayState extends State<MainMenuOverlay> {
+  bool _showControlsModal = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<AppLanguage>(
+      valueListenable: AppLocalizations.languageNotifier,
+      builder: (context, _, _) {
+        return Material(
+          color: Colors.transparent,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              // 1. 2D Cartoon Illustrated Panoramic Main Menu Background
+              Image.asset(
+                CartoonAssets.bgMainMenu,
+                fit: BoxFit.cover,
+              ),
+              Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.centerLeft,
+                    end: Alignment.centerRight,
+                    colors: [
+                      ComicTheme.inkBlack.withValues(alpha: 0.78),
+                      ComicTheme.inkBlack.withValues(alpha: 0.30),
+                      ComicTheme.inkBlack.withValues(alpha: 0.65),
+                    ],
+                  ),
+                ),
+              ),
+
+              // 2. Manga Halftone & Speedline Accents
+              Positioned.fill(
+                child: CustomPaint(
+                  painter: MangaSpeedLinesPainter(
+                    lineCount: 42,
+                    color: Colors.white.withValues(alpha: 0.06),
+                  ),
+                ),
+              ),
+
+              // 3. Main Menu Layout
+              SafeArea(
+                child: Padding(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
+                  child: Column(
+                    children: [
+                      // Top Bar: App Icon Badge + Title Banner + Janosos Developer Badge
+                      Row(
+                        children: [
+                          Container(
+                            width: 58,
+                            height: 58,
+                            decoration: ComicTheme.panelDecoration(
+                              backgroundColor: ComicTheme.mangaPanelBg,
+                              borderWidth: 3.5,
+                              shadowOffset: 5,
+                            ),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(5),
+                              child: Image.asset(
+                                CartoonAssets.uiAppIcon,
+                                fit: BoxFit.cover,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 6,
+                            ),
+                            decoration: ComicTheme.panelDecoration(
+                              backgroundColor: ComicTheme.comicYellow,
+                              borderWidth: 3,
+                              shadowOffset: 4,
+                            ),
+                            child: Text(
+                              AppLocalizations.tr('edition_badge'),
+                              style: ComicTheme.titleText(
+                                size: 14,
+                                color: ComicTheme.inkBlack,
+                              ),
+                            ),
+                          ),
+                          const Spacer(),
+                          // Developer Janosos Badge in Top Right
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 6,
+                            ),
+                            decoration: ComicTheme.panelDecoration(
+                              backgroundColor: ComicTheme.paperWhite,
+                              borderWidth: 3,
+                              shadowOffset: 4,
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Container(
+                                  width: 32,
+                                  height: 32,
+                                  decoration: BoxDecoration(
+                                    borderRadius: BorderRadius.circular(6),
+                                    border: Border.all(
+                                      color: ComicTheme.inkBlack,
+                                      width: 2,
+                                    ),
+                                  ),
+                                  child: ClipRRect(
+                                    borderRadius: BorderRadius.circular(4),
+                                    child: Image.asset(
+                                      CartoonAssets.uiJanososAvatar,
+                                      fit: BoxFit.cover,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  AppLocalizations.tr('developed_by'),
+                                  style: ComicTheme.titleText(
+                                    size: 13,
+                                    color: ComicTheme.inkBlack,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+
+                      const SizedBox(height: 6),
+
+                      // Clean 2D Cartoon Title Banner (No Ahem square blocks!)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 28,
+                          vertical: 8,
+                        ),
+                        decoration: ComicTheme.panelDecoration(
+                          backgroundColor: ComicTheme.mangaPanelBg,
+                          borderWidth: 4.5,
+                          shadowOffset: 7,
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Image.asset(
+                              CartoonAssets.uiKaitoHead,
+                              width: 44,
+                              height: 44,
+                            ),
+                            const SizedBox(width: 14),
+                            Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  'KAITO ADVENTURE',
+                                  style: ComicTheme.titleText(
+                                    size: 36,
+                                    color: ComicTheme.comicYellow,
+                                  ),
+                                ),
+                                Text(
+                                  AppLocalizations.tr('game_subtitle'),
+                                  style: ComicTheme.titleText(
+                                    size: 12,
+                                    color: ComicTheme.energyCyan,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(width: 14),
+                            Image.asset(
+                              CartoonAssets.uiBossSkull,
+                              width: 42,
+                              height: 42,
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      const Spacer(),
+
+                      // Center Row: Left Hero Showcase Card + Right Action Buttons
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          // Left: Kaito Hero Portrait Card
+                          Expanded(
+                            flex: 5,
+                            child: Center(
+                              child: Container(
+                                width: 310,
+                                padding: const EdgeInsets.all(12),
+                                decoration: ComicTheme.panelDecoration(
+                                  backgroundColor: ComicTheme.paperWhite,
+                                  borderWidth: 5,
+                                  shadowOffset: 8,
+                                ),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Container(
+                                      height: 155,
+                                      width: double.infinity,
+                                      decoration: BoxDecoration(
+                                        border: Border.all(
+                                          color: ComicTheme.inkBlack,
+                                          width: 3.5,
+                                        ),
+                                        borderRadius: BorderRadius.circular(6),
+                                      ),
+                                      child: ClipRRect(
+                                        borderRadius: BorderRadius.circular(3),
+                                        child: Image.asset(
+                                          CartoonAssets.portraitKaito,
+                                          fit: BoxFit.cover,
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      'KAITO • THE INK SHINOBI',
+                                      style: ComicTheme.titleText(
+                                        size: 20,
+                                        color: ComicTheme.actionRed,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      AppLocalizations.tr('hero_card_sub'),
+                                      textAlign: TextAlign.center,
+                                      style: ComicTheme.bodyText(
+                                        size: 11,
+                                        color: ComicTheme.inkBlack,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+
+                          const SizedBox(width: 20),
+
+                          // Right: 2D Cartoon Action Buttons (Start, Chapters, Story Intro, How to Play, Settings)
+                          Expanded(
+                            flex: 6,
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                _buildCartoonMenuButton(
+                                  iconAsset: CartoonAssets.uiBtnPlay,
+                                  label: AppLocalizations.tr(
+                                    'btn_start_adventure',
+                                  ),
+                                  bgColor: ComicTheme.actionRed,
+                                  textColor: ComicTheme.paperWhite,
+                                  isPrimary: true,
+                                  onTap: () {
+                                    widget.game.startFromMainMenu(level: 1);
+                                  },
+                                ),
+                                const SizedBox(height: 10),
+                                _buildCartoonMenuButton(
+                                  iconAsset: CartoonAssets.uiBtnChapters,
+                                  label: AppLocalizations.tr(
+                                    'btn_select_chapter',
+                                  ),
+                                  bgColor: ComicTheme.comicYellow,
+                                  textColor: ComicTheme.inkBlack,
+                                  onTap: () {
+                                    widget.game.overlays
+                                        .add('chapter_select');
+                                  },
+                                ),
+                                const SizedBox(height: 10),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: _buildCartoonMenuButton(
+                                        iconAsset: CartoonAssets.uiBtnIntro,
+                                        label: AppLocalizations.tr(
+                                          'btn_story_intro',
+                                        ),
+                                        bgColor: ComicTheme.paperWhite,
+                                        textColor: ComicTheme.inkBlack,
+                                        compact: true,
+                                        onTap: () {
+                                          widget.game.openIntroStory();
+                                        },
+                                      ),
+                                    ),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: _buildCartoonMenuButton(
+                                        iconAsset: CartoonAssets.uiBtnControls,
+                                        label: AppLocalizations.tr(
+                                          'btn_how_to_play',
+                                        ),
+                                        bgColor: ComicTheme.energyCyan,
+                                        textColor: ComicTheme.inkBlack,
+                                        compact: true,
+                                        onTap: () {
+                                          setState(
+                                            () => _showControlsModal = true,
+                                          );
+                                        },
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 10),
+                                _buildCartoonMenuButton(
+                                  iconAsset: CartoonAssets.uiBtnSettings,
+                                  label: AppLocalizations.tr('btn_settings'),
+                                  bgColor: ComicTheme.mangaPanelBg,
+                                  textColor: ComicTheme.comicYellow,
+                                  compact: true,
+                                  onTap: () {
+                                    widget.game.openSettings();
+                                  },
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+
+                      const Spacer(),
+                    ],
+                  ),
+                ),
+              ),
+
+              // 4. Controls / How To Play Modal
+              if (_showControlsModal) _buildControlsModal(),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildCartoonMenuButton({
+    required String iconAsset,
+    required String label,
+    required Color bgColor,
+    required Color textColor,
+    required VoidCallback onTap,
+    bool isPrimary = false,
+    bool compact = false,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: EdgeInsets.symmetric(
+          horizontal: compact ? 12 : 18,
+          vertical: isPrimary ? 12 : (compact ? 9 : 10),
+        ),
+        decoration: ComicTheme.panelDecoration(
+          backgroundColor: bgColor,
+          borderWidth: isPrimary ? 4.5 : 3.5,
+          shadowOffset: isPrimary ? 7 : 5,
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Image.asset(
+              iconAsset,
+              width: isPrimary ? 34 : (compact ? 26 : 30),
+              height: isPrimary ? 34 : (compact ? 26 : 30),
+            ),
+            const SizedBox(width: 10),
+            Flexible(
+              child: Text(
+                label,
+                overflow: TextOverflow.ellipsis,
+                style: ComicTheme.titleText(
+                  size: isPrimary ? 24 : (compact ? 16 : 20),
+                  color: textColor,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildControlsModal() {
+    return Container(
+      color: Colors.black.withValues(alpha: 0.82),
+      child: Center(
+        child: Container(
+          width: 560,
+          margin: const EdgeInsets.all(20),
+          padding: const EdgeInsets.all(24),
+          decoration: ComicTheme.panelDecoration(
+            backgroundColor: ComicTheme.paperWhite,
+            borderWidth: 5,
+            shadowOffset: 10,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                AppLocalizations.tr('controls_title'),
+                style: ComicTheme.titleText(
+                  size: 28,
+                  color: ComicTheme.actionRed,
+                ),
+              ),
+              const SizedBox(height: 14),
+              _controlRow(
+                'A / D  |  ◀ / ▶',
+                AppLocalizations.tr('ctrl_move'),
+              ),
+              _controlRow(
+                'SPACE / W / ▲',
+                AppLocalizations.tr('ctrl_jump'),
+              ),
+              _controlRow(
+                'J / X',
+                AppLocalizations.tr('ctrl_slash'),
+              ),
+              _controlRow(
+                'K / C / SHIFT',
+                AppLocalizations.tr('ctrl_dash'),
+              ),
+              _controlRow(
+                'L / Z',
+                AppLocalizations.tr('ctrl_kunai'),
+              ),
+              _controlRow(
+                'U / V',
+                AppLocalizations.tr('ctrl_ougi'),
+              ),
+              _controlRow(
+                'P / ESC',
+                AppLocalizations.tr('ctrl_pause'),
+              ),
+              const SizedBox(height: 14),
+              Text(
+                AppLocalizations.tr('ctrl_tip'),
+                textAlign: TextAlign.center,
+                style: ComicTheme.bodyText(
+                  size: 13,
+                  color: ComicTheme.inkBlack,
+                ),
+              ),
+              const SizedBox(height: 16),
+              ComicButton(
+                label: AppLocalizations.tr('btn_got_it'),
+                color: ComicTheme.comicYellow,
+                onPressed: () => setState(() => _showControlsModal = false),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _controlRow(String keys, String desc) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          Container(
+            width: 150,
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: ComicTheme.mangaPanelBg,
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: ComicTheme.inkBlack, width: 2.5),
+            ),
+            child: Text(
+              keys,
+              textAlign: TextAlign.center,
+              style: ComicTheme.titleText(
+                size: 15,
+                color: ComicTheme.comicYellow,
+              ),
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Text(
+              desc,
+              style: ComicTheme.bodyText(
+                size: 14,
+                color: ComicTheme.inkBlack,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}

@@ -39,10 +39,12 @@ class BossRyuKotei extends BossBase {
 
   BossRyuKotei({
     required Vector2 position,
+    super.arenaMinX = 2540.0,
+    super.arenaMaxX = 3340.0,
   }) : super(
           name: 'RYU-KOTEI',
           title: 'THE DRAGON SHOGUN',
-          maxHp: 400.0,
+          maxHp: 340.0,
           position: position,
           size: Vector2(74, 96),
         ) {
@@ -52,9 +54,6 @@ class BossRyuKotei extends BossBase {
 
   @override
   Future<void> onLoad() async {
-    await super.onLoad();
-    add(RectangleHitbox());
-
     final imgs = game.images;
     _idleTicker = CartoonAssets.animation(
       imgs,
@@ -95,6 +94,9 @@ class BossRyuKotei extends BossBase {
       textureSize: Vector2(240, 220),
       stepTime: 0.11,
     ).createTicker();
+
+    await super.onLoad();
+    add(RectangleHitbox());
   }
 
   @override
@@ -177,8 +179,10 @@ class BossRyuKotei extends BossBase {
         if (dist < 50 && (player.position.y - position.y).abs() < 50) {
           player.takeDamage(1);
         }
-        if (_stateTimer >= 0.45 || position.x < 2030 || position.x > 2860) {
-          position.x = position.x.clamp(2030.0, 2860.0);
+        if (_stateTimer >= 0.45 ||
+            position.x < arenaMinX ||
+            position.x > arenaMaxX) {
+          position.x = position.x.clamp(arenaMinX, arenaMaxX);
           state = RyuState.recovering;
           _stateTimer = 0.0;
         }

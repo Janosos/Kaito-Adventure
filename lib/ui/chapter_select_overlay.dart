@@ -1,224 +1,335 @@
 import 'package:flutter/material.dart';
 import '../game/cartoon_assets.dart';
 import '../game/manga_game.dart';
+import 'app_localizations.dart';
 import 'comic_theme.dart';
 
 class ChapterSelectOverlay extends StatelessWidget {
   final MangaGame game;
+
   const ChapterSelectOverlay({super.key, required this.game});
+
+  static const List<_ChapterVisual> _visuals = [
+    _ChapterVisual(
+      level: 1,
+      accentColor: ComicTheme.energyCyan,
+      bgAsset: CartoonAssets.bgLevel1,
+      bossPortrait: CartoonAssets.portraitKurokage,
+    ),
+    _ChapterVisual(
+      level: 2,
+      accentColor: ComicTheme.actionRed,
+      bgAsset: CartoonAssets.bgLevel2,
+      bossPortrait: CartoonAssets.portraitRyuKotei,
+    ),
+    _ChapterVisual(
+      level: 3,
+      accentColor: Color(0xFF00E676),
+      bgAsset: CartoonAssets.bgLevel3,
+      bossPortrait: CartoonAssets.portraitHebiHime,
+    ),
+    _ChapterVisual(
+      level: 4,
+      accentColor: Color(0xFF40C4FF),
+      bgAsset: CartoonAssets.bgLevel4,
+      bossPortrait: CartoonAssets.portraitYukiOni,
+    ),
+    _ChapterVisual(
+      level: 5,
+      accentColor: ComicTheme.comicYellow,
+      bgAsset: CartoonAssets.bgLevel5,
+      bossPortrait: CartoonAssets.portraitMuzanKai,
+    ),
+  ];
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.black.withValues(alpha: 0.78),
-      body: Center(
-        child: SingleChildScrollView(
-          child: Container(
-            margin: const EdgeInsets.all(24),
-            padding: const EdgeInsets.all(24),
-            constraints: const BoxConstraints(maxWidth: 840),
-            decoration: ComicTheme.comicPanelDecoration(
-              backgroundColor: ComicTheme.paperWhite,
-              borderWidth: 4,
-              shadowOffset: 6,
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Header
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      'MANGA VOLUME SELECT',
-                      style: ComicTheme.comicTitle(
-                          fontSize: 28, color: ComicTheme.inkBlack),
+    return ValueListenableBuilder<AppLanguage>(
+      valueListenable: AppLocalizations.languageNotifier,
+      builder: (context, _, _) {
+        return Material(
+          color: Colors.black.withValues(alpha: 0.85),
+          child: Stack(
+            children: [
+              Positioned.fill(
+                child: RepaintBoundary(
+                  child: CustomPaint(
+                    painter: MangaSpeedLinesPainter(
+                      lineCount: 40,
+                      color: Colors.white10,
                     ),
-                    IconButton(
-                      icon: const Icon(Icons.close, size: 28),
-                      onPressed: () {
-                        game.overlays.remove('chapter_select');
-                        game.resumeEngine();
-                      },
-                    ),
-                  ],
+                  ),
                 ),
-                const Divider(thickness: 3, color: ComicTheme.inkBlack),
-                const SizedBox(height: 16),
+              ),
+              SafeArea(
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(
+                      maxWidth: 820,
+                      maxHeight: 510,
+                    ),
+                    child: Container(
+                      margin: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 10,
+                      ),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 14,
+                      ),
+                      decoration: ComicTheme.panelDecoration(
+                        backgroundColor: ComicTheme.paperWhite,
+                        borderWidth: 4.5,
+                        shadowOffset: 8,
+                      ),
+                      child: Column(
+                        children: [
+                          // Header Row
+                          Row(
+                            children: [
+                              Image.asset(
+                                CartoonAssets.uiBtnChapters,
+                                width: 38,
+                                height: 38,
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      AppLocalizations.tr(
+                                        'select_chapter_title',
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: ComicTheme.titleText(
+                                        size: 28,
+                                        color: ComicTheme.actionRed,
+                                      ).copyWith(height: 1.05),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      AppLocalizations.tr('select_chapter_sub'),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: ComicTheme.bodyText(
+                                        size: 11.5,
+                                        color: ComicTheme.inkBlack,
+                                      ).copyWith(height: 1.1),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              GestureDetector(
+                                onTap: () =>
+                                    game.overlays.remove('chapter_select'),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 14,
+                                    vertical: 8,
+                                  ),
+                                  decoration: ComicTheme.panelDecoration(
+                                    backgroundColor: ComicTheme.inkBlack,
+                                    borderWidth: 3,
+                                    shadowOffset: 3,
+                                  ),
+                                  child: Text(
+                                    AppLocalizations.tr('btn_back'),
+                                    style: ComicTheme.titleText(
+                                      size: 16,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 10),
 
-                // Chapter Cards Row
-                Row(
-                  children: [
-                    Expanded(
-                      child: _buildChapterCard(
-                        context,
-                        chapterNumber: 1,
-                        title: 'THE INKED ROOFTOPS',
-                        japaneseTitle: '墨の屋根',
-                        bossName: 'KUROKAGE (黒影)',
-                        bgAsset: CartoonAssets.bgLevel1,
-                        bossAsset: CartoonAssets.portraitKurokage,
-                        description:
-                            'Leap across Neo-Tokyo pagoda rooftops, evade saw hazards, and confront the Shadow Executioner under the crescent moon.',
-                        accentColor: ComicTheme.darkPurple,
-                        onSelect: () {
-                          game.overlays.remove('chapter_select');
-                          game.resumeEngine();
-                          game.loadLevel(1);
-                        },
+                          // Scrollable 5-Chapter List (Overflow-Free!)
+                          Expanded(
+                            child: ListView.separated(
+                              physics: const BouncingScrollPhysics(),
+                              itemCount: _visuals.length,
+                              separatorBuilder: (_, _) =>
+                                  const SizedBox(height: 8),
+                              itemBuilder: (context, index) {
+                                return _buildChapterCard(_visuals[index]);
+                              },
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                    const SizedBox(width: 20),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildChapterCard(_ChapterVisual ch) {
+    final isCurrent = game.currentLevelIndex == ch.level;
+
+    return GestureDetector(
+      onTap: () {
+        game.overlays.remove('chapter_select');
+        game.startFromMainMenu(level: ch.level);
+      },
+      child: Container(
+        constraints: const BoxConstraints(minHeight: 88),
+        decoration: ComicTheme.panelDecoration(
+          backgroundColor: ComicTheme.mangaPanelBg,
+          borderWidth: 3.5,
+          shadowOffset: 4,
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(5),
+          child: Stack(
+            children: [
+              Positioned.fill(
+                child: Opacity(
+                  opacity: 0.48,
+                  child: Image.asset(
+                    ch.bgAsset,
+                    fit: BoxFit.cover,
+                    filterQuality: FilterQuality.low,
+                  ),
+                ),
+              ),
+              Positioned.fill(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        ComicTheme.inkBlack.withValues(alpha: 0.92),
+                        ComicTheme.inkBlack.withValues(alpha: 0.55),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    // Boss Portrait Thumbnail
+                    Container(
+                      width: 64,
+                      height: 64,
+                      decoration: BoxDecoration(
+                        border: Border.all(color: ch.accentColor, width: 3),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(5),
+                        child: Image.asset(
+                          ch.bossPortrait,
+                          fit: BoxFit.cover,
+                          filterQuality: FilterQuality.low,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 14),
                     Expanded(
-                      child: _buildChapterCard(
-                        context,
-                        chapterNumber: 2,
-                        title: 'THE CRIMSON CITADEL',
-                        japaneseTitle: '紅蓮の城塞',
-                        bossName: 'RYU-KOTEI (竜皇帝)',
-                        bgAsset: CartoonAssets.bgLevel2,
-                        bossAsset: CartoonAssets.portraitRyuKotei,
-                        description:
-                            'Ascend the molten fortress, avoid erupted flame geysers, and face the 3-phase Dragon Shogun Mech.',
-                        accentColor: ComicTheme.actionRed,
-                        onSelect: () {
-                          game.overlays.remove('chapter_select');
-                          game.resumeEngine();
-                          game.loadLevel(2);
-                        },
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            AppLocalizations.chapterTitle(ch.level),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: ComicTheme.titleText(
+                              size: 18,
+                              color: ch.accentColor,
+                            ).copyWith(height: 1.08),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            AppLocalizations.chapterSubtitle(ch.level),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: ComicTheme.bodyText(
+                              size: 11.5,
+                              color: Colors.white70,
+                              height: 1.12,
+                            ),
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            '${AppLocalizations.tr('boss_prefix')}${AppLocalizations.chapterBoss(ch.level)}',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: ComicTheme.titleText(
+                              size: 12.5,
+                              color: ComicTheme.comicYellow,
+                            ).copyWith(height: 1.08),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 9,
+                      ),
+                      decoration: ComicTheme.panelDecoration(
+                        backgroundColor:
+                            isCurrent ? ComicTheme.comicYellow : ch.accentColor,
+                        borderWidth: 3,
+                        shadowOffset: 3,
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Image.asset(
+                            CartoonAssets.uiBtnPlay,
+                            width: 20,
+                            height: 20,
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            AppLocalizations.tr('btn_play_chapter'),
+                            style: ComicTheme.titleText(
+                              size: 17,
+                              color: ComicTheme.inkBlack,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ],
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
     );
   }
+}
 
-  Widget _buildChapterCard(
-    BuildContext context, {
-    required int chapterNumber,
-    required String title,
-    required String japaneseTitle,
-    required String bossName,
-    required String bgAsset,
-    required String bossAsset,
-    required String description,
-    required Color accentColor,
-    required VoidCallback onSelect,
-  }) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: ComicTheme.comicPanelDecoration(
-        backgroundColor: Colors.white,
-        borderColor: ComicTheme.inkBlack,
-        borderWidth: 3,
-        shadowOffset: 4,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // 2D Cartoon Chapter Artwork Preview Banner with Boss Portrait Badge
-          SizedBox(
-            height: 110,
-            width: double.infinity,
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                Container(
-                  decoration: BoxDecoration(
-                    border: Border.all(color: ComicTheme.inkBlack, width: 2.5),
-                  ),
-                  child: Image.asset(
-                    bgAsset,
-                    fit: BoxFit.cover,
-                  ),
-                ),
-                Positioned(
-                  top: 8,
-                  left: 8,
-                  child: Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: accentColor,
-                      border: Border.all(color: Colors.white, width: 2),
-                    ),
-                    child: Text(
-                      'ISSUE #$chapterNumber • $japaneseTitle',
-                      style: ComicTheme.mangaHeader(
-                          fontSize: 12, color: Colors.white),
-                    ),
-                  ),
-                ),
-                Positioned(
-                  right: 8,
-                  bottom: 8,
-                  child: Container(
-                    width: 56,
-                    height: 56,
-                    decoration: BoxDecoration(
-                      border: Border.all(color: Colors.white, width: 2.5),
-                      boxShadow: const [
-                        BoxShadow(
-                          color: Colors.black,
-                          offset: Offset(2, 2),
-                          blurRadius: 0,
-                        )
-                      ],
-                    ),
-                    child: Image.asset(
-                      bossAsset,
-                      fit: BoxFit.cover,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 10),
-          Text(
-            title,
-            style:
-                ComicTheme.comicTitle(fontSize: 20, color: ComicTheme.inkBlack),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'BOSS: $bossName',
-            style: ComicTheme.mangaHeader(
-                fontSize: 14, color: ComicTheme.actionRed),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            description,
-            style: ComicTheme.comicBody(
-                fontSize: 12.5, color: Colors.grey.shade800),
-          ),
-          const SizedBox(height: 14),
-          SizedBox(
-            width: double.infinity,
-            child: GestureDetector(
-              onTap: onSelect,
-              child: Container(
-                padding: const EdgeInsets.symmetric(vertical: 10),
-                decoration: ComicTheme.comicButtonDecoration(
-                  backgroundColor: ComicTheme.comicYellow,
-                ),
-                child: Center(
-                  child: Text(
-                    'PLAY CHAPTER ▶',
-                    style: ComicTheme.comicTitle(
-                        fontSize: 16, color: ComicTheme.inkBlack),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+class _ChapterVisual {
+  final int level;
+  final Color accentColor;
+  final String bgAsset;
+  final String bossPortrait;
+
+  const _ChapterVisual({
+    required this.level,
+    required this.accentColor,
+    required this.bgAsset,
+    required this.bossPortrait,
+  });
 }

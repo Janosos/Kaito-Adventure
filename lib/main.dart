@@ -10,15 +10,24 @@ import 'ui/chapter_select_overlay.dart';
 import 'ui/pause_overlay.dart';
 import 'ui/game_over_overlay.dart';
 import 'ui/victory_overlay.dart';
+import 'ui/intro_overlay.dart';
+import 'ui/main_menu_overlay.dart';
+import 'ui/settings_overlay.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Set preferred landscape orientation for platformer experience
+  // Keep decoded 2D illustrations and sprite sheets resident in GPU/RAM cache
+  // to avoid texture re-decoding stutter on Snapdragon (Adreno) & MediaTek (Mali)
+  PaintingBinding.instance.imageCache.maximumSize = 200;
+  PaintingBinding.instance.imageCache.maximumSizeBytes = 150 << 20; // 150 MB
+
+  // Set preferred landscape orientation & immersive mode for Android/Mobile
   await SystemChrome.setPreferredOrientations([
     DeviceOrientation.landscapeLeft,
     DeviceOrientation.landscapeRight,
   ]);
+  await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
 
   runApp(const MangaPlatformerApp());
 }
@@ -29,7 +38,7 @@ class MangaPlatformerApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Manga Blade: Ink Shinobi',
+      title: 'Kaito Adventure: Ink Shinobi',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         fontFamily: 'Bangers',
@@ -77,21 +86,27 @@ class _MangaGameScreenState extends State<MangaGameScreen> {
               ),
             ],
           ),
-          child: GameWidget<MangaGame>(
-            game: _game,
-            overlayBuilderMap: {
-              'hud': (context, game) => ComicHud(game: game),
-              'virtual_controls': (context, game) =>
-                  VirtualJoystickOverlay(game: game),
-              'manga_cutin': (context, game) =>
-                  MangaCutInOverlay(game: game),
-              'pause': (context, game) => PauseOverlay(game: game),
-              'game_over': (context, game) => GameOverOverlay(game: game),
-              'victory': (context, game) => VictoryOverlay(game: game),
-              'chapter_select': (context, game) =>
-                  ChapterSelectOverlay(game: game),
-            },
-            initialActiveOverlays: const ['hud', 'virtual_controls'],
+          child: RepaintBoundary(
+            child: GameWidget<MangaGame>(
+              game: _game,
+              overlayBuilderMap: {
+                'intro': (context, game) => SplashIntroOverlay(game: game),
+                'story_intro': (context, game) => StoryIntroOverlay(game: game),
+                'settings': (context, game) => SettingsOverlay(game: game),
+                'main_menu': (context, game) => MainMenuOverlay(game: game),
+                'hud': (context, game) => ComicHud(game: game),
+                'virtual_controls': (context, game) =>
+                    VirtualJoystickOverlay(game: game),
+                'manga_cutin': (context, game) =>
+                    MangaCutInOverlay(game: game),
+                'pause': (context, game) => PauseOverlay(game: game),
+                'game_over': (context, game) => GameOverOverlay(game: game),
+                'victory': (context, game) => VictoryOverlay(game: game),
+                'chapter_select': (context, game) =>
+                    ChapterSelectOverlay(game: game),
+              },
+              initialActiveOverlays: const ['intro'],
+            ),
           ),
         ),
       ),

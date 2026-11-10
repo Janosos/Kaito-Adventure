@@ -348,19 +348,30 @@ class GenUiIcons {
           highlightColor: GenUtils.orange,
           outlineWidth: 4.0,
         );
-        final tp = TextPainter(
-          text: const TextSpan(
-            text: 'S',
-            style: TextStyle(
-              fontSize: 64,
-              fontWeight: FontWeight.w900,
-              color: GenUtils.yellow,
-              shadows: [Shadow(offset: Offset(3, 3), color: GenUtils.ink)],
-            ),
-          ),
-          textDirection: TextDirection.ltr,
-        )..layout();
-        tp.paint(canvas, c - Offset(tp.width / 2, tp.height / 2));
+        // Draw stylized cartoon 'S' rank emblem with vector Path (no TextPainter Ahem blocks)
+        final sPath = Path()
+          ..moveTo(c.dx + 18, c.dy - 18)
+          ..cubicTo(c.dx + 18, c.dy - 34, c.dx - 20, c.dy - 34, c.dx - 20, c.dy - 14)
+          ..cubicTo(c.dx - 20, c.dy + 4, c.dx + 22, c.dy - 2, c.dx + 22, c.dy + 16)
+          ..cubicTo(c.dx + 22, c.dy + 34, c.dx - 18, c.dy + 34, c.dx - 20, c.dy + 16);
+        canvas.drawPath(
+          sPath,
+          Paint()
+            ..color = GenUtils.ink
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 18.0
+            ..strokeCap = StrokeCap.round
+            ..strokeJoin = StrokeJoin.round,
+        );
+        canvas.drawPath(
+          sPath,
+          Paint()
+            ..color = GenUtils.yellow
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 10.0
+            ..strokeCap = StrokeCap.round
+            ..strokeJoin = StrokeJoin.round,
+        );
       },
     );
   }

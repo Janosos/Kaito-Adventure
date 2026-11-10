@@ -11,9 +11,34 @@ class VirtualJoystickOverlay extends StatefulWidget {
   State<VirtualJoystickOverlay> createState() => _VirtualJoystickOverlayState();
 }
 
-class _VirtualJoystickOverlayState extends State<VirtualJoystickOverlay> {
+class _VirtualJoystickOverlayState extends State<VirtualJoystickOverlay>
+    with SingleTickerProviderStateMixin {
   bool _leftPressed = false;
   bool _rightPressed = false;
+  late final AnimationController _uiTicker;
+  int _lastTickMs = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _uiTicker = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 1),
+    )..repeat();
+    _uiTicker.addListener(() {
+      final now = DateTime.now().millisecondsSinceEpoch;
+      if (now - _lastTickMs >= 80) {
+        _lastTickMs = now;
+        if (mounted) setState(() {});
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _uiTicker.dispose();
+    super.dispose();
+  }
 
   void _updateMove() {
     double horizontal = 0.0;
@@ -26,142 +51,165 @@ class _VirtualJoystickOverlayState extends State<VirtualJoystickOverlay> {
   Widget build(BuildContext context) {
     final player = widget.game.player;
     final isUltReady = player.spirit >= 100.0;
+    final kunaiCd = player.kunaiCooldown;
+    final isKunaiReady = kunaiCd <= 0.01;
 
     return SafeArea(
-      child: Stack(
-        children: [
-          // Bottom Left: 2D Cartoon D-Pad Left & Right
-          Positioned(
-            left: 20,
-            bottom: 24,
-            child: Row(
-              children: [
-                _buildDirectionButton(
-                  assetPath: CartoonAssets.uiDpadLeft,
-                  label: 'LEFT',
-                  isPressed: _leftPressed,
-                  onPressStart: () {
-                    setState(() => _leftPressed = true);
-                    _updateMove();
-                  },
-                  onPressEnd: () {
-                    setState(() => _leftPressed = false);
-                    _updateMove();
-                  },
-                ),
-                const SizedBox(width: 14),
-                _buildDirectionButton(
-                  assetPath: CartoonAssets.uiDpadRight,
-                  label: 'RIGHT',
-                  isPressed: _rightPressed,
-                  onPressStart: () {
-                    setState(() => _rightPressed = true);
-                    _updateMove();
-                  },
-                  onPressEnd: () {
-                    setState(() => _rightPressed = false);
-                    _updateMove();
-                  },
-                ),
-              ],
+      child: RepaintBoundary(
+        child: Stack(
+          children: [
+            // Bottom Left: Zero-Latency Multi-Touch 2D Cartoon D-Pad
+            Positioned(
+              left: 20,
+              bottom: 24,
+              child: Row(
+                children: [
+                  _buildDirectionButton(
+                    assetPath: CartoonAssets.uiDpadLeft,
+                    label: 'LEFT',
+                    isPressed: _leftPressed,
+                    onPressStart: () {
+                      setState(() => _leftPressed = true);
+                      _updateMove();
+                    },
+                    onPressEnd: () {
+                      setState(() => _leftPressed = false);
+                      _updateMove();
+                    },
+                  ),
+                  const SizedBox(width: 14),
+                  _buildDirectionButton(
+                    assetPath: CartoonAssets.uiDpadRight,
+                    label: 'RIGHT',
+                    isPressed: _rightPressed,
+                    onPressStart: () {
+                      setState(() => _rightPressed = true);
+                      _updateMove();
+                    },
+                    onPressEnd: () {
+                      setState(() => _rightPressed = false);
+                      _updateMove();
+                    },
+                  ),
+                ],
+              ),
             ),
-          ),
 
-          // Top Center: Keyboard Key Controls Hint
-          Positioned(
-            top: 14,
-            left: 240,
-            right: 240,
-            child: Center(
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
-                decoration: ComicTheme.comicPanelDecoration(
-                  backgroundColor: ComicTheme.paperWhite,
-                  borderWidth: 2,
-                  shadowOffset: 2,
-                ),
-                child: Text(
-                  'KEYS: [A/D] MOVE  [SPACE] JUMP  [J] SLASH  [K] DASH  [L] KUNAI  [U] OUGI',
-                  style: ComicTheme.comicBody(
-                      fontSize: 11, color: ComicTheme.inkBlack),
+            // Top Center: Keyboard Key Controls Hint
+            Positioned(
+              top: 12,
+              left: 230,
+              right: 230,
+              child: Center(
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
+                  decoration: ComicTheme.comicPanelDecoration(
+                    backgroundColor: ComicTheme.paperWhite,
+                    borderWidth: 2,
+                    shadowOffset: 2,
+                  ),
+                  child: Text(
+                    'KEYS: [A/D] MOVE  [SPACE] JUMP  [J] SLASH  [K] DASH  [L] KUNAI (5s)  [U] OUGI',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: ComicTheme.comicBody(
+                      fontSize: 10.5,
+                      color: ComicTheme.inkBlack,
+                    ),
+                  ),
                 ),
               ),
             ),
-          ),
 
-          // Bottom Right: 2D Cartoon Skill Action Cluster
-          Positioned(
-            right: 20,
-            bottom: 20,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                // Kunai & Dash Column
-                Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    _buildActionButton(
-                      iconAsset: CartoonAssets.uiSkillKunai,
-                      label: 'KUNAI [L]',
-                      color: Colors.white,
-                      onTap: () => widget.game.player.performThrowKunai(),
-                    ),
-                    const SizedBox(height: 10),
-                    _buildActionButton(
-                      iconAsset: CartoonAssets.uiSkillDash,
-                      label: 'DASH [K]',
-                      color: ComicTheme.energyCyan,
-                      onTap: () {
-                        if (widget.game.player.dashCooldown <= 0) {
-                          widget.game.player.performDash();
-                        }
-                      },
-                    ),
-                  ],
-                ),
-                const SizedBox(width: 12),
-
-                // Melee Slash, Ougi & Jump Column
-                Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (isUltReady)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 8),
-                        child: _buildActionButton(
-                          iconAsset: CartoonAssets.uiSkillOugi,
-                          label: 'OUGI [U]',
-                          color: ComicTheme.comicYellow,
-                          isLarge: true,
-                          onTap: () => widget.game.player.performUltimate(),
-                        ),
+            // Bottom Right: Zero-Latency Multi-Touch 2D Cartoon Skill Cluster
+            Positioned(
+              right: 20,
+              bottom: 20,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  // Kunai (with 5s Cooldown Badge) & Dash Column
+                  Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _buildActionButton(
+                        iconAsset: CartoonAssets.uiSkillKunai,
+                        label: isKunaiReady
+                            ? 'KUNAI [L]'
+                            : '${kunaiCd.toStringAsFixed(1)}s',
+                        color: isKunaiReady
+                            ? Colors.white
+                            : ComicTheme.halftoneGray,
+                        isOnCooldown: !isKunaiReady,
+                        onTap: () {
+                          if (widget.game.player.kunaiCooldown <= 0) {
+                            widget.game.player.performThrowKunai();
+                            setState(() {});
+                          }
+                        },
                       ),
-                    _buildActionButton(
-                      iconAsset: CartoonAssets.uiSkillSlash,
-                      label: 'SLASH [J]',
-                      color: ComicTheme.actionRed,
-                      isLarge: true,
-                      onTap: () {
-                        if (widget.game.player.attackCooldown <= 0) {
-                          widget.game.player.performAttack();
-                        }
-                      },
-                    ),
-                    const SizedBox(height: 10),
-                    _buildActionButton(
-                      iconAsset: CartoonAssets.uiSkillJump,
-                      label: 'JUMP',
-                      color: ComicTheme.comicYellow,
-                      isLarge: true,
-                      onTap: () => widget.game.player.performJump(),
-                    ),
-                  ],
-                ),
-              ],
+                      const SizedBox(height: 10),
+                      _buildActionButton(
+                        iconAsset: CartoonAssets.uiSkillDash,
+                        label: 'DASH [K]',
+                        color: ComicTheme.energyCyan,
+                        onTap: () {
+                          if (widget.game.player.dashCooldown <= 0) {
+                            widget.game.player.performDash();
+                          }
+                        },
+                      ),
+                    ],
+                  ),
+                  const SizedBox(width: 12),
+
+                  // Melee Slash, Ougi & Jump Column
+                  Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (isUltReady)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: _buildActionButton(
+                            iconAsset: CartoonAssets.uiSkillOugi,
+                            label: 'OUGI [U]',
+                            color: ComicTheme.comicYellow,
+                            isLarge: true,
+                            onTap: () => widget.game.player.performUltimate(),
+                          ),
+                        ),
+                      _buildActionButton(
+                        iconAsset: CartoonAssets.uiSkillSlash,
+                        label: 'SLASH [J]',
+                        color: ComicTheme.actionRed,
+                        isLarge: true,
+                        onTap: () {
+                          if (widget.game.player.attackCooldown <= 0) {
+                            widget.game.player.performAttack();
+                          }
+                        },
+                      ),
+                      const SizedBox(height: 10),
+                      _buildActionButton(
+                        iconAsset: CartoonAssets.uiSkillJump,
+                        label: 'JUMP',
+                        color: ComicTheme.comicYellow,
+                        isLarge: true,
+                        onTap: () {
+                          if (widget.game.player.isOnGround ||
+                              widget.game.player.isTouchingWall) {
+                            widget.game.player.performJump();
+                          }
+                        },
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -173,14 +221,14 @@ class _VirtualJoystickOverlayState extends State<VirtualJoystickOverlay> {
     required VoidCallback onPressStart,
     required VoidCallback onPressEnd,
   }) {
-    return GestureDetector(
-      onTapDown: (_) => onPressStart(),
-      onTapUp: (_) => onPressEnd(),
-      onTapCancel: () => onPressEnd(),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 60),
-        width: 60,
-        height: 60,
+    return Listener(
+      behavior: HitTestBehavior.opaque,
+      onPointerDown: (_) => onPressStart(),
+      onPointerUp: (_) => onPressEnd(),
+      onPointerCancel: (_) => onPressEnd(),
+      child: Container(
+        width: 62,
+        height: 62,
         decoration: ComicTheme.comicButtonDecoration(
           backgroundColor:
               isPressed ? ComicTheme.halftoneGray : ComicTheme.paperWhite,
@@ -193,7 +241,9 @@ class _VirtualJoystickOverlayState extends State<VirtualJoystickOverlay> {
             Text(
               label,
               style: ComicTheme.mangaHeader(
-                  fontSize: 10, color: ComicTheme.inkBlack),
+                fontSize: 10,
+                color: ComicTheme.inkBlack,
+              ),
             ),
           ],
         ),
@@ -207,32 +257,39 @@ class _VirtualJoystickOverlayState extends State<VirtualJoystickOverlay> {
     required Color color,
     required VoidCallback onTap,
     bool isLarge = false,
+    bool isOnCooldown = false,
   }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: isLarge ? 68 : 58,
-        height: isLarge ? 68 : 58,
-        decoration: ComicTheme.comicButtonDecoration(
-          backgroundColor: color,
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Image.asset(
-              iconAsset,
-              width: isLarge ? 36 : 30,
-              height: isLarge ? 36 : 30,
-            ),
-            Text(
-              label,
-              style: ComicTheme.mangaHeader(
-                fontSize: isLarge ? 11 : 9.5,
-                color: ComicTheme.inkBlack,
+    return Listener(
+      behavior: HitTestBehavior.opaque,
+      onPointerDown: (_) => onTap(),
+      child: Opacity(
+        opacity: isOnCooldown ? 0.65 : 1.0,
+        child: Container(
+          width: isLarge ? 68 : 58,
+          height: isLarge ? 68 : 58,
+          decoration: ComicTheme.comicButtonDecoration(
+            backgroundColor: color,
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Image.asset(
+                iconAsset,
+                width: isLarge ? 36 : 30,
+                height: isLarge ? 36 : 30,
               ),
-              textAlign: TextAlign.center,
-            ),
-          ],
+              Text(
+                label,
+                style: ComicTheme.mangaHeader(
+                  fontSize: isLarge ? 11 : 9.5,
+                  color: isOnCooldown
+                      ? ComicTheme.actionRed
+                      : ComicTheme.inkBlack,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
         ),
       ),
     );
