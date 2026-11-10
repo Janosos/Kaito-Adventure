@@ -350,7 +350,7 @@ class SettingsOverlay extends StatelessWidget {
                                                       '${AppLocalizations.tr('btn_size_label')}: $sizePct%',
                                                   ratio: ((hudCfg.buttonScale -
                                                               0.60) /
-                                                          0.80)
+                                                          1.20)
                                                       .clamp(0.0, 1.0),
                                                   barColor:
                                                       ComicTheme.energyCyan,

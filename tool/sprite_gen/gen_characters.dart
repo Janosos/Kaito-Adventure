@@ -23,12 +23,17 @@ class GenCharacters {
     bool blink = false,
     bool angryEyes = false,
     bool shockedEyes = false,
+    bool knockoutEyes = false,
+    double rootRotation = 0.0,
     int swordMode = 0, // 0=sheathed, 1=slash1, 2=slash2, 3=slash3, 4=dash
     double swordProgress = 0.0,
     Color? auraColor,
   }) {
     canvas.save();
     canvas.translate(centerBottom.dx, centerBottom.dy + bodyBob);
+    if (rootRotation != 0.0) {
+      canvas.rotate(rootRotation);
+    }
     canvas.scale(0.84, 0.84);
 
     // Optional dash/combo cartoon aura glow behind character
@@ -221,7 +226,21 @@ class GenCharacters {
     );
 
     // Expressive Cartoon Eyes
-    if (blink) {
+    if (knockoutEyes) {
+      // Classic 2D Cartoon X _ X Knockout Eyes!
+      for (final ex in [-3.0, 9.0]) {
+        canvas.drawLine(
+          Offset(ex - 3.5, -22.5),
+          Offset(ex + 3.5, -15.5),
+          GenUtils.stroke(GenUtils.ink, 2.8),
+        );
+        canvas.drawLine(
+          Offset(ex + 3.5, -22.5),
+          Offset(ex - 3.5, -15.5),
+          GenUtils.stroke(GenUtils.ink, 2.8),
+        );
+      }
+    } else if (blink) {
       // Happy/focused curved closed eyes
       canvas.drawLine(
         const Offset(-6, -19),
@@ -651,6 +670,158 @@ class GenCharacters {
           shockedEyes: true,
           auraColor: GenUtils.red,
         );
+      },
+    );
+
+    // 10. DEATH (7 frames, 144x128) - Dramatic 2D Cartoon Defeat & Collapse!
+    await generateKaitoDeath();
+  }
+
+  static Future<void> generateKaitoDeath() async {
+    const base = 'assets/images/characters';
+    await GenUtils.saveSheet(
+      relativePath: '$base/kaito_death.png',
+      frameWidth: 144,
+      frameHeight: 128,
+      frameCount: 7,
+      drawFrame: (canvas, i, size) {
+        // Progression:
+        // i=0: Heavy impact shock! Knocked back, red flash aura, sword flying up
+        // i=1: Mid-air knockback, X_X eyes starting, sword spinning high
+        // i=2: Dropping to knees, leaning far back, sword plunging into ground
+        // i=3: Collapsing onto back with dust puffs + sword planted upright
+        // i=4..6: Lying defeated on ground, X_X eyes, dizzy stars & spirit wisp rising
+        final t = i / 6.0;
+        final isCollapsed = i >= 3;
+        final collapseProgress = ((i - 1) / 3.0).clamp(0.0, 1.0);
+        final rootRot = -collapseProgress * 1.48; // Rotates to lie flat on back
+        final centerX = size.width * 0.48 - collapseProgress * 12.0;
+        final centerY = size.height - 12.0 + (i == 1 ? -10.0 : (isCollapsed ? -4.0 : 0.0));
+
+        // Ground shadow beneath Kaito
+        canvas.drawOval(
+          Rect.fromCenter(
+            center: Offset(size.width * 0.48, size.height - 8),
+            width: isCollapsed ? 86 : 54,
+            height: 12,
+          ),
+          GenUtils.fill(GenUtils.ink.withValues(alpha: 0.38)),
+        );
+
+        // Draw Kaito's body collapsing
+        _drawKaitoPose(
+          canvas,
+          centerBottom: Offset(centerX, centerY),
+          rootRotation: rootRot,
+          torsoLean: i == 0 ? -0.38 : (i == 1 ? -0.52 : -0.22),
+          leftLegAngle: isCollapsed ? 0.15 : -0.35,
+          rightLegAngle: isCollapsed ? -0.10 : 0.42,
+          scarfWavePhase: i * 1.2,
+          scarfLift: isCollapsed ? 18.0 : -14.0,
+          shockedEyes: i == 0,
+          knockoutEyes: i >= 1,
+          swordMode: 0,
+          auraColor: i <= 1 ? GenUtils.red : null,
+        );
+
+        // Flying / Planted Katana in Foreground
+        canvas.save();
+        if (i < 2) {
+          // Katana spinning in the air after being knocked from Kaito's grasp
+          final kx = size.width * 0.68 + i * 8.0;
+          final ky = size.height * 0.36 - i * 10.0;
+          canvas.translate(kx, ky);
+          canvas.rotate(0.8 + i * 2.1);
+        } else {
+          // Katana planted blade-down into the ground beside Kaito!
+          final kx = size.width * 0.78;
+          final ky = size.height - 14.0;
+          canvas.translate(kx, ky);
+          canvas.rotate(pi / 2 + 0.12);
+        }
+        // Hilt & Guard
+        GenUtils.drawCelRRect(
+          canvas,
+          const Rect.fromLTWH(-16, -3.5, 14, 7),
+          2,
+          GenUtils.red,
+          outlineWidth: 2.5,
+        );
+        GenUtils.drawCelRRect(
+          canvas,
+          const Rect.fromLTWH(-4, -8, 4.5, 16),
+          2,
+          GenUtils.gold,
+          outlineWidth: 2.5,
+        );
+        // Blade (partially buried when planted)
+        final bladeLen = i < 2 ? 44.0 : 28.0;
+        final bladePath = Path()
+          ..moveTo(0, -4)
+          ..lineTo(bladeLen, -2)
+          ..lineTo(bladeLen + 6, 0)
+          ..lineTo(bladeLen, 3)
+          ..lineTo(0, 4)
+          ..close();
+        GenUtils.drawCelPath(
+          canvas,
+          bladePath,
+          GenUtils.steel,
+          highlightColor: Colors.white,
+          outlineWidth: 2.5,
+        );
+        canvas.restore();
+
+        // Impact dust clouds when hitting ground (frames 3 & 4)
+        if (i == 3 || i == 4) {
+          final puffAlpha = i == 3 ? 0.9 : 0.55;
+          final puffRadius = i == 3 ? 11.0 : 15.0;
+          for (final dx in [-28.0, 0.0, 26.0]) {
+            GenUtils.drawCelCircle(
+              canvas,
+              Offset(size.width * 0.42 + dx, size.height - 14),
+              puffRadius,
+              GenUtils.white.withValues(alpha: puffAlpha),
+              outlineWidth: 2.5,
+            );
+          }
+        }
+
+        // Orbiting 2D Cartoon Dizzy Stars & Rising Spirit Wisp (frames 3..6)
+        if (i >= 2) {
+          final headCenter = isCollapsed
+              ? Offset(size.width * 0.24, size.height - 38)
+              : Offset(size.width * 0.42, size.height - 76);
+          for (int s = 0; s < 3; s++) {
+            final angle = t * pi * 4 + s * (2 * pi / 3);
+            final sx = headCenter.dx + cos(angle) * 18.0;
+            final sy = headCenter.dy - 12.0 + sin(angle) * 6.0;
+            GenUtils.drawCartoonStar(
+              canvas,
+              Offset(sx, sy),
+              s.isEven ? 7.0 : 5.5,
+              2.8,
+              5,
+              s.isEven ? GenUtils.yellow : GenUtils.cyan,
+              rotation: angle,
+            );
+          }
+        }
+
+        // Little cartoon spirit wisp floating up on frames 4..6
+        if (i >= 4) {
+          final wispProgress = (i - 3) / 3.0;
+          final wx = size.width * 0.36 + sin(wispProgress * pi * 2) * 5.0;
+          final wy = size.height - 36.0 - wispProgress * 34.0;
+          GenUtils.drawCelCircle(
+            canvas,
+            Offset(wx, wy),
+            7.5 - wispProgress * 1.5,
+            GenUtils.cyan.withValues(alpha: 0.85),
+            highlightColor: Colors.white,
+            outlineWidth: 2.2,
+          );
+        }
       },
     );
   }

@@ -405,7 +405,7 @@ class _VirtualJoystickOverlayState extends State<VirtualJoystickOverlay>
     final normPos = config.posFor(id);
     final double baseDim = isLarge ? 66.0 : 58.0;
     final double scaledDim =
-        (baseDim * uiScale * config.buttonScale).clamp(38.0, 110.0);
+        (baseDim * uiScale * config.buttonScale).clamp(38.0, 130.0);
 
     final double centerX = (normPos.dx * areaW)
         .clamp(scaledDim * 0.5 + 6.0, math.max(scaledDim * 0.5 + 6.0, areaW - scaledDim * 0.5 - 6.0));

@@ -13,15 +13,28 @@ class GameOverOverlay extends StatelessWidget {
     return ValueListenableBuilder<AppLanguage>(
       valueListenable: AppLocalizations.languageNotifier,
       builder: (context, lang, _) {
-        return Scaffold(
-          backgroundColor: Colors.black.withValues(alpha: 0.85),
-          body: SafeArea(
-            child: Center(
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: FittedBox(
-                  fit: BoxFit.scaleDown,
-                  child: Container(
+        return TweenAnimationBuilder<double>(
+          tween: Tween<double>(begin: 0.0, end: 1.0),
+          duration: const Duration(milliseconds: 360),
+          curve: Curves.easeOutCubic,
+          builder: (context, t, child) {
+            return Opacity(
+              opacity: t.clamp(0.0, 1.0),
+              child: Transform.scale(
+                scale: 0.90 + 0.10 * t,
+                child: child,
+              ),
+            );
+          },
+          child: Scaffold(
+            backgroundColor: Colors.black.withValues(alpha: 0.85),
+            body: SafeArea(
+              child: Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Container(
                     width: 460,
                     padding: const EdgeInsets.all(22),
                     decoration: ComicTheme.comicPanelDecoration(
@@ -170,6 +183,7 @@ class GameOverOverlay extends StatelessWidget {
                           ],
                         ),
                       ],
+                    ),
                     ),
                   ),
                 ),

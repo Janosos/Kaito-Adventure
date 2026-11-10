@@ -14,6 +14,7 @@ class CartoonAssets {
     'characters/kaito_attack2.png',
     'characters/kaito_attack3.png',
     'characters/kaito_hurt.png',
+    'characters/kaito_death.png',
 
     // Enemies
     'enemies/grunt_walk.png',

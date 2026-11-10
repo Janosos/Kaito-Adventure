@@ -27,6 +27,7 @@ class MangaGame extends FlameGame
   int currentLevelIndex = 1;
   int unlockedLevel = 5;
   int score = 0;
+  bool isGameOver = false;
   Vector2 currentSpawnPoint = Vector2(80, 470);
   Component? _currentLevelComponent;
   bool _hasShownInitialSplash = false;
@@ -392,8 +393,17 @@ class MangaGame extends FlameGame
   }
 
   void onPlayerDied() {
+    _pressedKeys.clear();
+    if (isLoaded && world.children.contains(player)) {
+      player.touchMoveInput = 0.0;
+      player.keyboardMoveInput = 0.0;
+    }
+  }
+
+  void finalizePlayerDeath() {
+    isGameOver = true;
     pauseEngine();
-    overlays.add('game_over');
+    _addOverlay('game_over');
   }
 
   void onBossDefeated(BossBase boss) {
@@ -405,6 +415,7 @@ class MangaGame extends FlameGame
   }
 
   void restartCurrentLevel() {
+    isGameOver = false;
     overlays.remove('game_over');
     overlays.remove('victory');
     loadLevel(currentLevelIndex, pauseForMenu: false);

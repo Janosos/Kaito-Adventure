@@ -205,7 +205,10 @@ void main() {
       expect(game.activeBoss, isNotNull);
     }
 
-    // Verify local persistence of button size, opacity, and custom positions
+    // Verify default button scale starts at 140% (1.40) and persists custom settings locally
+    AppLocalizations.resetHudLayout();
+    expect(AppLocalizations.hudConfig.value.buttonScale, closeTo(1.40, 0.01));
+
     AppLocalizations.updateButtonScale(1.25);
     AppLocalizations.updateButtonOpacity(0.65);
     AppLocalizations.updateButtonPosition('slash', const Offset(0.82, 0.48));
@@ -221,6 +224,7 @@ void main() {
       closeTo(0.82, 0.01),
     );
     AppLocalizations.resetHudLayout();
+    expect(AppLocalizations.hudConfig.value.buttonScale, closeTo(1.40, 0.01));
 
     // Verify minimizing / app-switching / Home button preserves level, position, score & boss without resetting
     game.score = 4500;
@@ -238,5 +242,21 @@ void main() {
     expect(game.player.position.x, closeTo(savedPos.x, 0.01));
     expect(game.score, equals(4500));
     expect(game.activeBoss, same(savedBoss));
+
+    // Verify Kaito plays full 2D cartoon death animation before transitioning to Game Over
+    game.player.invulnerableTimer = 0.0;
+    game.player.isDashing = false;
+    game.player.takeDamage(game.player.hp);
+    expect(game.player.hp, equals(0));
+    expect(game.player.isDying, isTrue);
+    expect(game.player.action, equals(PlayerAction.death));
+    // Must NOT jump abruptly to game_over on the frame of death!
+    expect(game.isGameOver, isFalse);
+
+    // Advance death animation frames (~1.7s)
+    for (int f = 0; f < 36; f++) {
+      game.update(0.05);
+    }
+    expect(game.isGameOver, isTrue);
   });
 }

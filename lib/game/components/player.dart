@@ -23,7 +23,8 @@ enum PlayerAction {
   attack1,
   attack2,
   attack3,
-  hurt
+  hurt,
+  death,
 }
 
 class MangaPlayer extends PositionComponent
@@ -64,10 +65,13 @@ class MangaPlayer extends PositionComponent
   double kunaiCooldown = 0.0;
   double externalWindX = 0.0;
 
-  // Invulnerability & Hurt
+  // Invulnerability, Hurt & Death Animation State
   double invulnerableTimer = 0.0;
   double hurtAnimTimer = 0.0;
-  bool get isInvulnerable => invulnerableTimer > 0 || isDashing;
+  bool isDying = false;
+  double deathAnimTimer = 0.0;
+  bool _spawnedDeathCollapseFx = false;
+  bool get isInvulnerable => invulnerableTimer > 0 || isDashing || isDying;
 
   double _animTime = 0.0;
 
@@ -155,6 +159,14 @@ class MangaPlayer extends PositionComponent
         textureSize: Vector2(128, 128),
         stepTime: 0.08,
       ).createTicker(),
+      PlayerAction.death: CartoonAssets.animation(
+        imgs,
+        'characters/kaito_death.png',
+        frames: 7,
+        textureSize: Vector2(144, 128),
+        stepTime: 0.17,
+        loop: false,
+      ).createTicker(),
     };
     await super.onLoad();
     add(RectangleHitbox(size: Vector2(24, 48), position: Vector2(5, 4)));
@@ -179,6 +191,11 @@ class MangaPlayer extends PositionComponent
     required bool ranged,
     required bool ultimate,
   }) {
+    if (isDying) {
+      keyboardMoveInput = 0.0;
+      touchMoveInput = 0.0;
+      return;
+    }
     keyboardMoveInput = horizontal;
 
     if (jump && (isOnGround || isTouchingWall)) {
@@ -199,6 +216,7 @@ class MangaPlayer extends PositionComponent
   }
 
   void performJump() {
+    if (isDying) return;
     if (isOnGround) {
       velocity.y = jumpForce;
       isOnGround = false;
@@ -228,6 +246,7 @@ class MangaPlayer extends PositionComponent
   }
 
   void performDash() {
+    if (isDying) return;
     isDashing = true;
     dashTimer = dashDuration;
     dashCooldown = 0.65;
@@ -250,6 +269,7 @@ class MangaPlayer extends PositionComponent
   }
 
   void performAttack() {
+    if (isDying) return;
     attackCooldown = 0.25;
     attackAnimTimer = 0.26;
 
@@ -293,7 +313,7 @@ class MangaPlayer extends PositionComponent
   }
 
   void performThrowKunai() {
-    if (kunaiCooldown > 0) return;
+    if (isDying || kunaiCooldown > 0) return;
     kunaiCooldown = maxKunaiCooldown;
     attackAnimTimer = 0.18;
     action = PlayerAction.attack1;
@@ -317,6 +337,7 @@ class MangaPlayer extends PositionComponent
   }
 
   void performUltimate() {
+    if (isDying) return;
     spirit = 0.0;
     invulnerableTimer = 2.0;
     attackAnimTimer = 0.5;
@@ -470,9 +491,15 @@ class MangaPlayer extends PositionComponent
   }
 
   void takeDamage(int amount) {
-    if (isInvulnerable) return;
+    if (isInvulnerable || isDying) return;
 
     hp -= amount;
+    if (hp <= 0) {
+      hp = 0;
+      _startDeathSequence();
+      return;
+    }
+
     invulnerableTimer = 1.3;
     hurtAnimTimer = 0.35;
     action = PlayerAction.hurt;
@@ -485,17 +512,85 @@ class MangaPlayer extends PositionComponent
       fillColor: ComicTheme.actionRed,
       targetScale: 1.4,
     ));
+  }
 
-    if (hp <= 0) {
-      hp = 0;
-      game.onPlayerDied();
+  void _startDeathSequence() {
+    if (isDying) return;
+    isDying = true;
+    isDashing = false;
+    touchMoveInput = 0.0;
+    keyboardMoveInput = 0.0;
+    deathAnimTimer = 1.65;
+    _spawnedDeathCollapseFx = false;
+    action = PlayerAction.death;
+    _tickers[PlayerAction.death]?.reset();
+
+    // Ensure Kaito is visible on screen if he died near/in a pit
+    if (position.y > 520) {
+      position.y = 505;
     }
+    isOnGround = false;
+    velocity.y = -275;
+    velocity.x = -facingDirection * 105;
+
+    game.add(MangaDustEffect(position: position.clone()));
+    game.add(MangaTextEffect(
+      position: Vector2(position.x, position.y - size.y - 16),
+      text: 'DEFEATED!!',
+      fillColor: ComicTheme.actionRed,
+      initialScale: 0.55,
+      targetScale: 1.85,
+      maxLifetime: 1.45,
+    ));
+
+    game.onPlayerDied();
   }
 
   @override
   void update(double dt) {
     super.update(dt);
     _animTime += dt;
+
+    // Dramatic Death Animation Sequence before showing Game Over screen
+    if (isDying) {
+      action = PlayerAction.death;
+      _tickers[PlayerAction.death]?.update(dt);
+      deathAnimTimer -= dt;
+
+      if (!isOnGround && position.y < 515) {
+        velocity.y += gravity * 0.85 * dt;
+        position += velocity * dt;
+        position.x = position.x.clamp(game.minPlayerX, game.maxPlayerX);
+        if (position.y >= 515) {
+          position.y = 515;
+          velocity = Vector2.zero();
+          isOnGround = true;
+        }
+      } else {
+        velocity.x *= (1.0 - dt * 6.5).clamp(0.0, 1.0);
+        velocity.y = 0;
+        position.x = (position.x + velocity.x * dt)
+            .clamp(game.minPlayerX, game.maxPlayerX);
+      }
+
+      if (!_spawnedDeathCollapseFx && deathAnimTimer <= 1.15) {
+        _spawnedDeathCollapseFx = true;
+        game.add(MangaDustEffect(position: position.clone()));
+        game.add(MangaTextEffect(
+          position: Vector2(position.x + 10, position.y - size.y * 0.65),
+          text: 'THUD...',
+          fillColor: ComicTheme.comicYellow,
+          initialScale: 0.4,
+          targetScale: 1.1,
+          maxLifetime: 0.9,
+        ));
+      }
+
+      if (deathAnimTimer <= 0) {
+        game.finalizePlayerDeath();
+      }
+      return;
+    }
 
     if (invulnerableTimer > 0) invulnerableTimer -= dt;
     if (hurtAnimTimer > 0) hurtAnimTimer -= dt;
@@ -647,7 +742,8 @@ class MangaPlayer extends PositionComponent
 
   @override
   void render(Canvas canvas) {
-    if (invulnerableTimer > 0 &&
+    if (!isDying &&
+        invulnerableTimer > 0 &&
         hurtAnimTimer <= 0 &&
         (_animTime * 20).toInt() % 2 == 0) {
       return;
@@ -656,14 +752,27 @@ class MangaPlayer extends PositionComponent
     final ticker = _tickers[action] ?? _tickers[PlayerAction.idle]!;
     final sprite = ticker.getSprite();
 
-    final isAttackSheet = action == PlayerAction.attack1 ||
+    final isWideSheet = action == PlayerAction.attack1 ||
         action == PlayerAction.attack2 ||
-        action == PlayerAction.attack3;
-    final renderW = isAttackSheet ? 82.0 : 72.0;
+        action == PlayerAction.attack3 ||
+        action == PlayerAction.death;
+    final renderW = isWideSheet ? 82.0 : 72.0;
     const renderH = 72.0;
 
     canvas.save();
     canvas.translate(size.x / 2, size.y + 5);
+
+    if (isDying) {
+      // Subtle dramatic crimson spotlight ring under Kaito during death collapse
+      final ringPaint = Paint()
+        ..color = ComicTheme.actionRed.withValues(alpha: 0.28)
+        ..style = PaintingStyle.fill;
+      canvas.drawOval(
+        Rect.fromCenter(center: const Offset(0, -4), width: 68, height: 14),
+        ringPaint,
+      );
+    }
+
     if (facingDirection < 0) {
       canvas.scale(-1, 1);
     }

@@ -14,15 +14,15 @@ class HudControlsConfig {
   final Map<String, Offset> buttonPositions;
 
   static const Map<String, Offset> defaultPositions = {
-    'slash': Offset(0.91, 0.63),
-    'jump': Offset(0.91, 0.84),
-    'kunai': Offset(0.80, 0.63),
-    'dash': Offset(0.80, 0.84),
-    'ougi': Offset(0.69, 0.84),
+    'slash': Offset(0.91, 0.58),
+    'jump': Offset(0.91, 0.83),
+    'kunai': Offset(0.79, 0.58),
+    'dash': Offset(0.79, 0.83),
+    'ougi': Offset(0.67, 0.83),
   };
 
   const HudControlsConfig({
-    this.buttonScale = 1.0,
+    this.buttonScale = 1.40,
     this.buttonOpacity = 0.85,
     this.buttonPositions = defaultPositions,
   });
@@ -39,7 +39,7 @@ class HudControlsConfig {
     Map<String, Offset>? buttonPositions,
   }) {
     return HudControlsConfig(
-      buttonScale: (buttonScale ?? this.buttonScale).clamp(0.60, 1.40),
+      buttonScale: (buttonScale ?? this.buttonScale).clamp(0.60, 1.80),
       buttonOpacity: (buttonOpacity ?? this.buttonOpacity).clamp(0.25, 1.00),
       buttonPositions: buttonPositions ?? Map<String, Offset>.from(this.buttonPositions),
     );
@@ -58,7 +58,7 @@ class HudControlsConfig {
   }
 
   factory HudControlsConfig.fromJson(Map<String, dynamic> json) {
-    final rawScale = (json['buttonScale'] as num?)?.toDouble() ?? 1.0;
+    final rawScale = (json['buttonScale'] as num?)?.toDouble() ?? 1.40;
     final rawOpacity = (json['buttonOpacity'] as num?)?.toDouble() ?? 0.85;
     final positions = Map<String, Offset>.from(defaultPositions);
     final rawPos = json['buttonPositions'];
@@ -78,7 +78,7 @@ class HudControlsConfig {
       }
     }
     return HudControlsConfig(
-      buttonScale: rawScale.clamp(0.60, 1.40),
+      buttonScale: rawScale.clamp(0.60, 1.80),
       buttonOpacity: rawOpacity.clamp(0.25, 1.00),
       buttonPositions: positions,
     );
@@ -125,9 +125,21 @@ class AppLocalizations {
         showVirtualControls.value = showTouch;
       }
 
+      final version = (decoded['settingsVersion'] as num?)?.toInt() ?? 1;
       final hudMap = decoded['hudConfig'];
       if (hudMap is Map<String, dynamic>) {
-        hudConfig.value = HudControlsConfig.fromJson(hudMap);
+        var loaded = HudControlsConfig.fromJson(hudMap);
+        if (version < 2) {
+          // Upgrade older v1 default scale (1.0) to new 1.40 (140%) Android default
+          loaded = loaded.copyWith(
+            buttonScale: loaded.buttonScale < 1.40 ? 1.40 : loaded.buttonScale,
+            buttonPositions: HudControlsConfig.defaultPositions,
+          );
+          hudConfig.value = loaded;
+          saveSettings();
+        } else {
+          hudConfig.value = loaded;
+        }
       }
     } catch (_) {}
   }
@@ -135,6 +147,7 @@ class AppLocalizations {
   static void saveSettings() {
     try {
       final payload = jsonEncode({
+        'settingsVersion': 2,
         'language': languageNotifier.value.name,
         'showVirtualControls': showVirtualControls.value,
         'hudConfig': hudConfig.value.toJson(),
