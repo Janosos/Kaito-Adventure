@@ -119,11 +119,11 @@ class _MainMenuOverlayState extends State<MainMenuOverlay> {
                                   ),
                                 ),
                                 const SizedBox(width: 12),
-                                // Developer Janosos Badge in Top Right
+                                // Developer Janosos Badge in Top Right (Clean Cartoon Badge)
                                 Container(
                                   padding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                    vertical: 6,
+                                    horizontal: 14,
+                                    vertical: 8,
                                   ),
                                   decoration: ComicTheme.panelDecoration(
                                     backgroundColor: ComicTheme.paperWhite,
@@ -133,25 +133,10 @@ class _MainMenuOverlayState extends State<MainMenuOverlay> {
                                   child: Row(
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
-                                      Container(
-                                        width: 32,
-                                        height: 32,
-                                        decoration: BoxDecoration(
-                                          borderRadius:
-                                              BorderRadius.circular(6),
-                                          border: Border.all(
-                                            color: ComicTheme.inkBlack,
-                                            width: 2,
-                                          ),
-                                        ),
-                                        child: ClipRRect(
-                                          borderRadius:
-                                              BorderRadius.circular(4),
-                                          child: Image.asset(
-                                            CartoonAssets.uiJanososAvatar,
-                                            fit: BoxFit.cover,
-                                          ),
-                                        ),
+                                      const Icon(
+                                        Icons.code,
+                                        size: 18,
+                                        color: ComicTheme.actionRed,
                                       ),
                                       const SizedBox(width: 8),
                                       Text(

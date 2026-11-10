@@ -28,6 +28,7 @@ class MangaGame extends FlameGame
   int unlockedLevel = 5;
   int score = 0;
   bool isGameOver = false;
+  bool isLevelVictory = false;
   Vector2 currentSpawnPoint = Vector2(80, 470);
   Component? _currentLevelComponent;
   bool _hasShownInitialSplash = false;
@@ -179,6 +180,8 @@ class MangaGame extends FlameGame
   }
 
   Future<void> loadLevel(int level, {bool pauseForMenu = false}) async {
+    isGameOver = false;
+    isLevelVictory = false;
     currentLevelIndex = level.clamp(1, totalLevels);
     activeBoss = null;
     isBossArenaLocked = false;
@@ -269,11 +272,15 @@ class MangaGame extends FlameGame
 
   void startFromMainMenu({int level = 1}) {
     score = 0;
+    isGameOver = false;
+    isLevelVictory = false;
     loadLevel(level, pauseForMenu: false);
   }
 
   void returnToMainMenu() {
     AppLocalizations.isEditingHudLayout.value = false;
+    isGameOver = false;
+    isLevelVictory = false;
     overlays.remove('pause');
     overlays.remove('settings');
     overlays.remove('story_intro');
@@ -305,6 +312,51 @@ class MangaGame extends FlameGame
 
   void closeSettings() {
     overlays.remove('settings');
+    final isDead = isGameOver ||
+        (isLoaded &&
+            world.children.contains(player) &&
+            (player.hp <= 0 || player.isDying));
+    final isWon =
+        isLevelVictory || (activeBoss != null && activeBoss!.isDefeated);
+
+    if (isDead) {
+      pauseEngine();
+      _addOverlay('game_over');
+    } else if (isWon) {
+      pauseEngine();
+      _addOverlay('victory');
+    } else if (overlays.isActive('hud')) {
+      if (!overlays.isActive('pause')) {
+        resumeEngine();
+      }
+    } else {
+      pauseEngine();
+      _addOverlay('main_menu');
+    }
+  }
+
+  void closeChapterSelect() {
+    overlays.remove('chapter_select');
+    final isDead = isGameOver ||
+        (isLoaded &&
+            world.children.contains(player) &&
+            (player.hp <= 0 || player.isDying));
+    final isWon =
+        isLevelVictory || (activeBoss != null && activeBoss!.isDefeated);
+
+    if (isDead) {
+      pauseEngine();
+      _addOverlay('game_over');
+    } else if (isWon) {
+      pauseEngine();
+      _addOverlay('victory');
+    } else if (overlays.isActive('hud')) {
+      pauseEngine();
+      _addOverlay('pause');
+    } else {
+      pauseEngine();
+      _addOverlay('main_menu');
+    }
   }
 
   void openHudLayoutEditor() {
@@ -407,21 +459,25 @@ class MangaGame extends FlameGame
   }
 
   void onBossDefeated(BossBase boss) {
+    isLevelVictory = true;
     addScore(1000 * currentLevelIndex);
     Future.delayed(const Duration(milliseconds: 1400), () {
       pauseEngine();
-      overlays.add('victory');
+      _addOverlay('victory');
     });
   }
 
   void restartCurrentLevel() {
     isGameOver = false;
+    isLevelVictory = false;
     overlays.remove('game_over');
     overlays.remove('victory');
     loadLevel(currentLevelIndex, pauseForMenu: false);
   }
 
   void nextLevel() {
+    isGameOver = false;
+    isLevelVictory = false;
     overlays.remove('victory');
     final nextIdx = currentLevelIndex < totalLevels ? currentLevelIndex + 1 : 1;
     loadLevel(nextIdx, pauseForMenu: false);

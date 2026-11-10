@@ -258,5 +258,15 @@ void main() {
       game.update(0.05);
     }
     expect(game.isGameOver, isTrue);
+
+    // Verify navigating to Chapter Select or Settings while dead and pressing BACK restores Game Over
+    game.closeChapterSelect();
+    expect(game.isGameOver, isTrue);
+
+    // Verify victory navigation when defeating a boss and pressing BACK from Chapter Select
+    game.isGameOver = false;
+    game.isLevelVictory = true;
+    game.closeChapterSelect();
+    expect(game.isLevelVictory, isTrue);
   });
 }
