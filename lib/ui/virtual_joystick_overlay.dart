@@ -66,6 +66,14 @@ class _VirtualJoystickOverlayState extends State<VirtualJoystickOverlay>
     if (event.pointer != _joystickPointerId) return;
     setState(() {
       _joystickCurrent = event.localPosition;
+      // Dynamic floating origin follow: if thumb drags beyond maxRadius,
+      // shift origin along so reversing direction is always instant!
+      final delta = _joystickCurrent - _joystickOrigin;
+      final dist = delta.distance;
+      if (dist > maxRadius && dist > 0) {
+        _joystickOrigin =
+            _joystickCurrent - Offset(delta.dx / dist * maxRadius, delta.dy / dist * maxRadius);
+      }
     });
     _updateJoystickMove(maxRadius);
   }
@@ -75,20 +83,17 @@ class _VirtualJoystickOverlayState extends State<VirtualJoystickOverlay>
     setState(() {
       _joystickPointerId = null;
     });
-    widget.game.player.moveInput = 0.0;
+    widget.game.player.touchMoveInput = 0.0;
   }
 
   void _updateJoystickMove(double maxRadius) {
     final dx = _joystickCurrent.dx - _joystickOrigin.dx;
-    final deadZone = maxRadius * 0.16;
+    const double deadZone = 6.0;
     if (dx.abs() <= deadZone) {
-      widget.game.player.moveInput = 0.0;
+      widget.game.player.touchMoveInput = 0.0;
     } else {
-      // Crisp analog-to-digital ramp so Kaito reaches full speed smoothly and quickly
-      final sign = dx.sign;
-      final normalized =
-          ((dx.abs() - deadZone) / (maxRadius * 0.45)).clamp(0.35, 1.0);
-      widget.game.player.moveInput = sign * normalized;
+      // Immediate full-speed continuous movement (-1.0 or +1.0) while held!
+      widget.game.player.touchMoveInput = dx > 0 ? 1.0 : -1.0;
     }
   }
 

@@ -160,8 +160,15 @@ class MangaPlayer extends PositionComponent
     add(RectangleHitbox(size: Vector2(24, 48), position: Vector2(5, 4)));
   }
 
-  // Input Handling
-  double moveInput = 0.0;
+  // Input Handling (Separated so keyboard polling never overwrites touch joystick state!)
+  double keyboardMoveInput = 0.0;
+  double touchMoveInput = 0.0;
+  double get moveInput =>
+      touchMoveInput.abs() > 0.01 ? touchMoveInput : keyboardMoveInput;
+  set moveInput(double value) {
+    touchMoveInput = value;
+  }
+
   bool jumpPressed = false;
 
   void handleInput({
@@ -172,7 +179,7 @@ class MangaPlayer extends PositionComponent
     required bool ranged,
     required bool ultimate,
   }) {
-    moveInput = horizontal;
+    keyboardMoveInput = horizontal;
 
     if (jump && (isOnGround || isTouchingWall)) {
       performJump();

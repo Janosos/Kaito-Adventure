@@ -105,14 +105,24 @@ void main() {
     await tester.pump(const Duration(milliseconds: 200));
     expect(tester.takeException(), isNull);
 
-    // 5. Verify floating joystick only appears on left-side touch and disappears on release
+    // 5. Verify floating joystick only appears on left-side touch, moves Kaito continuously across frames while held stationary, and disappears on release
     expect(game.player.moveInput, equals(0.0));
     final TestGesture gesture =
         await tester.startGesture(const Offset(140, 250));
     await tester.pump();
-    await gesture.moveBy(const Offset(55, 0));
+    await gesture.moveBy(const Offset(35, 0));
     await tester.pump();
-    expect(game.player.moveInput, greaterThan(0.8));
+    expect(game.player.moveInput, equals(1.0));
+
+    // Simulate 10 consecutive game frames while finger is held stationary on joystick
+    final double startX = game.player.position.x;
+    for (int f = 0; f < 10; f++) {
+      game.update(0.016);
+    }
+    // Verify Kaito kept moving continuously without stuttering or resetting to 0!
+    expect(game.player.moveInput, equals(1.0));
+    expect(game.player.position.x, greaterThan(startX + 20.0));
+
     await gesture.up();
     await tester.pump();
     expect(game.player.moveInput, equals(0.0));
