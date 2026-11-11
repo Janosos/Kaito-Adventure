@@ -224,44 +224,62 @@ class _MainMenuOverlayState extends State<MainMenuOverlay> {
                                         ],
                                       ),
                                       const SizedBox(height: 10),
-                                      Row(
-                                        children: [
-                                          Expanded(
-                                            child: _buildCartoonMenuButton(
-                                              iconAsset:
-                                                  CartoonAssets.uiBtnSettings,
-                                              label: AppLocalizations.tr(
-                                                'btn_settings',
+                                      if (PwaService
+                                          .instance.shouldShowInstallButton)
+                                        Row(
+                                          children: [
+                                            Expanded(
+                                              child: _buildCartoonMenuButton(
+                                                iconAsset:
+                                                    CartoonAssets.uiBtnSettings,
+                                                label: AppLocalizations.tr(
+                                                  'btn_settings',
+                                                ),
+                                                bgColor:
+                                                    ComicTheme.mangaPanelBg,
+                                                textColor:
+                                                    ComicTheme.comicYellow,
+                                                compact: true,
+                                                onTap: () {
+                                                  widget.game.openSettings();
+                                                },
                                               ),
-                                              bgColor: ComicTheme.mangaPanelBg,
-                                              textColor: ComicTheme.comicYellow,
-                                              compact: true,
-                                              onTap: () {
-                                                widget.game.openSettings();
-                                              },
                                             ),
-                                          ),
-                                          const SizedBox(width: 10),
-                                          Expanded(
-                                            child: _buildCartoonMenuButton(
-                                              iconAsset:
-                                                  CartoonAssets.uiBtnChapters,
-                                              label: AppLocalizations.tr(
-                                                'btn_install_app',
+                                            const SizedBox(width: 10),
+                                            Expanded(
+                                              child: _buildCartoonMenuButton(
+                                                iconAsset:
+                                                    CartoonAssets.uiBtnChapters,
+                                                label: AppLocalizations.tr(
+                                                  'btn_install_app',
+                                                ),
+                                                bgColor: ComicTheme.energyCyan,
+                                                textColor: ComicTheme.inkBlack,
+                                                compact: true,
+                                                onTap: () {
+                                                  setState(
+                                                    () =>
+                                                        _showInstallModal = true,
+                                                  );
+                                                },
                                               ),
-                                              bgColor: ComicTheme.energyCyan,
-                                              textColor: ComicTheme.inkBlack,
-                                              compact: true,
-                                              onTap: () {
-                                                setState(
-                                                  () =>
-                                                      _showInstallModal = true,
-                                                );
-                                              },
                                             ),
+                                          ],
+                                        )
+                                      else
+                                        _buildCartoonMenuButton(
+                                          iconAsset:
+                                              CartoonAssets.uiBtnSettings,
+                                          label: AppLocalizations.tr(
+                                            'btn_settings',
                                           ),
-                                        ],
-                                      ),
+                                          bgColor: ComicTheme.mangaPanelBg,
+                                          textColor: ComicTheme.comicYellow,
+                                          compact: true,
+                                          onTap: () {
+                                            widget.game.openSettings();
+                                          },
+                                        ),
                                     ],
                                   ),
                                 ),

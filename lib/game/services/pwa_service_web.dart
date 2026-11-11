@@ -21,7 +21,7 @@ external void _requestLandscapeFullscreen();
 
 PwaService getPwaService() => PwaServiceWeb();
 
-class PwaServiceWeb implements PwaService {
+class PwaServiceWeb extends PwaService {
   @override
   bool get isWeb => true;
 

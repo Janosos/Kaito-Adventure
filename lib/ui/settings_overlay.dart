@@ -325,63 +325,65 @@ class SettingsOverlay extends StatelessWidget {
                                                     );
                                                   },
                                                 ),
-                                                const SizedBox(height: 7),
-                                                GestureDetector(
-                                                  onTap: () {
-                                                    AudioService.buttonHaptic();
-                                                    AudioService.playSfx(
-                                                      AudioService.sfxClick,
-                                                    );
-                                                    PwaService.instance
-                                                        .requestFullscreenLandscape();
-                                                  },
-                                                  child: Container(
-                                                    padding:
-                                                        const EdgeInsets.symmetric(
-                                                      horizontal: 8,
-                                                      vertical: 6,
-                                                    ),
-                                                    decoration:
-                                                        ComicTheme.panelDecoration(
-                                                      backgroundColor:
-                                                          ComicTheme.energyCyan,
-                                                      borderWidth: 2.5,
-                                                      shadowOffset: 2,
-                                                    ),
-                                                    child: Row(
-                                                      mainAxisAlignment:
-                                                          MainAxisAlignment
-                                                              .center,
-                                                      children: [
-                                                        const Icon(
-                                                          Icons.screen_rotation,
-                                                          size: 15,
-                                                          color: Colors.black,
-                                                        ),
-                                                        const SizedBox(
-                                                          width: 5,
-                                                        ),
-                                                        Flexible(
-                                                          child: Text(
-                                                            AppLocalizations.tr(
-                                                              'btn_fullscreen_landscape',
-                                                            ),
-                                                            maxLines: 1,
-                                                            overflow:
-                                                                TextOverflow
-                                                                    .ellipsis,
-                                                            style: ComicTheme
-                                                                .titleText(
-                                                              size: 11,
-                                                              color:
-                                                                  Colors.black,
+                                                if (PwaService.instance.isWeb) ...[
+                                                  const SizedBox(height: 7),
+                                                  GestureDetector(
+                                                    onTap: () {
+                                                      AudioService.buttonHaptic();
+                                                      AudioService.playSfx(
+                                                        AudioService.sfxClick,
+                                                      );
+                                                      PwaService.instance
+                                                          .requestFullscreenLandscape();
+                                                    },
+                                                    child: Container(
+                                                      padding:
+                                                          const EdgeInsets.symmetric(
+                                                        horizontal: 8,
+                                                        vertical: 6,
+                                                      ),
+                                                      decoration:
+                                                          ComicTheme.panelDecoration(
+                                                        backgroundColor:
+                                                            ComicTheme.energyCyan,
+                                                        borderWidth: 2.5,
+                                                        shadowOffset: 2,
+                                                      ),
+                                                      child: Row(
+                                                        mainAxisAlignment:
+                                                            MainAxisAlignment
+                                                                .center,
+                                                        children: [
+                                                          const Icon(
+                                                            Icons.screen_rotation,
+                                                            size: 15,
+                                                            color: Colors.black,
+                                                          ),
+                                                          const SizedBox(
+                                                            width: 5,
+                                                          ),
+                                                          Flexible(
+                                                            child: Text(
+                                                              AppLocalizations.tr(
+                                                                'btn_fullscreen_landscape',
+                                                              ),
+                                                              maxLines: 1,
+                                                              overflow:
+                                                                  TextOverflow
+                                                                      .ellipsis,
+                                                              style: ComicTheme
+                                                                  .titleText(
+                                                                size: 11,
+                                                                color:
+                                                                    Colors.black,
+                                                              ),
                                                             ),
                                                           ),
-                                                        ),
-                                                      ],
+                                                        ],
+                                                      ),
                                                     ),
                                                   ),
-                                                ),
+                                                ],
                                               ],
                                             ),
                                           ),

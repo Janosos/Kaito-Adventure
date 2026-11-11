@@ -2,7 +2,7 @@ import 'pwa_service.dart';
 
 PwaService getPwaService() => PwaServiceStub();
 
-class PwaServiceStub implements PwaService {
+class PwaServiceStub extends PwaService {
   @override
   bool get isWeb => false;
 

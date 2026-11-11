@@ -5,6 +5,7 @@ import 'package:manga_platformer/game/components/enemies/enemy_grunt.dart';
 import 'package:manga_platformer/game/components/player.dart';
 import 'package:manga_platformer/game/manga_game.dart';
 import 'package:manga_platformer/game/services/audio_service.dart';
+import 'package:manga_platformer/game/services/pwa_service.dart';
 import 'package:manga_platformer/main.dart';
 import 'package:manga_platformer/ui/app_localizations.dart';
 import 'package:manga_platformer/ui/chapter_select_overlay.dart';
@@ -18,6 +19,7 @@ import 'package:manga_platformer/ui/virtual_joystick_overlay.dart';
 void main() {
   setUpAll(() {
     AudioService.isTestMode = true;
+    PwaService.forceShowInstallButtonForTest = true;
   });
 
   testWidgets('Manga platformer smoke test', (WidgetTester tester) async {
@@ -343,6 +345,27 @@ void main() {
     expect(tester.takeException(), isNull);
     expect(find.byType(StoryEpilogueOverlay), findsOneWidget);
 
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('Native APK hides the PWA Install button completely',
+      (WidgetTester tester) async {
+    PwaService.forceShowInstallButtonForTest = false;
+    final game = MangaGame();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: MediaQuery(
+          data: const MediaQueryData(size: Size(800, 360)),
+          child: MainMenuOverlay(game: game),
+        ),
+      ),
+    );
+    await tester.pump();
+    expect(find.text(AppLocalizations.tr('btn_install_app')), findsNothing);
+    expect(find.text(AppLocalizations.tr('btn_settings')), findsOneWidget);
+
+    // Restore for any following tests
+    PwaService.forceShowInstallButtonForTest = true;
     await tester.pumpWidget(const SizedBox.shrink());
   });
 }
