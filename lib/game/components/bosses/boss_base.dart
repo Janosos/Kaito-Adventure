@@ -54,6 +54,14 @@ abstract class BossBase extends PositionComponent
     game.activeBoss = this;
   }
 
+  @override
+  void onRemove() {
+    if (game.activeBoss == this) {
+      game.activeBoss = null;
+    }
+    super.onRemove();
+  }
+
   void onCounterTriggered() {
     isCounterStance = false;
     isGuarding = false;

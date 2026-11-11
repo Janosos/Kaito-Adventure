@@ -190,10 +190,17 @@ class MangaGame extends FlameGame
     isBossArenaLocked = false;
     minPlayerX = 24.0;
     maxPlayerX = 3380.0;
+    overlays.remove('manga_cutin');
 
-    // Clear all previous level entities, projectiles, and effects from world
+    // Fully tear down previous level component, hitboxes and world children
+    if (_currentLevelComponent != null) {
+      _currentLevelComponent!.removeAll(_currentLevelComponent!.children.toList());
+      _currentLevelComponent!.removeFromParent();
+      _currentLevelComponent = null;
+    }
     final existing = world.children.toList();
     for (final c in existing) {
+      c.removeAll(c.children.toList());
       c.removeFromParent();
     }
 
@@ -289,6 +296,7 @@ class MangaGame extends FlameGame
     AppLocalizations.isEditingHudLayout.value = false;
     isGameOver = false;
     isLevelVictory = false;
+    overlays.remove('manga_cutin');
     overlays.remove('pause');
     overlays.remove('settings');
     overlays.remove('story_intro');
@@ -297,6 +305,7 @@ class MangaGame extends FlameGame
     overlays.remove('chapter_select');
     overlays.remove('hud');
     overlays.remove('virtual_controls');
+    AudioService.stopBgm();
     pauseEngine();
     _addOverlay('main_menu');
     AudioService.playBgm(AudioService.bgmMenu);
@@ -485,6 +494,8 @@ class MangaGame extends FlameGame
     isLevelVictory = false;
     overlays.remove('game_over');
     overlays.remove('victory');
+    overlays.remove('manga_cutin');
+    AudioService.stopBgm();
     loadLevel(currentLevelIndex, pauseForMenu: false);
   }
 
@@ -492,6 +503,8 @@ class MangaGame extends FlameGame
     isGameOver = false;
     isLevelVictory = false;
     overlays.remove('victory');
+    overlays.remove('manga_cutin');
+    AudioService.stopBgm();
     final nextIdx = currentLevelIndex < totalLevels ? currentLevelIndex + 1 : 1;
     loadLevel(nextIdx, pauseForMenu: false);
   }
@@ -534,7 +547,10 @@ class MangaGame extends FlameGame
 
   @override
   void update(double dt) {
-    super.update(dt);
+    // Clamping dt guarantees stable physics integration and prevents tunneling/overshoot
+    // across all refresh rates: 60 Hz (~16.6ms), 90 Hz (~11.1ms), 120 Hz (~8.33ms), 144 Hz (~6.94ms)
+    final clampedDt = dt.clamp(0.0005, 0.1);
+    super.update(clampedDt);
 
     if (isLoaded && world.children.contains(player) && player.isLoaded) {
       double horizontal = 0.0;
@@ -573,7 +589,9 @@ class MangaGame extends FlameGame
         ultimate: ultimate,
       );
 
-      // Smoothly scroll camera horizontally along the level or lock into the Boss Arena
+      // Smoothly scroll camera horizontally along the level or lock into the Boss Arena.
+      // Exponential decay smoothing (1.0 - exp(-k * dt)) provides mathematically identical
+      // buttery-smooth tracking at 60 Hz, 90 Hz, 120 Hz, and 144 Hz.
       final minCamX = viewportWidth * 0.5;
       final double targetCamX = isBossArenaLocked
           ? currentArenaCamX
@@ -581,7 +599,7 @@ class MangaGame extends FlameGame
       const double targetCamY = 270.0;
 
       final currentCam = camera.viewfinder.position;
-      final lerpFactor = (dt * 7.5).clamp(0.0, 1.0);
+      final lerpFactor = 1.0 - math.exp(-8.5 * clampedDt);
       camera.viewfinder.position = Vector2(
         currentCam.x + (targetCamX - currentCam.x) * lerpFactor,
         currentCam.y + (targetCamY - currentCam.y) * lerpFactor,
