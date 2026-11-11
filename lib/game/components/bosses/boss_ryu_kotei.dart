@@ -47,7 +47,7 @@ class BossRyuKotei extends BossBase {
   }) : super(
           name: 'RYU-KOTEI',
           title: 'THE DRAGON SHOGUN',
-          maxHp: 520.0,
+          maxHp: 1040.0,
           position: position,
           size: Vector2(74, 96),
         ) {

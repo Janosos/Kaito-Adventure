@@ -40,7 +40,7 @@ class BossHebiHime extends BossBase {
   }) : super(
           name: 'HEBI-HIME',
           title: 'THE VENOM VIPER EMPRESS',
-          maxHp: 580.0,
+          maxHp: 1160.0,
           size: Vector2(62, 84),
         ) {
     maxPhases = 2;

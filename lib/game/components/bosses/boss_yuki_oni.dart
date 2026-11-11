@@ -42,7 +42,7 @@ class BossYukiOni extends BossBase {
   }) : super(
           name: 'YUKI-ONI',
           title: 'THE FROST TITAN',
-          maxHp: 660.0,
+          maxHp: 1320.0,
           size: Vector2(78, 98),
         ) {
     maxPhases = 3;

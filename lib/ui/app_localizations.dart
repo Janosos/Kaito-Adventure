@@ -290,6 +290,24 @@ class AppLocalizations {
       'btn_story_intro': 'STORY INTRO',
       'btn_how_to_play': 'HOW TO PLAY',
       'btn_settings': 'SETTINGS',
+      'btn_install_app': 'INSTALL APP',
+
+      // PWA / App Installation Modal
+      'install_title': 'INSTALL KAITO ADVENTURE',
+      'install_sub': 'PLAY IN FULLSCREEN LANDSCAPE & OFFLINE LIKE A NATIVE APP!',
+      'install_android_tab': 'ANDROID / CHROME',
+      'install_ios_tab': 'IPHONE / IPAD (iOS)',
+      'install_btn_now': 'INSTALL NOW',
+      'install_already_installed': '✓ App is already installed and ready to play!',
+      'install_android_guide':
+          'Tap "INSTALL NOW", or open browser menu (⋮) and tap "Install app" / "Add to Home screen" to play with zero browser bars in full landscape.',
+      'install_ios_step1':
+          '1. In Safari, tap the Share button [ ⎋ ] on the bottom navigation bar.',
+      'install_ios_step2':
+          '2. Scroll down and tap "Add to Home Screen" [ ⊞ ].',
+      'install_ios_step3':
+          '3. Tap "Add". Open from Home Screen to play in forced landscape fullscreen without URL bars!',
+      'btn_fullscreen_landscape': 'FULLSCREEN & ROTATE',
 
       // Settings Modal / Screen
       'settings_title': 'GAME SETTINGS',
@@ -450,6 +468,24 @@ class AppLocalizations {
       'btn_story_intro': 'HISTORIA (INTRO)',
       'btn_how_to_play': 'CÓMO JUGAR',
       'btn_settings': 'AJUSTES / IDIOMA',
+      'btn_install_app': 'INSTALAR APP',
+
+      // PWA / App Installation Modal
+      'install_title': 'INSTALAR KAITO ADVENTURE',
+      'install_sub': '¡JUEGA EN PANTALLA COMPLETA HORIZONTAL Y COMO APP NATIVA!',
+      'install_android_tab': 'ANDROID / CHROME',
+      'install_ios_tab': 'IPHONE / IPAD (iOS)',
+      'install_btn_now': 'INSTALAR AHORA',
+      'install_already_installed': '✓ ¡La aplicación ya está instalada en tu dispositivo!',
+      'install_android_guide':
+          'Pulsa "INSTALAR AHORA", o abre el menú de tu navegador (⋮) y selecciona "Instalar aplicación" o "Agregar a pantalla principal" para jugar sin marcos.',
+      'install_ios_step1':
+          '1. En Safari, toca el botón de Compartir [ ⎋ ] en la barra inferior.',
+      'install_ios_step2':
+          '2. Desplázate hacia abajo y selecciona "Agregar a pantalla de inicio" [ ⊞ ].',
+      'install_ios_step3':
+          '3. Pulsa "Agregar". ¡Ábrela desde tu inicio para jugar en pantalla completa horizontal sin barras de navegador!',
+      'btn_fullscreen_landscape': 'PANTALLA COMPLETA & GIRAR',
 
       // Settings Modal / Screen
       'settings_title': 'AJUSTES DEL JUEGO',
@@ -610,6 +646,24 @@ class AppLocalizations {
       'btn_story_intro': 'ストーリー紹介',
       'btn_how_to_play': '操作方法・遊び方',
       'btn_settings': '設定 / 言語 (SETTINGS)',
+      'btn_install_app': 'アプリをインストール',
+
+      // PWA / App Installation Modal
+      'install_title': 'カイト・アドベンチャーをインストール',
+      'install_sub': '全画面横向き・オフラインでネイティブアプリのように遊ぼう！',
+      'install_android_tab': 'ANDROID / CHROME',
+      'install_ios_tab': 'IPHONE / IPAD (iOS)',
+      'install_btn_now': '今すぐインストール',
+      'install_already_installed': '✓ アプリはすでにインストールされています！',
+      'install_android_guide':
+          '「今すぐインストール」をタップするか、ブラウザメニュー（⋮）から「アプリをインストール」または「ホーム画面に追加」を選択してください。',
+      'install_ios_step1':
+          '1. Safari下部の共有ボタン [ ⎋ ] をタップします。',
+      'install_ios_step2':
+          '2. メニューをスクロールし、「ホーム画面に追加」[ ⊞ ] を選択します。',
+      'install_ios_step3':
+          '3. 「追加」をタップ。ホーム画面から起動すると自動で横全画面で快適に遊べます！',
+      'btn_fullscreen_landscape': '全画面表示＆横向き固定',
 
       // Settings Modal / Screen
       'settings_title': 'ゲーム設定',

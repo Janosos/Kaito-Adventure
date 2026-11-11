@@ -59,6 +59,25 @@ void main() {
     await tester.pump();
     expect(tester.takeException(), isNull);
 
+    // Verify PWA Install modal opens, switches tabs, and renders cleanly
+    final installBtn = find.text(AppLocalizations.tr('btn_install_app'));
+    expect(installBtn, findsOneWidget);
+    await tester.tap(installBtn);
+    await tester.pump();
+    expect(find.text(AppLocalizations.tr('install_title')), findsOneWidget);
+    expect(tester.takeException(), isNull);
+
+    final iosTab = find.text(AppLocalizations.tr('install_ios_tab'));
+    await tester.tap(iosTab);
+    await tester.pump();
+    expect(find.text(AppLocalizations.tr('install_ios_step1')), findsOneWidget);
+    expect(tester.takeException(), isNull);
+
+    final gotItBtn = find.text(AppLocalizations.tr('btn_got_it'));
+    await tester.tap(gotItBtn);
+    await tester.pump();
+    expect(find.text(AppLocalizations.tr('install_title')), findsNothing);
+
     // 2. ChapterSelectOverlay at 800x360
     await tester.pumpWidget(
       MaterialApp(
@@ -209,6 +228,8 @@ void main() {
 
       expect(game.isBossArenaLocked, isTrue);
       expect(game.activeBoss, isNotNull);
+      final expectedBossHp = [760.0, 1040.0, 1160.0, 1320.0, 1600.0][lvl - 1];
+      expect(game.activeBoss!.maxHp, equals(expectedBossHp));
     }
 
     // Verify default button scale starts at 140% (1.40) and persists custom settings locally

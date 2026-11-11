@@ -44,7 +44,7 @@ class BossMuzanKai extends BossBase {
   }) : super(
           name: 'MUZAN-KAI',
           title: 'THE ECLIPSE INK EMPEROR',
-          maxHp: 800.0,
+          maxHp: 1600.0,
           size: Vector2(74, 98),
         ) {
     maxPhases = 3;

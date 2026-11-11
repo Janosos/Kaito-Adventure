@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../game/cartoon_assets.dart';
 import '../game/manga_game.dart';
 import '../game/services/audio_service.dart';
+import '../game/services/pwa_service.dart';
 import 'app_localizations.dart';
 import 'comic_theme.dart';
 
@@ -16,6 +17,14 @@ class MainMenuOverlay extends StatefulWidget {
 
 class _MainMenuOverlayState extends State<MainMenuOverlay> {
   bool _showControlsModal = false;
+  bool _showInstallModal = false;
+  late bool _isIosInstallTab;
+
+  @override
+  void initState() {
+    super.initState();
+    _isIosInstallTab = PwaService.instance.isIos;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -215,17 +224,43 @@ class _MainMenuOverlayState extends State<MainMenuOverlay> {
                                         ],
                                       ),
                                       const SizedBox(height: 10),
-                                      _buildCartoonMenuButton(
-                                        iconAsset: CartoonAssets.uiBtnSettings,
-                                        label: AppLocalizations.tr(
-                                          'btn_settings',
-                                        ),
-                                        bgColor: ComicTheme.mangaPanelBg,
-                                        textColor: ComicTheme.comicYellow,
-                                        compact: true,
-                                        onTap: () {
-                                          widget.game.openSettings();
-                                        },
+                                      Row(
+                                        children: [
+                                          Expanded(
+                                            child: _buildCartoonMenuButton(
+                                              iconAsset:
+                                                  CartoonAssets.uiBtnSettings,
+                                              label: AppLocalizations.tr(
+                                                'btn_settings',
+                                              ),
+                                              bgColor: ComicTheme.mangaPanelBg,
+                                              textColor: ComicTheme.comicYellow,
+                                              compact: true,
+                                              onTap: () {
+                                                widget.game.openSettings();
+                                              },
+                                            ),
+                                          ),
+                                          const SizedBox(width: 10),
+                                          Expanded(
+                                            child: _buildCartoonMenuButton(
+                                              iconAsset:
+                                                  CartoonAssets.uiBtnChapters,
+                                              label: AppLocalizations.tr(
+                                                'btn_install_app',
+                                              ),
+                                              bgColor: ComicTheme.energyCyan,
+                                              textColor: ComicTheme.inkBlack,
+                                              compact: true,
+                                              onTap: () {
+                                                setState(
+                                                  () =>
+                                                      _showInstallModal = true,
+                                                );
+                                              },
+                                            ),
+                                          ),
+                                        ],
                                       ),
                                     ],
                                   ),
@@ -244,6 +279,9 @@ class _MainMenuOverlayState extends State<MainMenuOverlay> {
 
               // 4. Controls / How To Play Modal (Responsive FittedBox)
               if (_showControlsModal) _buildControlsModal(),
+
+              // 5. PWA / App Installation Modal (Android & iOS)
+              if (_showInstallModal) _buildInstallModal(),
             ],
           ),
         );
@@ -419,6 +457,338 @@ class _MainMenuOverlayState extends State<MainMenuOverlay> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildInstallModal() {
+    final pwa = PwaService.instance;
+    return Container(
+      color: Colors.black.withValues(alpha: 0.85),
+      child: SafeArea(
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Container(
+                width: 620,
+                padding: const EdgeInsets.all(22),
+                decoration: ComicTheme.panelDecoration(
+                  backgroundColor: ComicTheme.paperWhite,
+                  borderWidth: 5,
+                  shadowOffset: 10,
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      AppLocalizations.tr('install_title'),
+                      textAlign: TextAlign.center,
+                      style: ComicTheme.titleText(
+                        size: 26,
+                        color: ComicTheme.actionRed,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      AppLocalizations.tr('install_sub'),
+                      textAlign: TextAlign.center,
+                      style: ComicTheme.titleText(
+                        size: 11,
+                        color: ComicTheme.inkBlack,
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+
+                    // OS Tab Switcher: Android vs iOS
+                    Row(
+                      children: [
+                        Expanded(
+                          child: GestureDetector(
+                            onTap: () {
+                              AudioService.buttonHaptic();
+                              AudioService.playSfx(AudioService.sfxClick);
+                              setState(() => _isIosInstallTab = false);
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(vertical: 8),
+                              decoration: ComicTheme.panelDecoration(
+                                backgroundColor: !_isIosInstallTab
+                                    ? ComicTheme.energyCyan
+                                    : ComicTheme.mangaPanelBg,
+                                borderWidth: 3,
+                                shadowOffset: !_isIosInstallTab ? 4 : 1,
+                              ),
+                              child: Center(
+                                child: Text(
+                                  AppLocalizations.tr('install_android_tab'),
+                                  style: ComicTheme.titleText(
+                                    size: 14,
+                                    color: !_isIosInstallTab
+                                        ? ComicTheme.inkBlack
+                                        : Colors.white70,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: GestureDetector(
+                            onTap: () {
+                              AudioService.buttonHaptic();
+                              AudioService.playSfx(AudioService.sfxClick);
+                              setState(() => _isIosInstallTab = true);
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(vertical: 8),
+                              decoration: ComicTheme.panelDecoration(
+                                backgroundColor: _isIosInstallTab
+                                    ? ComicTheme.comicYellow
+                                    : ComicTheme.mangaPanelBg,
+                                borderWidth: 3,
+                                shadowOffset: _isIosInstallTab ? 4 : 1,
+                              ),
+                              child: Center(
+                                child: Text(
+                                  AppLocalizations.tr('install_ios_tab'),
+                                  style: ComicTheme.titleText(
+                                    size: 14,
+                                    color: _isIosInstallTab
+                                        ? ComicTheme.inkBlack
+                                        : Colors.white70,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+
+                    // Active Tab Instructions
+                    Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: ComicTheme.mangaPanelBg,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: ComicTheme.inkBlack,
+                          width: 3,
+                        ),
+                      ),
+                      child: _isIosInstallTab
+                          ? Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                _installStepRow(
+                                  '1',
+                                  AppLocalizations.tr('install_ios_step1'),
+                                ),
+                                const SizedBox(height: 8),
+                                _installStepRow(
+                                  '2',
+                                  AppLocalizations.tr('install_ios_step2'),
+                                ),
+                                const SizedBox(height: 8),
+                                _installStepRow(
+                                  '3',
+                                  AppLocalizations.tr('install_ios_step3'),
+                                ),
+                              ],
+                            )
+                          : Column(
+                              children: [
+                                if (pwa.isAlreadyInstalled)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 14,
+                                      vertical: 8,
+                                    ),
+                                    margin: const EdgeInsets.only(bottom: 10),
+                                    decoration: BoxDecoration(
+                                      color: Colors.green.shade800,
+                                      borderRadius: BorderRadius.circular(6),
+                                      border: Border.all(
+                                        color: Colors.white,
+                                        width: 2,
+                                      ),
+                                    ),
+                                    child: Text(
+                                      AppLocalizations.tr(
+                                        'install_already_installed',
+                                      ),
+                                      style: ComicTheme.titleText(
+                                        size: 13,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                  )
+                                else
+                                  GestureDetector(
+                                    onTap: () async {
+                                      AudioService.buttonHaptic();
+                                      AudioService.playSfx(
+                                        AudioService.sfxStart,
+                                      );
+                                      final ok = await pwa.promptInstall();
+                                      if (mounted && ok) {
+                                        setState(() {});
+                                      }
+                                    },
+                                    child: Container(
+                                      width: double.infinity,
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 11,
+                                      ),
+                                      margin: const EdgeInsets.only(bottom: 10),
+                                      decoration: ComicTheme.panelDecoration(
+                                        backgroundColor: ComicTheme.actionRed,
+                                        borderWidth: 3.5,
+                                        shadowOffset: 5,
+                                      ),
+                                      child: Center(
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            const Icon(
+                                              Icons.download,
+                                              color: Colors.white,
+                                              size: 20,
+                                            ),
+                                            const SizedBox(width: 8),
+                                            Text(
+                                              AppLocalizations.tr(
+                                                'install_btn_now',
+                                              ),
+                                              style: ComicTheme.titleText(
+                                                size: 17,
+                                                color: Colors.white,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                Text(
+                                  AppLocalizations.tr('install_android_guide'),
+                                  textAlign: TextAlign.center,
+                                  style: ComicTheme.bodyText(
+                                    size: 12,
+                                    color: Colors.white70,
+                                  ),
+                                ),
+                              ],
+                            ),
+                    ),
+                    const SizedBox(height: 14),
+
+                    // Bottom Row: Fullscreen & Rotate + Close
+                    Row(
+                      children: [
+                        Expanded(
+                          child: GestureDetector(
+                            onTap: () {
+                              AudioService.buttonHaptic();
+                              AudioService.playSfx(AudioService.sfxClick);
+                              pwa.requestFullscreenLandscape();
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(vertical: 9),
+                              decoration: ComicTheme.panelDecoration(
+                                backgroundColor: ComicTheme.energyCyan,
+                                borderWidth: 3,
+                                shadowOffset: 4,
+                              ),
+                              child: Center(
+                                child: Text(
+                                  AppLocalizations.tr(
+                                    'btn_fullscreen_landscape',
+                                  ),
+                                  style: ComicTheme.titleText(
+                                    size: 13,
+                                    color: ComicTheme.inkBlack,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: GestureDetector(
+                            onTap: () {
+                              AudioService.buttonHaptic();
+                              AudioService.playSfx(AudioService.sfxClick);
+                              setState(() => _showInstallModal = false);
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(vertical: 9),
+                              decoration: ComicTheme.panelDecoration(
+                                backgroundColor: ComicTheme.paperWhite,
+                                borderWidth: 3,
+                                shadowOffset: 4,
+                              ),
+                              child: Center(
+                                child: Text(
+                                  AppLocalizations.tr('btn_got_it'),
+                                  style: ComicTheme.titleText(
+                                    size: 13,
+                                    color: ComicTheme.inkBlack,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _installStepRow(String number, String text) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 26,
+          height: 26,
+          decoration: BoxDecoration(
+            color: ComicTheme.comicYellow,
+            shape: BoxShape.circle,
+            border: Border.all(color: ComicTheme.inkBlack, width: 2),
+          ),
+          child: Center(
+            child: Text(
+              number,
+              style: ComicTheme.titleText(
+                size: 13,
+                color: ComicTheme.inkBlack,
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            text,
+            style: ComicTheme.bodyText(
+              size: 12,
+              color: Colors.white,
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

@@ -43,7 +43,7 @@ class BossKurokage extends BossBase {
   }) : super(
           name: 'KUROKAGE',
           title: 'THE SHADOW EXECUTIONER',
-          maxHp: 380.0,
+          maxHp: 760.0,
           size: Vector2(58, 76),
         ) {
     maxPhases = 2;

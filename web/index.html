@@ -1,55 +1,273 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <!--
-    If you are serving your web app in a path other than the root, change the
-    href value below to reflect the base path you are serving from.
-
-    The path provided below has to start and end with a slash "/" in order for
-    it to work correctly.
-
-    For more details:
-    * https://developer.mozilla.org/en-US/docs/Web/HTML/Element/base
-
-    This is a placeholder for base href that will be replaced by the value of
-    the `--base-href` argument provided to `flutter build`.
-  -->
   <base href="$FLUTTER_BASE_HREF">
 
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-  <meta name="description" content="Kaito Adventure - 2D Cartoon Action Platformer by Janosos">
+  <meta name="description" content="Kaito Adventure - 2D Cartoon Action Manga Platformer by Janosos">
+  <meta name="theme-color" content="#141419">
 
-  <!-- iOS meta tags & icons -->
+  <!-- Apple iOS PWA / Web App Meta Tags & Icons -->
   <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Kaito Adventure">
   <link rel="apple-touch-icon" href="icons/Icon-192.png">
+  <link rel="apple-touch-icon" sizes="192x192" href="icons/Icon-192.png">
+  <link rel="apple-touch-icon" sizes="512x512" href="icons/Icon-512.png">
 
   <!-- Favicon -->
   <link rel="icon" type="image/png" href="favicon.png"/>
 
-  <title>Kaito Adventure</title>
+  <title>Kaito Adventure - Shinobi of the Celestial Ink</title>
   <link rel="manifest" href="manifest.json">
+
+  <!-- PWA & Orientation Scripts -->
   <script>
-    window.addEventListener('pointerdown', function lockLandscapeOnce() {
-      if (screen && screen.orientation && screen.orientation.lock) {
+    // PWA Installation state handler
+    window.deferredPwaPrompt = null;
+    window.pwaInstalled = false;
+
+    window.addEventListener('beforeinstallprompt', function(e) {
+      e.preventDefault();
+      window.deferredPwaPrompt = e;
+      console.log('[Kaito PWA] beforeinstallprompt captured and ready');
+    });
+
+    window.addEventListener('appinstalled', function() {
+      window.deferredPwaPrompt = null;
+      window.pwaInstalled = true;
+      console.log('[Kaito PWA] App installed successfully');
+    });
+
+    function hasDeferredPwaPrompt() {
+      return !!window.deferredPwaPrompt;
+    }
+
+    function isIosDevice() {
+      return /iphone|ipad|ipod/i.test(navigator.userAgent) ||
+             (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    }
+
+    function isAndroidDevice() {
+      return /android/i.test(navigator.userAgent);
+    }
+
+    function isPwaStandalone() {
+      return window.matchMedia('(display-mode: standalone)').matches ||
+             window.matchMedia('(display-mode: fullscreen)').matches ||
+             window.navigator.standalone === true ||
+             window.pwaInstalled === true;
+    }
+
+    function triggerPwaInstall() {
+      if (window.deferredPwaPrompt) {
+        window.deferredPwaPrompt.prompt();
+        return window.deferredPwaPrompt.userChoice.then(function(choiceResult) {
+          var accepted = choiceResult && choiceResult.outcome === 'accepted';
+          if (accepted) {
+            window.deferredPwaPrompt = null;
+            window.pwaInstalled = true;
+          }
+          return accepted;
+        }).catch(function() {
+          return false;
+        });
+      }
+      return Promise.resolve(false);
+    }
+
+    function requestLandscapeFullscreen() {
+      var docEl = document.documentElement;
+      var req = docEl.requestFullscreen ||
+                 docEl.webkitRequestFullscreen ||
+                 docEl.mozRequestFullScreen ||
+                 docEl.msRequestFullscreen;
+      if (req) {
+        try {
+          var p = req.call(docEl);
+          if (p && p.then) {
+            p.then(function() {
+              if (screen.orientation && screen.orientation.lock) {
+                screen.orientation.lock('landscape').catch(function() {});
+              }
+            }).catch(function() {});
+          }
+        } catch (e) {}
+      }
+      if (screen.orientation && screen.orientation.lock) {
         screen.orientation.lock('landscape').catch(function() {});
       }
-      window.removeEventListener('pointerdown', lockLandscapeOnce);
+    }
+
+    // Auto-attempt orientation lock on first touch or click
+    window.addEventListener('pointerdown', function lockOnce() {
+      requestLandscapeFullscreen();
+      window.removeEventListener('pointerdown', lockOnce);
     }, { passive: true });
   </script>
-</head>
-<body style="background-color: #141419; margin: 0; overflow: hidden; touch-action: none; user-select: none;">
-  <!--
-    You can customize the "flutter_bootstrap.js" script.
-    This is useful to provide a custom configuration to the Flutter loader
-    or to give the user feedback during the initialization process.
 
-    For more details:
-    * https://docs.flutter.dev/platform-integration/web/initialization
-  -->
+  <style>
+    body {
+      background-color: #141419;
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      touch-action: none;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    /* Force Horizontal Orientation Overlay in Web Mobile */
+    #orientation-prompt-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background-color: #141419;
+      background-image: radial-gradient(#26263a 14%, transparent 15%);
+      background-size: 14px 14px;
+      z-index: 999999;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      box-sizing: border-box;
+      text-align: center;
+      color: #FFFFFF;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+
+    @media screen and (orientation: portrait) {
+      #orientation-prompt-overlay {
+        display: flex !important;
+      }
+    }
+
+    @media screen and (orientation: landscape) {
+      #orientation-prompt-overlay {
+        display: none !important;
+      }
+    }
+
+    @keyframes phoneRotateAnim {
+      0%, 15% { transform: rotate(0deg); }
+      45%, 75% { transform: rotate(-90deg); }
+      90%, 100% { transform: rotate(0deg); }
+    }
+
+    .rotate-phone-icon {
+      width: 64px;
+      height: 104px;
+      border: 4px solid #FFE600;
+      border-radius: 14px;
+      position: relative;
+      margin-bottom: 20px;
+      animation: phoneRotateAnim 2.5s infinite ease-in-out;
+      box-shadow: 0 0 18px rgba(255, 230, 0, 0.4);
+      background: #1c1c24;
+    }
+
+    .rotate-phone-screen {
+      position: absolute;
+      top: 10px;
+      bottom: 12px;
+      left: 6px;
+      right: 6px;
+      background: #FF2A2A;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 900;
+      font-size: 11px;
+      color: #FFFFFF;
+      letter-spacing: 1px;
+    }
+
+    .rotate-phone-notch {
+      position: absolute;
+      top: 4px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 18px;
+      height: 3px;
+      background: #FFFFFF;
+      border-radius: 2px;
+    }
+
+    .rotate-phone-home {
+      position: absolute;
+      bottom: 4px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 14px;
+      height: 3px;
+      background: #FFE600;
+      border-radius: 2px;
+    }
+
+    .comic-card {
+      background: #FFFDF7;
+      color: #000000;
+      border: 4.5px solid #000000;
+      box-shadow: 6px 6px 0px #FF2A2A;
+      border-radius: 10px;
+      padding: 22px 20px;
+      max-width: 330px;
+      width: 100%;
+      box-sizing: border-box;
+    }
+
+    .comic-button {
+      margin-top: 15px;
+      background: #FF2A2A;
+      color: #FFFFFF;
+      font-weight: 900;
+      font-size: 14px;
+      padding: 12px 18px;
+      border: 3.5px solid #000000;
+      box-shadow: 4px 4px 0px #000000;
+      border-radius: 8px;
+      cursor: pointer;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      width: 100%;
+      box-sizing: border-box;
+      transition: transform 0.1s, box-shadow 0.1s;
+    }
+
+    .comic-button:active {
+      transform: translate(2px, 2px);
+      box-shadow: 2px 2px 0px #000000;
+    }
+  </style>
+</head>
+<body>
+  <!-- Rotate Device Prompt (Visible only in portrait orientation on mobile) -->
+  <div id="orientation-prompt-overlay">
+    <div class="rotate-phone-icon">
+      <div class="rotate-phone-notch"></div>
+      <div class="rotate-phone-screen">KAITO</div>
+      <div class="rotate-phone-home"></div>
+    </div>
+    <div class="comic-card">
+      <div style="font-weight: 900; font-size: 21px; text-transform: uppercase; color: #FF2A2A; line-height: 1.1;">
+        MODO HORIZONTAL
+      </div>
+      <div style="font-weight: 800; font-size: 12px; color: #141419; margin-top: 4px; text-transform: uppercase; letter-spacing: 0.5px;">
+        GIRA TU DISPOSITIVO
+      </div>
+      <p style="font-size: 12px; font-weight: 600; color: #2D2D38; margin: 10px 0 0; line-height: 1.35;">
+        Kaito Adventure es un juego manga de acción 2D diseñado exclusivamente en pantalla horizontal.
+      </p>
+      <button class="comic-button" onclick="requestLandscapeFullscreen()">
+        PANTALLA COMPLETA & GIRAR
+      </button>
+    </div>
+  </div>
+
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>
