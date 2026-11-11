@@ -357,26 +357,38 @@ class MangaPlayer extends PositionComponent
     AudioService.playSfx(AudioService.sfxOugiRelease);
     AudioService.heavyHaptic();
 
-    game.triggerBossCutIn(
-      bossName: 'KAITO',
-      quote: 'SECRET INK TECHNIQUE: 1000 CRANE HEAVEN SLASH!!',
-      portraitColor: ComicTheme.energyCyan,
-      portraitAsset: CartoonAssets.portraitKaito,
-    );
-
+    // In-game dynamic Ougi sequence: No full-screen modal blocking the view!
+    // Spawns radiating anime celestial slash arcs, shockwave dust, and stylish manga onomatopoeia
     game.add(MangaTextEffect(
-      position: Vector2(position.x, position.y - size.y - 20),
-      text: 'OUGI: OMNI-SLASH!!',
+      position: Vector2(position.x, position.y - size.y - 32),
+      text: 'OUGI: CELESTIAL BLADE FLURRY!!',
       fillColor: ComicTheme.comicYellow,
-      targetScale: 2.2,
-      maxLifetime: 1.5,
+      initialScale: 0.55,
+      targetScale: 1.55,
+      maxLifetime: 1.15,
     ));
 
-    for (int i = 0; i < 4; i++) {
+    // Dual ground dust bursts radiating from Kaito's stance
+    game.add(MangaDustEffect(position: Vector2(position.x - 38, position.y)));
+    game.add(MangaDustEffect(position: Vector2(position.x + 38, position.y)));
+
+    // Multi-angle vibrant slash arcs radiating around Kaito
+    final arcColors = [
+      ComicTheme.energyCyan,
+      ComicTheme.comicYellow,
+      ComicTheme.actionRed,
+      ComicTheme.energyCyan,
+      ComicTheme.comicYellow,
+      ComicTheme.actionRed,
+    ];
+    for (int i = 0; i < 6; i++) {
+      final xOffset = (i - 2.5) * 48.0;
+      final yOffset = ((i % 2 == 0) ? -22.0 : 8.0);
       game.add(SlashArcEffect(
-        position: Vector2(position.x + (i - 1.5) * 60, position.y - 30),
-        slashColor: ComicTheme.comicYellow,
-        radius: 80,
+        position: Vector2(position.x + xOffset, position.y - size.y * 0.5 + yOffset),
+        slashColor: arcColors[i],
+        slashFlipped: i.isOdd,
+        radius: 64,
       ));
     }
 

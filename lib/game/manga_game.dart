@@ -30,7 +30,7 @@ class MangaGame extends FlameGame
   int score = 0;
   bool isGameOver = false;
   bool isLevelVictory = false;
-  Vector2 currentSpawnPoint = Vector2(80, 470);
+  Vector2 currentSpawnPoint = Vector2(80, 380);
   Component? _currentLevelComponent;
   bool _hasShownInitialSplash = false;
 
@@ -296,6 +296,11 @@ class MangaGame extends FlameGame
     AppLocalizations.isEditingHudLayout.value = false;
     isGameOver = false;
     isLevelVictory = false;
+    if (isLoaded && world.children.contains(player)) {
+      player.hp = player.maxHp;
+      player.isDying = false;
+      player.action = PlayerAction.idle;
+    }
     overlays.remove('manga_cutin');
     overlays.remove('pause');
     overlays.remove('settings');
@@ -330,6 +335,13 @@ class MangaGame extends FlameGame
 
   void closeSettings() {
     overlays.remove('settings');
+    // If user accessed settings from Main Menu or outside active gameplay, always return to Main Menu
+    if (overlays.isActive('main_menu') || !overlays.isActive('hud')) {
+      pauseEngine();
+      _addOverlay('main_menu');
+      return;
+    }
+
     final isDead = isGameOver ||
         (isLoaded &&
             world.children.contains(player) &&
@@ -355,6 +367,13 @@ class MangaGame extends FlameGame
 
   void closeChapterSelect() {
     overlays.remove('chapter_select');
+    // If user opened chapter select from Main Menu or outside active gameplay, always return to Main Menu
+    if (overlays.isActive('main_menu') || !overlays.isActive('hud')) {
+      pauseEngine();
+      _addOverlay('main_menu');
+      return;
+    }
+
     final isDead = isGameOver ||
         (isLoaded &&
             world.children.contains(player) &&

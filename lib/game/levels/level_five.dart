@@ -13,7 +13,7 @@ import '../components/bosses/boss_muzan_kai.dart';
 import 'level_one.dart';
 
 class LevelFive extends Component with HasGameReference<MangaGame> {
-  static final Vector2 spawnPosition = Vector2(80, 470);
+  static final Vector2 spawnPosition = Vector2(80, 380);
   static const double levelWidth = 6420.0;
   static const double bossArenaTriggerX = 5450.0;
   static const double arenaCenterX = 5940.0;
@@ -32,20 +32,21 @@ class LevelFive extends Component with HasGameReference<MangaGame> {
 
     // =========================================================================
     // ZONE 1: Astral Torii Approach & Obsidian Courtyards (x: 0 .. 1100)
+    // Raised starting platform (y: 390) so Kaito is clearly visible above mobile thumb/joystick!
     // =========================================================================
     add(ComicPlatform(
-      position: Vector2(0, 480),
-      size: Vector2(360, 60),
+      position: Vector2(0, 390),
+      size: Vector2(360, 150),
     ));
-    add(BreakableCrate(position: Vector2(165, 480)));
+    add(BreakableCrate(position: Vector2(165, 390)));
     add(EnemyGrunt(
-      position: Vector2(260, 480),
+      position: Vector2(260, 390),
       minXBound: 180,
       maxXBound: 335,
       maxHp: 60,
     ));
 
-    add(MangaSpringPad(position: Vector2(315, 480), launchPower: 610));
+    add(MangaSpringPad(position: Vector2(315, 390), launchPower: 610));
 
     add(ComicPlatform(
       position: Vector2(395, 290),

@@ -13,7 +13,7 @@ import '../components/bosses/boss_yuki_oni.dart';
 import 'level_one.dart';
 
 class LevelFour extends Component with HasGameReference<MangaGame> {
-  static final Vector2 spawnPosition = Vector2(80, 470);
+  static final Vector2 spawnPosition = Vector2(80, 380);
   static const double levelWidth = 5820.0;
   static const double bossArenaTriggerX = 4850.0;
   static const double arenaCenterX = 5340.0;
@@ -32,19 +32,20 @@ class LevelFour extends Component with HasGameReference<MangaGame> {
 
     // =========================================================================
     // ZONE 1: Frozen Foothills & Slippery Ice Ledges (x: 0 .. 1140)
+    // Raised starting platform (y: 390) so Kaito is clearly visible above mobile thumb/joystick!
     // =========================================================================
     add(ComicPlatform(
-      position: Vector2(0, 480),
-      size: Vector2(360, 60),
+      position: Vector2(0, 390),
+      size: Vector2(360, 150),
       isSlipperyIce: true,
     ));
     add(EnemyGrunt(
-      position: Vector2(215, 480),
+      position: Vector2(215, 390),
       minXBound: 130,
       maxXBound: 330,
       maxHp: 55,
     ));
-    add(BreakableCrate(position: Vector2(310, 480)));
+    add(BreakableCrate(position: Vector2(310, 390)));
 
     add(ComicPlatform(
       position: Vector2(400, 410),

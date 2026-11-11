@@ -13,7 +13,7 @@ import '../components/bosses/boss_ryu_kotei.dart';
 import 'level_one.dart';
 
 class LevelTwo extends Component with HasGameReference<MangaGame> {
-  static final Vector2 spawnPosition = Vector2(80, 470);
+  static final Vector2 spawnPosition = Vector2(80, 380);
   static const double levelWidth = 5020.0;
   static const double bossArenaTriggerX = 4050.0;
   static const double arenaCenterX = 4540.0;
@@ -32,17 +32,18 @@ class LevelTwo extends Component with HasGameReference<MangaGame> {
 
     // =========================================================================
     // ZONE 1: Outer Fortress Ramparts & Watchtowers (x: 0 .. 950)
+    // Raised starting platform (y: 390) so Kaito is clearly visible above mobile thumb/joystick!
     // =========================================================================
     add(ComicPlatform(
-      position: Vector2(0, 480),
-      size: Vector2(360, 60),
+      position: Vector2(0, 390),
+      size: Vector2(360, 150),
     ));
     add(EnemyGrunt(
-      position: Vector2(220, 480),
+      position: Vector2(220, 390),
       minXBound: 140,
       maxXBound: 330,
     ));
-    add(BreakableCrate(position: Vector2(315, 480)));
+    add(BreakableCrate(position: Vector2(315, 390)));
 
     add(ComicPlatform(
       position: Vector2(400, 405),

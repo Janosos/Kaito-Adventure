@@ -11,7 +11,7 @@ import '../components/enemies/enemy_drone.dart';
 import '../components/bosses/boss_kurokage.dart';
 
 class LevelOne extends Component with HasGameReference<MangaGame> {
-  static final Vector2 spawnPosition = Vector2(80, 470);
+  static final Vector2 spawnPosition = Vector2(80, 380);
   static const double levelWidth = 4620.0;
   static const double bossArenaTriggerX = 3650.0;
   static const double arenaCenterX = 4140.0;
@@ -30,18 +30,19 @@ class LevelOne extends Component with HasGameReference<MangaGame> {
 
     // =========================================================================
     // ZONE 1: Opening Neo-Tokyo Pagoda Eaves (x: 0 .. 900)
+    // Raised starting platform (y: 390) so Kaito is clearly visible above mobile thumb/joystick!
     // =========================================================================
     add(ComicPlatform(
-      position: Vector2(0, 480),
-      size: Vector2(390, 60),
+      position: Vector2(0, 390),
+      size: Vector2(390, 150),
     ));
-    add(BreakableCrate(position: Vector2(180, 480)));
+    add(BreakableCrate(position: Vector2(180, 390)));
     add(EnemyGrunt(
-      position: Vector2(275, 480),
+      position: Vector2(275, 390),
       minXBound: 195,
       maxXBound: 360,
     ));
-    add(InkScroll(position: Vector2(340, 430)));
+    add(InkScroll(position: Vector2(340, 340)));
 
     add(ComicPlatform(
       position: Vector2(430, 410),

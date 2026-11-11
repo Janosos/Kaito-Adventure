@@ -12,7 +12,7 @@ import '../components/bosses/boss_hebi_hime.dart';
 import 'level_one.dart';
 
 class LevelThree extends Component with HasGameReference<MangaGame> {
-  static final Vector2 spawnPosition = Vector2(80, 470);
+  static final Vector2 spawnPosition = Vector2(80, 380);
   static const double levelWidth = 5420.0;
   static const double bossArenaTriggerX = 4450.0;
   static const double arenaCenterX = 4940.0;
@@ -31,14 +31,15 @@ class LevelThree extends Component with HasGameReference<MangaGame> {
 
     // =========================================================================
     // ZONE 1: Whispering Bamboo Shrine Entrance (x: 0 .. 1040)
+    // Raised starting platform (y: 390) so Kaito is clearly visible above mobile thumb/joystick!
     // =========================================================================
     add(ComicPlatform(
-      position: Vector2(0, 480),
-      size: Vector2(360, 60),
+      position: Vector2(0, 390),
+      size: Vector2(360, 150),
     ));
-    add(BreakableCrate(position: Vector2(170, 480)));
+    add(BreakableCrate(position: Vector2(170, 390)));
     add(EnemyGrunt(
-      position: Vector2(265, 480),
+      position: Vector2(265, 390),
       minXBound: 185,
       maxXBound: 335,
       maxHp: 50,
@@ -46,7 +47,7 @@ class LevelThree extends Component with HasGameReference<MangaGame> {
 
     // First Wind Updraft Vent into the Bamboo Treetops
     add(WindUpdraftVent(
-      position: Vector2(320, 480),
+      position: Vector2(320, 390),
       liftHeight: 220,
     ));
 
