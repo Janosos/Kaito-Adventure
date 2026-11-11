@@ -4,6 +4,7 @@ import 'package:flame/components.dart';
 import 'package:flame/sprite.dart';
 import 'package:flutter/material.dart';
 import 'package:manga_platformer/game/cartoon_assets.dart';
+import 'package:manga_platformer/game/services/audio_service.dart';
 import 'package:manga_platformer/ui/comic_theme.dart';
 import '../manga_effects.dart';
 import '../projectiles.dart';
@@ -106,35 +107,29 @@ class BossRyuKotei extends BossBase {
     if (!_phase2Triggered && currentHp <= maxHp * 0.66) {
       _phase2Triggered = true;
       currentPhase = 2;
-      _actionInterval = 1.55;
-      game.triggerBossCutIn(
-        bossName: 'RYU-KOTEI',
-        quote: 'IGNITE THE CRUCIBLE! NONE ESCAPE MY DRAGON FORGE!!',
-        portraitColor: ComicTheme.actionRed,
-        portraitAsset: CartoonAssets.portraitRyuKotei,
-      );
+      _actionInterval = 1.30;
+      AudioService.playSfx(AudioService.sfxBossRoar);
+      AudioService.heavyHaptic();
       game.add(MangaTextEffect(
         position: Vector2(position.x, position.y - size.y - 25),
         text: 'PHASE 2: FLAME SURGE!',
         fillColor: ComicTheme.comicYellow,
         targetScale: 1.8,
       ));
+      game.add(MangaDustEffect(position: position.clone()));
     } else if (!_phase3Triggered && currentHp <= maxHp * 0.33) {
       _phase3Triggered = true;
       currentPhase = 3;
-      _actionInterval = 1.15;
-      game.triggerBossCutIn(
-        bossName: 'RYU-KOTEI',
-        quote: 'DRAGON OVERDRIVE!! ASHES TO ASHES!!',
-        portraitColor: ComicTheme.comicYellow,
-        portraitAsset: CartoonAssets.portraitRyuKotei,
-      );
+      _actionInterval = 0.95;
+      AudioService.playSfx(AudioService.sfxBossRoar);
+      AudioService.heavyHaptic();
       game.add(MangaTextEffect(
         position: Vector2(position.x, position.y - size.y - 25),
         text: 'FINAL PHASE: OVERDRIVE!!',
         fillColor: ComicTheme.actionRed,
         targetScale: 2.0,
       ));
+      game.add(MangaDustEffect(position: position.clone()));
     }
   }
 
@@ -247,9 +242,11 @@ class BossRyuKotei extends BossBase {
         break;
 
       case RyuState.stomping:
-        position.y += 690.0 * dt;
-        if (position.y >= _stompY) {
-          position.y = _stompY;
+        position.y += 720.0 * dt;
+        final targetLandY =
+            (player.position.y < _stompY - 40.0) ? player.position.y : _stompY;
+        if (position.y >= targetLandY) {
+          position.y = targetLandY;
           _triggerGroundTremor();
           state = RyuState.recovering;
           _stateTimer = 0.0;
@@ -273,7 +270,11 @@ class BossRyuKotei extends BossBase {
         break;
 
       case RyuState.recovering:
-        if (_stateTimer >= (currentPhase == 3 ? 0.36 : 0.68)) {
+        // Drop down if player returned to the ground floor
+        if (position.y < _stompY && player.position.y >= _stompY - 30) {
+          position.y = (position.y + 420.0 * dt).clamp(0.0, _stompY);
+        }
+        if (_stateTimer >= (currentPhase == 3 ? 0.34 : 0.62)) {
           state = RyuState.idle;
           _stateTimer = 0.0;
         }
@@ -306,7 +307,19 @@ class BossRyuKotei extends BossBase {
     _stateTimer = 0.0;
     isGuarding = false;
     isCounterStance = false;
+    final player = game.player;
+    final isPlayerElevated = player.position.y < _stompY - 45.0;
     final r = _rnd.nextDouble();
+
+    // If player is on an elevated platform, leap up or erupt fire pillars directly under their feet!
+    if (isPlayerElevated) {
+      if (r < 0.60) {
+        state = RyuState.leaping;
+      } else {
+        state = RyuState.firingPillars;
+      }
+      return;
+    }
 
     if (currentPhase == 1) {
       if (r < 0.38) {
@@ -363,18 +376,19 @@ class BossRyuKotei extends BossBase {
       position: Vector2(position.x + 30, position.y - 20),
       velocity: Vector2(410, 0),
     ));
-    // Also erupt a flame pillar at Kaito's position on stomp!
+    // Erupt a flame pillar at Kaito's actual coordinates (ground or platform!)
     game.add(BossFlamePillar(
       position: Vector2(
         game.player.position.x.clamp(arenaMinX, arenaMaxX),
-        _stompY,
+        game.player.position.y.clamp(200.0, _stompY),
       ),
-      eruptDelay: 0.60,
+      eruptDelay: 0.55,
     ));
   }
 
   void _spawnFlameVents() {
     final player = game.player;
+    final targetY = player.position.y.clamp(200.0, _stompY);
     final offsets = currentPhase >= 2
         ? [-180.0, -60.0, 60.0, 180.0]
         : [-130.0, 0.0, 130.0];
@@ -382,9 +396,9 @@ class BossRyuKotei extends BossBase {
       game.add(BossFlamePillar(
         position: Vector2(
           (player.position.x + off).clamp(arenaMinX, arenaMaxX),
-          _stompY,
+          targetY,
         ),
-        eruptDelay: 0.62,
+        eruptDelay: 0.58,
       ));
     }
   }

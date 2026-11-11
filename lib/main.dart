@@ -14,6 +14,7 @@ import 'ui/victory_overlay.dart';
 import 'ui/intro_overlay.dart';
 import 'ui/main_menu_overlay.dart';
 import 'ui/settings_overlay.dart';
+import 'ui/story_epilogue_overlay.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -152,6 +153,8 @@ class _MangaGameScreenState extends State<MangaGameScreen>
                     'victory': (context, game) => VictoryOverlay(game: game),
                     'chapter_select': (context, game) =>
                         ChapterSelectOverlay(game: game),
+                    'story_epilogue': (context, game) =>
+                        StoryEpilogueOverlay(game: game),
                   },
                 ),
               ),

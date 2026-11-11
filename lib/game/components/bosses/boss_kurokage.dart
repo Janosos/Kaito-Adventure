@@ -4,6 +4,7 @@ import 'package:flame/components.dart';
 import 'package:flame/sprite.dart';
 import 'package:flutter/material.dart';
 import 'package:manga_platformer/game/cartoon_assets.dart';
+import 'package:manga_platformer/game/services/audio_service.dart';
 import 'package:manga_platformer/ui/comic_theme.dart';
 import '../manga_effects.dart';
 import '../projectiles.dart';
@@ -101,19 +102,16 @@ class BossKurokage extends BossBase {
   void checkPhaseTransition() {
     if (currentPhase == 1 && currentHp <= maxHp * 0.5) {
       currentPhase = 2;
-      _actionInterval = 1.35;
-      game.triggerBossCutIn(
-        bossName: 'KUROKAGE',
-        quote: 'FOOL! THE TRUE SHADOW CONSUMES ALL!!',
-        portraitColor: ComicTheme.darkPurple,
-        portraitAsset: CartoonAssets.portraitKurokage,
-      );
+      _actionInterval = 1.15;
+      AudioService.playSfx(AudioService.sfxBossRoar);
+      AudioService.heavyHaptic();
       game.add(MangaTextEffect(
         position: Vector2(position.x, position.y - size.y - 30),
         text: 'PHASE 2: SHADOW MIRAGE!!',
         fillColor: ComicTheme.actionRed,
         targetScale: 1.8,
       ));
+      game.add(MangaDustEffect(position: position.clone()));
     }
   }
 
@@ -158,6 +156,8 @@ class BossKurokage extends BossBase {
           final behindOffset = player.facingDirection == 1 ? -68.0 : 68.0;
           position.x =
               (player.position.x + behindOffset).clamp(arenaMinX, arenaMaxX);
+          // Seamlessly teleport to player's platform height so safe spots are eliminated!
+          position.y = player.position.y.clamp(280.0, _groundY);
           facing = player.position.x > position.x ? 1 : -1;
 
           game.add(MangaTextEffect(
@@ -229,17 +229,19 @@ class BossKurokage extends BossBase {
         break;
 
       case KurokageState.aerialDivePlunge:
-        position.y += 720.0 * dt;
-        if (position.y >= _groundY) {
-          position.y = _groundY;
+        position.y += 750.0 * dt;
+        final targetLandY =
+            (player.position.y < _groundY - 40.0) ? player.position.y : _groundY;
+        if (position.y >= targetLandY) {
+          position.y = targetLandY;
           game.add(MangaDustEffect(position: position.clone()));
-          // Twin left & right ground shockwaves on impact!
+          // Twin left & right ground/platform shockwaves on impact!
           game.add(BossDarkSlashWave(
-            position: Vector2(position.x - 24, _groundY - 26),
+            position: Vector2(position.x - 24, position.y - 26),
             velocity: Vector2(-380.0, 0),
           ));
           game.add(BossDarkSlashWave(
-            position: Vector2(position.x + 24, _groundY - 26),
+            position: Vector2(position.x + 24, position.y - 26),
             velocity: Vector2(380.0, 0),
           ));
           state = KurokageState.recovering;
@@ -263,7 +265,11 @@ class BossKurokage extends BossBase {
         break;
 
       case KurokageState.recovering:
-        if (_stateTimer >= (currentPhase == 2 ? 0.38 : 0.72)) {
+        // If player drops to floor while boss is on a platform, boss drops down to pursue
+        if (position.y < _groundY && player.position.y >= _groundY - 30) {
+          position.y = (position.y + 420.0 * dt).clamp(0.0, _groundY);
+        }
+        if (_stateTimer >= (currentPhase == 2 ? 0.34 : 0.62)) {
           state = KurokageState.idle;
           _stateTimer = 0.0;
         }
@@ -297,7 +303,20 @@ class BossKurokage extends BossBase {
 
     final player = game.player;
     final dist = (player.position.x - position.x).abs();
+    final isPlayerElevated = player.position.y < _groundY - 45.0;
     final r = _rnd.nextDouble();
+
+    // If player is camping on elevated platforms, relentlessly pursue onto the platform!
+    if (isPlayerElevated) {
+      if (r < 0.55) {
+        state = KurokageState.teleporting;
+        game.add(MangaDustEffect(position: position.clone()));
+      } else {
+        state = KurokageState.aerialDivePrep;
+        game.add(MangaDustEffect(position: position.clone()));
+      }
+      return;
+    }
 
     if (dist > 175 || r < 0.35) {
       if (r < 0.18) {
@@ -353,8 +372,8 @@ class BossKurokage extends BossBase {
     final dx = player.position.x - position.x;
     final inFront = (facing > 0 && dx > 0) || (facing < 0 && dx < 0);
     if (inFront &&
-        dx.abs() < 92 &&
-        (player.position.y - position.y).abs() < 60) {
+        dx.abs() < 96 &&
+        (player.position.y - position.y).abs() < 85) {
       player.takeDamage(1);
     }
   }

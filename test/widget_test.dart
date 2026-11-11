@@ -12,6 +12,7 @@ import 'package:manga_platformer/ui/comic_hud.dart';
 import 'package:manga_platformer/ui/main_menu_overlay.dart';
 import 'package:manga_platformer/ui/manga_cutin_overlay.dart';
 import 'package:manga_platformer/ui/settings_overlay.dart';
+import 'package:manga_platformer/ui/story_epilogue_overlay.dart';
 import 'package:manga_platformer/ui/virtual_joystick_overlay.dart';
 
 void main() {
@@ -300,5 +301,27 @@ void main() {
     AudioService.buttonHaptic();
     AudioService.heavyHaptic();
     AudioService.stopBgm();
+  });
+
+  testWidgets(
+      'StoryEpilogueOverlay renders cleanly on mobile landscape (800x360)',
+      (WidgetTester tester) async {
+    final game = MangaGame();
+    await tester.binding.setSurfaceSize(const Size(800, 360));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: MediaQuery(
+          data: const MediaQueryData(size: Size(800, 360)),
+          child: StoryEpilogueOverlay(game: game),
+        ),
+      ),
+    );
+    await tester.pump();
+    expect(tester.takeException(), isNull);
+    expect(find.byType(StoryEpilogueOverlay), findsOneWidget);
+
+    await tester.pumpWidget(const SizedBox.shrink());
   });
 }

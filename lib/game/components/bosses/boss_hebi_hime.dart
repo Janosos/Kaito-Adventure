@@ -4,6 +4,7 @@ import 'package:flame/components.dart';
 import 'package:flame/sprite.dart';
 import 'package:flutter/material.dart';
 import 'package:manga_platformer/game/cartoon_assets.dart';
+import 'package:manga_platformer/game/services/audio_service.dart';
 import 'package:manga_platformer/ui/comic_theme.dart';
 import '../enemies/enemy_drone.dart';
 import '../manga_effects.dart';
@@ -89,19 +90,16 @@ class BossHebiHime extends BossBase {
   void checkPhaseTransition() {
     if (currentPhase == 1 && currentHp <= maxHp * 0.5) {
       currentPhase = 2;
-      _actionInterval = 1.25;
-      game.triggerBossCutIn(
-        bossName: 'HEBI-HIME',
-        quote: 'DROWN IN A THOUSAND FANGS OF EMERALD VENOM!!',
-        portraitColor: const Color(0xFF00C853),
-        portraitAsset: CartoonAssets.portraitHebiHime,
-      );
+      _actionInterval = 1.10;
+      AudioService.playSfx(AudioService.sfxBossRoar);
+      AudioService.heavyHaptic();
       game.add(MangaTextEffect(
         position: Vector2(position.x, position.y - size.y - 25),
         text: 'PHASE 2: SERPENT FRENZY!!',
         fillColor: Colors.greenAccent,
         targetScale: 1.8,
       ));
+      game.add(MangaDustEffect(position: position.clone()));
     }
   }
 
@@ -175,10 +173,11 @@ class BossHebiHime extends BossBase {
         break;
 
       case HebiState.coilingAmbush:
-        // Shadowy burrow ambush under Kaito's position, then erupt with twin waves & overhead venom rain!
+        // Shadowy burrow ambush directly under/onto Kaito's position (ground or platform!), then erupt!
         if (_stateTimer >= 0.38) {
           position.x = (player.position.x + (player.facingDirection * -55.0))
               .clamp(arenaMinX, arenaMaxX);
+          position.y = player.position.y.clamp(200.0, _groundY);
           facing = player.position.x > position.x ? 1 : -1;
           game.add(MangaDustEffect(position: position.clone()));
           game.add(SlashArcEffect(
@@ -187,12 +186,16 @@ class BossHebiHime extends BossBase {
             slashColor: Colors.greenAccent,
             radius: 66,
           ));
+          if ((player.position.x - position.x).abs() < 75 &&
+              (player.position.y - position.y).abs() < 60) {
+            player.takeDamage(1);
+          }
           // Drop venom needles from canopy above Kaito!
           for (final off in [-90.0, 0.0, 90.0]) {
             game.add(DroneInkNeedle(
               position: Vector2(
                 (player.position.x + off).clamp(arenaMinX, arenaMaxX),
-                _groundY - 260.0,
+                position.y - 220.0,
               ),
               speed: 280.0,
             ));
@@ -204,13 +207,16 @@ class BossHebiHime extends BossBase {
 
       case HebiState.venomBarrage:
         if (_stateTimer >= 0.34) {
+          final dy = (player.position.y - position.y);
+          final baseAngle = atan2(dy, (player.position.x - position.x).abs() * facing);
           final spread = currentPhase == 2
               ? [-0.36, -0.18, 0.0, 0.18, 0.36]
               : [-0.25, -0.08, 0.08, 0.25];
           for (final a in spread) {
+            final finalAngle = baseAngle + a;
             game.add(BossEnergyOrb(
               position: Vector2(position.x + facing * 30, position.y - 44),
-              velocity: Vector2(facing * cos(a) * 355, sin(a) * 355),
+              velocity: Vector2(facing * cos(finalAngle) * 355, sin(finalAngle) * 355),
             ));
           }
           game.add(MangaTextEffect(
@@ -225,6 +231,7 @@ class BossHebiHime extends BossBase {
 
       case HebiState.fangEruption:
         if (_stateTimer >= 0.36) {
+          final targetY = player.position.y.clamp(200.0, _groundY);
           final offsets = currentPhase == 2
               ? [-140.0, 0.0, 140.0]
               : [-80.0, 80.0];
@@ -232,14 +239,14 @@ class BossHebiHime extends BossBase {
             game.add(BossFlamePillar(
               position: Vector2(
                 (player.position.x + off).clamp(arenaMinX, arenaMaxX),
-                _groundY,
+                targetY,
               ),
               eruptDelay: 0.58,
             ));
           }
           // Plus a low slithering wave
           game.add(BossDarkSlashWave(
-            position: Vector2(position.x + facing * 28, _groundY - 24),
+            position: Vector2(position.x + facing * 28, position.y - 24),
             velocity: Vector2(facing * 390.0, 0),
           ));
           state = HebiState.recovering;
@@ -248,7 +255,11 @@ class BossHebiHime extends BossBase {
         break;
 
       case HebiState.recovering:
-        if (_stateTimer >= (currentPhase == 2 ? 0.38 : 0.65)) {
+        // Drop down if player returned to the ground floor
+        if (position.y < _groundY && player.position.y >= _groundY - 30) {
+          position.y = (position.y + 420.0 * dt).clamp(0.0, _groundY);
+        }
+        if (_stateTimer >= (currentPhase == 2 ? 0.32 : 0.60)) {
           state = HebiState.idle;
           _stateTimer = 0.0;
         }
@@ -262,7 +273,21 @@ class BossHebiHime extends BossBase {
     _stateTimer = 0.0;
     isGuarding = false;
     isCounterStance = false;
+    final player = game.player;
+    final isPlayerElevated = player.position.y < _groundY - 45.0;
     final r = _rnd.nextDouble();
+
+    // If player is on an elevated platform, ambush directly onto the platform or spray venom fangs!
+    if (isPlayerElevated) {
+      if (r < 0.60) {
+        state = HebiState.coilingAmbush;
+        game.add(MangaDustEffect(position: position.clone()));
+      } else {
+        state = HebiState.venomBarrage;
+      }
+      return;
+    }
+
     if (r < 0.22) {
       state = HebiState.slitherDash;
       game.add(MangaTextEffect(

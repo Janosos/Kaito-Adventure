@@ -4,6 +4,7 @@ import 'package:flame/components.dart';
 import 'package:flame/sprite.dart';
 import 'package:flutter/material.dart';
 import 'package:manga_platformer/game/cartoon_assets.dart';
+import 'package:manga_platformer/game/services/audio_service.dart';
 import 'package:manga_platformer/ui/comic_theme.dart';
 import '../manga_effects.dart';
 import '../projectiles.dart';
@@ -92,29 +93,29 @@ class BossYukiOni extends BossBase {
     if (!_phase2Done && currentHp <= maxHp * 0.66) {
       _phase2Done = true;
       currentPhase = 2;
-      _actionInterval = 1.5;
-      game.triggerBossCutIn(
-        bossName: 'YUKI-ONI',
-        quote: 'MY KANABO SHALL SHATTER BONE AND FREEZE YOUR SOUL!!',
-        portraitColor: ComicTheme.energyCyan,
-        portraitAsset: CartoonAssets.portraitYukiOni,
-      );
+      _actionInterval = 1.25;
+      AudioService.playSfx(AudioService.sfxBossRoar);
+      AudioService.heavyHaptic();
       game.add(MangaTextEffect(
         position: Vector2(position.x, position.y - size.y - 25),
         text: 'PHASE 2: AVALANCHE RAGE!!',
         fillColor: ComicTheme.energyCyan,
         targetScale: 1.8,
       ));
+      game.add(MangaDustEffect(position: position.clone()));
     } else if (!_phase3Done && currentHp <= maxHp * 0.33) {
       _phase3Done = true;
       currentPhase = 3;
-      _actionInterval = 1.15;
-      game.triggerBossCutIn(
-        bossName: 'YUKI-ONI',
-        quote: 'ABSOLUTE ZERO OVERDRIVE!! ROOOAAAR!!',
-        portraitColor: Colors.lightBlueAccent,
-        portraitAsset: CartoonAssets.portraitYukiOni,
-      );
+      _actionInterval = 0.95;
+      AudioService.playSfx(AudioService.sfxBossRoar);
+      AudioService.heavyHaptic();
+      game.add(MangaTextEffect(
+        position: Vector2(position.x, position.y - size.y - 25),
+        text: 'FINAL PHASE: ABSOLUTE ZERO!!',
+        fillColor: Colors.lightBlueAccent,
+        targetScale: 2.0,
+      ));
+      game.add(MangaDustEffect(position: position.clone()));
     }
   }
 
@@ -165,8 +166,18 @@ class BossYukiOni extends BossBase {
 
       case YukiState.bullRush:
         position.x += facing * 530.0 * dt;
-        if ((player.position.x - position.x).abs() < 56 &&
-            (player.position.y - position.y).abs() < 58) {
+        // If player is on an elevated platform, leap up toward platform height!
+        final targetY = (player.position.y < _groundY - 40.0)
+            ? player.position.y.clamp(200.0, _groundY)
+            : _groundY;
+        if (position.y > targetY) {
+          position.y = (position.y - 390.0 * dt).clamp(targetY, _groundY);
+        } else if (position.y < targetY) {
+          position.y = (position.y + 390.0 * dt).clamp(0.0, targetY);
+        }
+
+        if ((player.position.x - position.x).abs() < 64 &&
+            (player.position.y - position.y).abs() < 68) {
           player.takeDamage(1);
         }
         if (_stateTimer >= 0.46 ||
@@ -175,7 +186,7 @@ class BossYukiOni extends BossBase {
           position.x = position.x.clamp(arenaMinX, arenaMaxX);
           // Chain into a Kanabo shockwave slam at the end of the bull rush!
           game.add(BossDarkSlashWave(
-            position: Vector2(position.x + facing * 28, _groundY - 24),
+            position: Vector2(position.x + facing * 28, position.y - 24),
             velocity: Vector2(facing * 390.0, 0),
           ));
           state = YukiState.recovering;
@@ -187,19 +198,20 @@ class BossYukiOni extends BossBase {
         if (_stateTimer >= 0.38) {
           game.add(MangaDustEffect(position: position.clone()));
           game.add(BossDarkSlashWave(
-            position: Vector2(position.x - 30, _groundY - 24),
+            position: Vector2(position.x - 30, position.y - 24),
             velocity: Vector2(-390, 0),
           ));
           game.add(BossDarkSlashWave(
-            position: Vector2(position.x + 30, _groundY - 24),
+            position: Vector2(position.x + 30, position.y - 24),
             velocity: Vector2(390, 0),
           ));
-          // Sequential marching glacier pillars toward Kaito!
+          // Erupt glacier pillars directly targeting player's elevation (ground or platform!)
+          final targetPillarY = player.position.y.clamp(200.0, _groundY);
           for (int step = 1; step <= (currentPhase >= 2 ? 3 : 2); step++) {
             final pillarX =
                 (position.x + facing * step * 115.0).clamp(arenaMinX, arenaMaxX);
             game.add(BossFlamePillar(
-              position: Vector2(pillarX, _groundY),
+              position: Vector2(pillarX, targetPillarY),
               eruptDelay: 0.40 + step * 0.16,
             ));
           }
@@ -212,10 +224,13 @@ class BossYukiOni extends BossBase {
         // Pushes Kaito back with a freezing blizzard crosswind while firing ice orbs!
         player.externalWindX = facing * 135.0;
         if (_stateTimer >= 0.55) {
+          final dy = player.position.y - (position.y - 46);
+          final baseAngle = atan2(dy, (player.position.x - position.x).abs() * facing);
           for (final a in [-0.30, 0.0, 0.30]) {
+            final finalAngle = baseAngle + a;
             game.add(BossEnergyOrb(
               position: Vector2(position.x + facing * 34, position.y - 46),
-              velocity: Vector2(facing * cos(a) * 350, sin(a) * 350),
+              velocity: Vector2(facing * cos(finalAngle) * 350, sin(finalAngle) * 350),
             ));
           }
           state = YukiState.recovering;
@@ -225,10 +240,13 @@ class BossYukiOni extends BossBase {
 
       case YukiState.blizzardOrbs:
         if (_stateTimer >= 0.40) {
+          final dy = player.position.y - (position.y - 52);
+          final baseAngle = atan2(dy, (player.position.x - position.x).abs() * facing);
           for (final a in [-0.42, -0.18, 0.05, 0.28, 0.45]) {
+            final finalAngle = baseAngle + a;
             game.add(BossEnergyOrb(
               position: Vector2(position.x + facing * 34, position.y - 52),
-              velocity: Vector2(facing * cos(a) * 355, sin(a) * 355),
+              velocity: Vector2(facing * cos(finalAngle) * 355, sin(finalAngle) * 355),
             ));
           }
           state = YukiState.recovering;
@@ -237,7 +255,11 @@ class BossYukiOni extends BossBase {
         break;
 
       case YukiState.recovering:
-        if (_stateTimer >= (currentPhase == 3 ? 0.36 : 0.68)) {
+        // Drop down if player returned to the ground floor
+        if (position.y < _groundY && player.position.y >= _groundY - 30) {
+          position.y = (position.y + 420.0 * dt).clamp(0.0, _groundY);
+        }
+        if (_stateTimer >= (currentPhase == 3 ? 0.34 : 0.62)) {
           state = YukiState.idle;
           _stateTimer = 0.0;
         }
@@ -251,7 +273,20 @@ class BossYukiOni extends BossBase {
     _stateTimer = 0.0;
     isGuarding = false;
     isCounterStance = false;
+    final player = game.player;
+    final isPlayerElevated = player.position.y < _groundY - 45.0;
     final r = _rnd.nextDouble();
+
+    // If player is camping on elevated platforms, rush or slam with vertical reach!
+    if (isPlayerElevated) {
+      if (r < 0.50) {
+        state = YukiState.charging;
+      } else {
+        state = YukiState.glacierSlam;
+      }
+      return;
+    }
+
     if (r < 0.24) {
       state = YukiState.charging;
     } else if (r < 0.50) {

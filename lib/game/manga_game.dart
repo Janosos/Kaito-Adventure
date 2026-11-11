@@ -305,6 +305,7 @@ class MangaGame extends FlameGame
     overlays.remove('pause');
     overlays.remove('settings');
     overlays.remove('story_intro');
+    overlays.remove('story_epilogue');
     overlays.remove('game_over');
     overlays.remove('victory');
     overlays.remove('chapter_select');
@@ -325,8 +326,14 @@ class MangaGame extends FlameGame
   void finishIntroToMainMenu() {
     overlays.remove('intro');
     overlays.remove('story_intro');
+    overlays.remove('story_epilogue');
     pauseEngine();
     _addOverlay('main_menu');
+  }
+
+  void finishEpilogueToVictory() {
+    overlays.remove('story_epilogue');
+    _addOverlay('victory');
   }
 
   void openSettings() {
@@ -504,7 +511,11 @@ class MangaGame extends FlameGame
     addScore(1000 * currentLevelIndex);
     Future.delayed(const Duration(milliseconds: 1400), () {
       pauseEngine();
-      _addOverlay('victory');
+      if (currentLevelIndex >= totalLevels) {
+        _addOverlay('story_epilogue');
+      } else {
+        _addOverlay('victory');
+      }
     });
   }
 
@@ -513,6 +524,7 @@ class MangaGame extends FlameGame
     isLevelVictory = false;
     overlays.remove('game_over');
     overlays.remove('victory');
+    overlays.remove('story_epilogue');
     overlays.remove('manga_cutin');
     AudioService.stopBgm();
     loadLevel(currentLevelIndex, pauseForMenu: false);
@@ -522,6 +534,7 @@ class MangaGame extends FlameGame
     isGameOver = false;
     isLevelVictory = false;
     overlays.remove('victory');
+    overlays.remove('story_epilogue');
     overlays.remove('manga_cutin');
     AudioService.stopBgm();
     final nextIdx = currentLevelIndex < totalLevels ? currentLevelIndex + 1 : 1;

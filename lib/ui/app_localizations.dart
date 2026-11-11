@@ -346,6 +346,21 @@ class AppLocalizations {
       'story_p3_caption':
           'Drawing his Celestial Katana, Kaito leaps across five perilous stages to push back the darkness and defeat every Warlord at the end of their domain!',
 
+      // Story Epilogue (Outro after defeating Final Boss Emperor Muzan-Kai)
+      'epilogue_finish': 'CLAIM VICTORY',
+      'epilogue_p1_chapter': 'EPILOGUE • PANEL I',
+      'epilogue_p1_title': 'FALL OF THE BLOOD ECLIPSE',
+      'epilogue_p1_caption':
+          'With a blinding celestial slash, Emperor Muzan-Kai falls! The dark seal shatters into millions of glowing ink sparks, dissolving the corrupt shadow throne forever.',
+      'epilogue_p2_chapter': 'EPILOGUE • PANEL II',
+      'epilogue_p2_title': 'REBIRTH OF THE FIVE REALMS',
+      'epilogue_p2_caption':
+          'As golden celestial ink rains over Neo-Tokyo, the corrupted lands heal: cherry blossoms bloom once more, holy torii gates shine, and peace returns to every temple.',
+      'epilogue_p3_chapter': 'EPILOGUE • PANEL III',
+      'epilogue_p3_title': 'THE LEGEND OF KAITO',
+      'epilogue_p3_caption':
+          'His sacred oath fulfilled and the Celestial Scroll restored to the shrine, Kaito stands tall as the ultimate Manga Shinobi. A new legend begins under the morning sun.',
+
       // Chapter Select
       'select_chapter_title': 'SELECT CHAPTER',
       'select_chapter_sub':
@@ -491,6 +506,21 @@ class AppLocalizations {
       'story_p3_caption':
           '¡Desenvainando su Katana Celestial, Kaito avanza a través de cinco peligrosos niveles para hacer retroceder la oscuridad y derrotar a cada Jefe en su dominio!',
 
+      // Story Epilogue (Outro after defeating Final Boss Emperor Muzan-Kai)
+      'epilogue_finish': 'RECLAMAR VICTORIA',
+      'epilogue_p1_chapter': 'EPÍLOGO • VIÑETA I',
+      'epilogue_p1_title': 'LA CAÍDA DEL ECLIPSE ROJO',
+      'epilogue_p1_caption':
+          '¡Con un corte celestial deslumbrante, el Emperador Muzan-Kai cae derrotado! El sello oscuro se hace añicos en millones de chispas de tinta luminosa, disolviendo el trono de las sombras.',
+      'epilogue_p2_chapter': 'EPÍLOGO • VIÑETA II',
+      'epilogue_p2_title': 'RENACER DE LOS CINCO REINOS',
+      'epilogue_p2_caption':
+          'Mientras una lluvia de tinta dorada celestial baña Neo-Tokio, las tierras se restauran: los cerezos florecen de nuevo, los torii brillan con luz sagrada y la paz regresa a cada rincón.',
+      'epilogue_p3_chapter': 'EPÍLOGO • VIÑETA III',
+      'epilogue_p3_title': 'LA LEYENDA DE KAITO',
+      'epilogue_p3_caption':
+          'Cumplido su juramento sagrado y devuelto el Pergamino Celestial al santuario, Kaito se erige como el Shinobi definitivo del Manga. ¡Una nueva leyenda nace bajo el sol del amanecer!',
+
       // Chapter Select
       'select_chapter_title': 'SELECCIONAR CAPÍTULO',
       'select_chapter_sub':
@@ -635,6 +665,21 @@ class AppLocalizations {
       'story_p3_title': 'カイトの誓い',
       'story_p3_caption':
           '天墨の刀を抜き放ち、カイトは5つの過酷なステージを駆け抜け、最奥で待ち受ける闇武将たちに挑む！',
+
+      // Story Epilogue (Outro after defeating Final Boss Emperor Muzan-Kai)
+      'epilogue_finish': '勝利の栄光へ',
+      'epilogue_p1_chapter': '終章 • 第壱幕',
+      'epilogue_p1_title': '血の月蝕の崩壊',
+      'epilogue_p1_caption':
+          '渾身の神速斬撃により、皇帝ムザンカイは討ち果たされた！闇の封印は無数の光るインクの火花となって砕け散り、邪悪なる玉座は永遠に崩れ去った。',
+      'epilogue_p2_chapter': '終章 • 第弐幕',
+      'epilogue_p2_title': '五つの世界の新生',
+      'epilogue_p2_caption':
+          'ネオ東京の空から黄金の天墨が降り注ぎ、蝕まれた大地が蘇る。桜が満開に咲き誇り、鳥居が清らかな輝きを取り戻し、平和が訪れた。',
+      'epilogue_p3_chapter': '終章 • 第参幕',
+      'epilogue_p3_title': 'カイトの伝説',
+      'epilogue_p3_caption':
+          '神聖なる誓いは果たされ、天墨の巻物は社へと奉納された。カイトは真の忍としての道を切り拓き、朝日のもとで新たな伝説が今、始まる。',
 
       // Chapter Select
       'select_chapter_title': '章セレクト',

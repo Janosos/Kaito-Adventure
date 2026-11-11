@@ -134,6 +134,13 @@ class CartoonAssets {
   static const String introPanel3 =
       'assets/images/illustrations/intro_panel3_oath.png';
 
+  static const String epiloguePanel1 =
+      'assets/images/illustrations/epilogue_panel1_shatter.png';
+  static const String epiloguePanel2 =
+      'assets/images/illustrations/epilogue_panel2_rebirth.png';
+  static const String epiloguePanel3 =
+      'assets/images/illustrations/epilogue_panel3_legend.png';
+
   static const String portraitKaito =
       'assets/images/illustrations/portrait_kaito.jpg';
   static const String portraitKurokage =
