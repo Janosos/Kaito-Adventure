@@ -5,6 +5,7 @@ import 'package:flame/sprite.dart';
 import 'package:flutter/material.dart';
 import 'package:manga_platformer/game/cartoon_assets.dart';
 import 'package:manga_platformer/game/manga_game.dart';
+import 'package:manga_platformer/game/services/audio_service.dart';
 import 'package:manga_platformer/ui/comic_theme.dart';
 import '../manga_effects.dart';
 import '../collectibles.dart';
@@ -95,6 +96,7 @@ class EnemyGrunt extends PositionComponent
 
     hp -= amount;
     _hitFlashTimer = 0.18;
+    AudioService.playSfx(AudioService.sfxEnemyHit);
 
     final pushDir =
         knockbackDir != 0 ? knockbackDir : (game.player.position.x < position.x ? 1 : -1);
@@ -114,6 +116,7 @@ class EnemyGrunt extends PositionComponent
 
   void _die() {
     _isDying = true;
+    AudioService.playSfx(AudioService.sfxEnemyDefeat);
     game.addScore(150);
     game.addSpirit(12);
     game.add(MangaDustEffect(position: position.clone()));

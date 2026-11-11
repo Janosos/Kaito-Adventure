@@ -4,6 +4,7 @@ import 'package:flame/sprite.dart';
 import 'package:flutter/material.dart';
 import 'package:manga_platformer/game/cartoon_assets.dart';
 import 'package:manga_platformer/game/manga_game.dart';
+import 'package:manga_platformer/game/services/audio_service.dart';
 import 'package:manga_platformer/ui/comic_theme.dart';
 import 'manga_effects.dart';
 import 'projectiles.dart';
@@ -221,6 +222,7 @@ class MangaPlayer extends PositionComponent
       velocity.y = jumpForce;
       isOnGround = false;
       _standingPlatform = null;
+      AudioService.playSfx(AudioService.sfxJump);
       game.add(MangaDustEffect(position: position.clone()));
       game.add(MangaTextEffect(
         position: Vector2(position.x, position.y - size.y - 10),
@@ -234,6 +236,7 @@ class MangaPlayer extends PositionComponent
       velocity.x = -wallDirection * moveSpeed * 1.3;
       facingDirection = -wallDirection;
       isTouchingWall = false;
+      AudioService.playSfx(AudioService.sfxJump);
       game.add(MangaDustEffect(position: position.clone()));
       game.add(MangaTextEffect(
         position: Vector2(position.x, position.y - 20),
@@ -253,6 +256,7 @@ class MangaPlayer extends PositionComponent
     velocity.y = 0;
     velocity.x = facingDirection * dashSpeed;
     action = PlayerAction.dashing;
+    AudioService.playSfx(AudioService.sfxDash);
 
     game.add(MangaTextEffect(
       position: Vector2(position.x, position.y - size.y * 0.5),
@@ -281,6 +285,10 @@ class MangaPlayer extends PositionComponent
     ];
     action = attackActions[comboIndex];
     _tickers[action]?.reset();
+
+    AudioService.playSfx(
+      comboIndex == 2 ? AudioService.sfxSlashHeavy : AudioService.sfxSlash,
+    );
 
     // Subtle forward lunge on slash
     position.x = (position.x + facingDirection * 4.0)
@@ -319,6 +327,8 @@ class MangaPlayer extends PositionComponent
     action = PlayerAction.attack1;
     _tickers[action]?.reset();
 
+    AudioService.playSfx(AudioService.sfxKunaiThrow);
+
     game.add(MangaTextEffect(
       position: Vector2(
           position.x + facingDirection * 24, position.y - size.y * 0.75),
@@ -343,6 +353,9 @@ class MangaPlayer extends PositionComponent
     attackAnimTimer = 0.5;
     action = PlayerAction.attack3;
     _tickers[action]?.reset();
+
+    AudioService.playSfx(AudioService.sfxOugiRelease);
+    AudioService.heavyHaptic();
 
     game.triggerBossCutIn(
       bossName: 'KAITO',
@@ -500,6 +513,9 @@ class MangaPlayer extends PositionComponent
       return;
     }
 
+    AudioService.playSfx(AudioService.sfxPlayerHurt);
+    AudioService.heavyHaptic();
+
     invulnerableTimer = 1.3;
     hurtAnimTimer = 0.35;
     action = PlayerAction.hurt;
@@ -524,6 +540,9 @@ class MangaPlayer extends PositionComponent
     _spawnedDeathCollapseFx = false;
     action = PlayerAction.death;
     _tickers[PlayerAction.death]?.reset();
+
+    AudioService.playSfx(AudioService.sfxPlayerDeath);
+    AudioService.heavyHaptic();
 
     // Ensure Kaito is visible on screen if he died near/in a pit
     if (position.y > 520) {

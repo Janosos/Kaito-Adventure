@@ -11,6 +11,7 @@ import 'cartoon_assets.dart';
 import 'components/player.dart';
 import 'components/manga_effects.dart';
 import 'components/bosses/boss_base.dart';
+import 'services/audio_service.dart';
 import 'levels/level_one.dart';
 import 'levels/level_two.dart';
 import 'levels/level_three.dart';
@@ -163,6 +164,8 @@ class MangaGame extends FlameGame
     camera.viewfinder.anchor = Anchor.center;
     camera.viewfinder.position = Vector2(viewportWidth * 0.5, 270);
 
+    await AudioService.init();
+
     // Load Level 1 in the background and pause while Intro / Main Menu is shown
     await loadLevel(1, pauseForMenu: true);
 
@@ -245,6 +248,7 @@ class MangaGame extends FlameGame
 
     if (pauseForMenu) {
       pauseEngine();
+      AudioService.playBgm(AudioService.bgmMenu);
     } else {
       overlays.remove('intro');
       overlays.remove('story_intro');
@@ -261,6 +265,7 @@ class MangaGame extends FlameGame
         overlays.remove('virtual_controls');
       }
       resumeEngine();
+      AudioService.playBgm(AudioService.bgmStage);
     }
   }
 
@@ -268,6 +273,9 @@ class MangaGame extends FlameGame
     isBossArenaLocked = true;
     minPlayerX = minX;
     maxPlayerX = maxX;
+    AudioService.playSfx(AudioService.sfxBossRoar);
+    AudioService.heavyHaptic();
+    AudioService.playBgm(AudioService.bgmBoss);
   }
 
   void startFromMainMenu({int level = 1}) {
@@ -291,6 +299,7 @@ class MangaGame extends FlameGame
     overlays.remove('virtual_controls');
     pauseEngine();
     _addOverlay('main_menu');
+    AudioService.playBgm(AudioService.bgmMenu);
   }
 
   void openIntroStory() {
@@ -454,12 +463,16 @@ class MangaGame extends FlameGame
 
   void finalizePlayerDeath() {
     isGameOver = true;
+    AudioService.stopBgm();
+    AudioService.playSfx(AudioService.sfxGameOver);
     pauseEngine();
     _addOverlay('game_over');
   }
 
   void onBossDefeated(BossBase boss) {
     isLevelVictory = true;
+    AudioService.stopBgm();
+    AudioService.playSfx(AudioService.sfxVictory);
     addScore(1000 * currentLevelIndex);
     Future.delayed(const Duration(milliseconds: 1400), () {
       pauseEngine();
@@ -511,9 +524,11 @@ class MangaGame extends FlameGame
     if (overlays.isActive('pause')) {
       overlays.remove('pause');
       resumeEngine();
+      AudioService.resumeBgm();
     } else {
       pauseEngine();
-      overlays.add('pause');
+      AudioService.pauseBgm();
+      _addOverlay('pause');
     }
   }
 

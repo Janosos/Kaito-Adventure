@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../game/cartoon_assets.dart';
 import '../game/manga_game.dart';
+import '../game/services/audio_service.dart';
 import 'app_localizations.dart';
 import 'comic_theme.dart';
 
@@ -98,7 +99,11 @@ class GameOverOverlay extends StatelessWidget {
                         ),
                         const SizedBox(height: 12),
                         GestureDetector(
-                          onTap: () => game.restartCurrentLevel(),
+                          onTap: () {
+                            AudioService.buttonHaptic();
+                            AudioService.playSfx(AudioService.sfxStart);
+                            game.restartCurrentLevel();
+                          },
                           child: Container(
                             width: double.infinity,
                             padding: const EdgeInsets.symmetric(vertical: 10),
@@ -120,6 +125,8 @@ class GameOverOverlay extends StatelessWidget {
                             Expanded(
                               child: GestureDetector(
                                 onTap: () {
+                                  AudioService.buttonHaptic();
+                                  AudioService.playSfx(AudioService.sfxClick);
                                   game.overlays.remove('game_over');
                                   game.overlays.add('chapter_select');
                                 },
@@ -153,7 +160,11 @@ class GameOverOverlay extends StatelessWidget {
                             const SizedBox(width: 10),
                             Expanded(
                               child: GestureDetector(
-                                onTap: () => game.returnToMainMenu(),
+                                onTap: () {
+                                  AudioService.buttonHaptic();
+                                  AudioService.playSfx(AudioService.sfxClick);
+                                  game.returnToMainMenu();
+                                },
                                 child: Container(
                                   padding:
                                       const EdgeInsets.symmetric(vertical: 10),

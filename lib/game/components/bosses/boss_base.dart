@@ -1,6 +1,7 @@
 import 'package:flame/collisions.dart';
 import 'package:flame/components.dart';
 import 'package:manga_platformer/game/manga_game.dart';
+import 'package:manga_platformer/game/services/audio_service.dart';
 import 'package:manga_platformer/ui/comic_theme.dart';
 import '../manga_effects.dart';
 import '../projectiles.dart';
@@ -83,6 +84,8 @@ abstract class BossBase extends PositionComponent
         (facing < 0 && playerX > position.x + 6);
 
     if (isCounterStance && !isBackstab) {
+      AudioService.playSfx(AudioService.sfxParryCounter);
+      AudioService.heavyHaptic();
       game.add(MangaTextEffect(
         position: Vector2(position.x, position.y - size.y - 14),
         text: 'PARRY COUNTER!!',
@@ -95,6 +98,7 @@ abstract class BossBase extends PositionComponent
 
     if (isGuarding && !isBackstab) {
       // Guard blocks frontal damage; player must dash behind for a Backstab or break guard!
+      AudioService.playSfx(AudioService.sfxKunaiHit);
       position.x = (position.x + pushDir * (knockbackForce * 0.35))
           .clamp(arenaMinX, arenaMaxX);
       stunGauge += amount * 0.70;
@@ -115,12 +119,16 @@ abstract class BossBase extends PositionComponent
       isCounterStance = false;
       finalDamage = amount * 1.45;
       stunGauge += 48.0;
+      AudioService.playSfx(AudioService.sfxBackstabPierce);
+      AudioService.heavyHaptic();
       game.add(MangaTextEffect(
         position: Vector2(position.x, position.y - size.y - 22),
         text: 'BACKSTAB PIERCE!!',
         fillColor: ComicTheme.energyCyan,
         targetScale: 1.6,
       ));
+    } else {
+      AudioService.playSfx(AudioService.sfxEnemyHit);
     }
 
     currentHp = (currentHp - finalDamage).clamp(0.0, maxHp);
@@ -158,6 +166,9 @@ abstract class BossBase extends PositionComponent
     isCounterStance = false;
     stunGauge = 0.0;
 
+    AudioService.playSfx(AudioService.sfxParryCounter);
+    AudioService.heavyHaptic();
+
     game.add(MangaTextEffect(
       position: Vector2(position.x, position.y - size.y - 20),
       text: 'GUARD BREAK!!',
@@ -171,6 +182,9 @@ abstract class BossBase extends PositionComponent
   void defeat() {
     if (isDefeated) return;
     isDefeated = true;
+
+    AudioService.playSfx(AudioService.sfxOugiRelease);
+    AudioService.heavyHaptic();
 
     game.add(MangaTextEffect(
       position: Vector2(position.x, position.y - size.y / 2),

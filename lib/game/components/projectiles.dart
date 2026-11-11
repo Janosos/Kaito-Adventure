@@ -5,6 +5,7 @@ import 'package:flame/sprite.dart';
 import 'package:flutter/material.dart';
 import '../cartoon_assets.dart';
 import '../manga_game.dart';
+import '../services/audio_service.dart';
 import '../../ui/comic_theme.dart';
 import 'manga_effects.dart';
 import 'collectibles.dart';
@@ -98,6 +99,7 @@ class InkKunai extends PositionComponent
   }
 
   void _impact(Vector2 hitPos) {
+    AudioService.playSfx(AudioService.sfxKunaiHit);
     game.add(MangaTextEffect(
       position: hitPos.clone(),
       text: 'SHINK!',

@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:manga_platformer/game/components/enemies/enemy_grunt.dart';
 import 'package:manga_platformer/game/components/player.dart';
 import 'package:manga_platformer/game/manga_game.dart';
+import 'package:manga_platformer/game/services/audio_service.dart';
 import 'package:manga_platformer/main.dart';
 import 'package:manga_platformer/ui/app_localizations.dart';
 import 'package:manga_platformer/ui/chapter_select_overlay.dart';
@@ -14,6 +15,10 @@ import 'package:manga_platformer/ui/settings_overlay.dart';
 import 'package:manga_platformer/ui/virtual_joystick_overlay.dart';
 
 void main() {
+  setUpAll(() {
+    AudioService.isTestMode = true;
+  });
+
   testWidgets('Manga platformer smoke test', (WidgetTester tester) async {
     await tester.pumpWidget(const MangaPlatformerApp());
     expect(find.byType(MangaGameScreen), findsOneWidget);
@@ -268,5 +273,32 @@ void main() {
     game.isLevelVictory = true;
     game.closeChapterSelect();
     expect(game.isLevelVictory, isTrue);
+
+    // Verify Audio and Haptics toggles, local persistence and AudioService safe execution
+    AppLocalizations.setHapticsEnabled(true);
+    expect(AppLocalizations.hapticsEnabled.value, isTrue);
+    AppLocalizations.setHapticsEnabled(false);
+    expect(AppLocalizations.hapticsEnabled.value, isFalse);
+    AppLocalizations.setHapticsEnabled(true);
+
+    AppLocalizations.setBgmEnabled(false);
+    expect(AppLocalizations.bgmEnabled.value, isFalse);
+    AppLocalizations.setBgmEnabled(true);
+    expect(AppLocalizations.bgmEnabled.value, isTrue);
+
+    AppLocalizations.setSfxEnabled(false);
+    expect(AppLocalizations.sfxEnabled.value, isFalse);
+    AppLocalizations.setSfxEnabled(true);
+    expect(AppLocalizations.sfxEnabled.value, isTrue);
+
+    // Verify AudioService triggers safely without exceptions
+    AudioService.playSfx(AudioService.sfxSlash);
+    AudioService.playSfx(AudioService.sfxJump);
+    AudioService.playSfx(AudioService.sfxParryCounter);
+    AudioService.playSfx(AudioService.sfxBackstabPierce);
+    AudioService.playBgm(AudioService.bgmStage);
+    AudioService.buttonHaptic();
+    AudioService.heavyHaptic();
+    AudioService.stopBgm();
   });
 }

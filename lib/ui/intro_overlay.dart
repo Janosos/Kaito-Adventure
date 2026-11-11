@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../game/cartoon_assets.dart';
 import '../game/manga_game.dart';
+import '../game/services/audio_service.dart';
 import 'app_localizations.dart';
 import 'comic_theme.dart';
 
@@ -61,6 +62,8 @@ class _SplashIntroOverlayState extends State<SplashIntroOverlay>
       builder: (context, _, _) {
         return GestureDetector(
           onTap: () {
+            AudioService.buttonHaptic();
+            AudioService.playSfx(AudioService.sfxStart);
             _splashTimer?.cancel();
             widget.game.finishIntroToMainMenu();
           },

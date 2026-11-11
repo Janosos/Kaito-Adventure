@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../game/cartoon_assets.dart';
 import '../game/manga_game.dart';
+import '../game/services/audio_service.dart';
 import 'app_localizations.dart';
 import 'comic_theme.dart';
 
@@ -71,6 +72,7 @@ class _VirtualJoystickOverlayState extends State<VirtualJoystickOverlay>
       _joystickOrigin = clampedOrigin;
       _joystickCurrent = event.localPosition;
     });
+    AudioService.buttonHaptic();
     _updateJoystickMove(maxRadius);
   }
 
@@ -485,6 +487,7 @@ class _VirtualJoystickOverlayState extends State<VirtualJoystickOverlay>
         behavior: HitTestBehavior.opaque,
         onPointerDown: (_) {
           setState(() => _pressedButtons.add(id));
+          AudioService.buttonHaptic();
           onTap();
         },
         onPointerUp: (_) => setState(() => _pressedButtons.remove(id)),

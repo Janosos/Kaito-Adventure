@@ -94,6 +94,26 @@ class AppLocalizations {
   static final ValueNotifier<bool> showVirtualControls =
       ValueNotifier<bool>(true);
 
+  /// Global reactive setting for button vibration / haptic feedback
+  static final ValueNotifier<bool> hapticsEnabled =
+      ValueNotifier<bool>(true);
+
+  /// Global reactive setting for music (BGM)
+  static final ValueNotifier<bool> bgmEnabled =
+      ValueNotifier<bool>(true);
+
+  /// Global reactive setting for sound effects (SFX)
+  static final ValueNotifier<bool> sfxEnabled =
+      ValueNotifier<bool>(true);
+
+  /// Global reactive setting for BGM volume
+  static final ValueNotifier<double> bgmVolume =
+      ValueNotifier<double>(0.75);
+
+  /// Global reactive setting for SFX volume
+  static final ValueNotifier<double> sfxVolume =
+      ValueNotifier<double>(0.85);
+
   /// Global reactive HUD button customization (position, size, transparency)
   static final ValueNotifier<HudControlsConfig> hudConfig =
       ValueNotifier<HudControlsConfig>(const HudControlsConfig());
@@ -125,6 +145,31 @@ class AppLocalizations {
         showVirtualControls.value = showTouch;
       }
 
+      final haptics = decoded['hapticsEnabled'] as bool?;
+      if (haptics != null) {
+        hapticsEnabled.value = haptics;
+      }
+
+      final bgm = decoded['bgmEnabled'] as bool?;
+      if (bgm != null) {
+        bgmEnabled.value = bgm;
+      }
+
+      final sfx = decoded['sfxEnabled'] as bool?;
+      if (sfx != null) {
+        sfxEnabled.value = sfx;
+      }
+
+      final bVol = (decoded['bgmVolume'] as num?)?.toDouble();
+      if (bVol != null) {
+        bgmVolume.value = bVol.clamp(0.0, 1.0);
+      }
+
+      final sVol = (decoded['sfxVolume'] as num?)?.toDouble();
+      if (sVol != null) {
+        sfxVolume.value = sVol.clamp(0.0, 1.0);
+      }
+
       final version = (decoded['settingsVersion'] as num?)?.toInt() ?? 1;
       final hudMap = decoded['hudConfig'];
       if (hudMap is Map<String, dynamic>) {
@@ -150,10 +195,40 @@ class AppLocalizations {
         'settingsVersion': 2,
         'language': languageNotifier.value.name,
         'showVirtualControls': showVirtualControls.value,
+        'hapticsEnabled': hapticsEnabled.value,
+        'bgmEnabled': bgmEnabled.value,
+        'sfxEnabled': sfxEnabled.value,
+        'bgmVolume': bgmVolume.value,
+        'sfxVolume': sfxVolume.value,
         'hudConfig': hudConfig.value.toJson(),
       });
       LocalStorage.writeSettingsJson(payload);
     } catch (_) {}
+  }
+
+  static void setHapticsEnabled(bool enabled) {
+    hapticsEnabled.value = enabled;
+    saveSettings();
+  }
+
+  static void setBgmEnabled(bool enabled) {
+    bgmEnabled.value = enabled;
+    saveSettings();
+  }
+
+  static void setSfxEnabled(bool enabled) {
+    sfxEnabled.value = enabled;
+    saveSettings();
+  }
+
+  static void updateBgmVolume(double vol) {
+    bgmVolume.value = vol.clamp(0.0, 1.0);
+    saveSettings();
+  }
+
+  static void updateSfxVolume(double vol) {
+    sfxVolume.value = vol.clamp(0.0, 1.0);
+    saveSettings();
   }
 
   static void setLanguage(AppLanguage lang) {
@@ -224,6 +299,11 @@ class AppLocalizations {
       'lang_es': 'ESPAÑOL (SPANISH)',
       'lang_ja': '日本語 (JAPANESE)',
       'virtual_controls_label': 'ON-SCREEN TOUCH CONTROLS',
+      'audio_settings_title': 'AUDIO & HAPTICS',
+      'vibration_label': 'BUTTON VIBRATION',
+      'vibration_sub': 'Haptic feedback when pressing action buttons',
+      'music_label': 'BACKGROUND MUSIC (BGM)',
+      'sfx_label': 'SOUND EFFECTS (SFX)',
       'hud_custom_title': 'BUTTONS SIZE, OPACITY & POSITION',
       'btn_size_label': 'BUTTON SIZE',
       'btn_opacity_label': 'OPACITY / TRANSPARENCY',
@@ -364,6 +444,11 @@ class AppLocalizations {
       'lang_es': 'ESPAÑOL (ACTIVO)',
       'lang_ja': '日本語 (JAPONÉS)',
       'virtual_controls_label': 'CONTROLES TÁCTILES EN PANTALLA',
+      'audio_settings_title': 'AUDIO Y VIBRACIÓN',
+      'vibration_label': 'VIBRACIÓN AL TOCAR',
+      'vibration_sub': 'Retroalimentación háptica al pulsar botones',
+      'music_label': 'MÚSICA DE FONDO (BGM)',
+      'sfx_label': 'EFECTOS DE SONIDO (SFX)',
       'hud_custom_title': 'TAMAÑO, TRANSPARENCIA Y POSICIÓN DE BOTONES',
       'btn_size_label': 'TAMAÑO DE BOTONES',
       'btn_opacity_label': 'TRANSPARENCIA / OPACIDAD',
@@ -504,6 +589,11 @@ class AppLocalizations {
       'lang_es': 'ESPAÑOL (スペイン語)',
       'lang_ja': '日本語 (現在選択中)',
       'virtual_controls_label': '画面タッチコントロール',
+      'audio_settings_title': '音効・振動設定',
+      'vibration_label': 'ボタン振動',
+      'vibration_sub': 'ボタン操作時の触覚フィードバック',
+      'music_label': 'BGM (音楽)',
+      'sfx_label': '効果音 (SFX)',
       'hud_custom_title': 'ボタンのサイズ・透明度・配置',
       'btn_size_label': 'ボタンサイズ',
       'btn_opacity_label': '透明度 / 不透明度',

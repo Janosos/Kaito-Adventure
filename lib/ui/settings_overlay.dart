@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../game/cartoon_assets.dart';
 import '../game/manga_game.dart';
+import '../game/services/audio_service.dart';
 import 'app_localizations.dart';
 import 'comic_theme.dart';
 
@@ -131,86 +132,202 @@ class SettingsOverlay extends StatelessWidget {
                                 Row(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    // Left Column: Language Selector (EN / ES / JA)
+                                    // Left Column: Language Selector (EN / ES / JA) + Audio & Haptics
                                     Expanded(
                                       flex: 5,
-                                      child: Container(
-                                        padding: const EdgeInsets.all(12),
-                                        decoration: BoxDecoration(
-                                          color: ComicTheme.mangaPanelBg,
-                                          borderRadius:
-                                              BorderRadius.circular(12),
-                                          border: Border.all(
-                                            color: ComicTheme.inkBlack,
-                                            width: 3.5,
-                                          ),
-                                        ),
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            Row(
+                                      child: Column(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          // 1. Language Selector
+                                          Container(
+                                            padding: const EdgeInsets.all(10),
+                                            decoration: BoxDecoration(
+                                              color: ComicTheme.mangaPanelBg,
+                                              borderRadius:
+                                                  BorderRadius.circular(12),
+                                              border: Border.all(
+                                                color: ComicTheme.inkBlack,
+                                                width: 3.5,
+                                              ),
+                                            ),
+                                            child: Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
                                               children: [
-                                                const Icon(
-                                                  Icons.language,
-                                                  color: ComicTheme.comicYellow,
-                                                  size: 20,
+                                                Row(
+                                                  children: [
+                                                    const Icon(
+                                                      Icons.language,
+                                                      color: ComicTheme.comicYellow,
+                                                      size: 18,
+                                                    ),
+                                                    const SizedBox(width: 8),
+                                                    Flexible(
+                                                      child: Text(
+                                                        AppLocalizations.tr(
+                                                          'language_label',
+                                                        ),
+                                                        maxLines: 1,
+                                                        overflow:
+                                                            TextOverflow.ellipsis,
+                                                        style: ComicTheme.titleText(
+                                                          size: 14,
+                                                          color: ComicTheme
+                                                              .comicYellow,
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  ],
                                                 ),
-                                                const SizedBox(width: 8),
-                                                Flexible(
-                                                  child: Text(
-                                                    AppLocalizations.tr(
-                                                      'language_label',
-                                                    ),
-                                                    maxLines: 1,
-                                                    overflow:
-                                                        TextOverflow.ellipsis,
-                                                    style: ComicTheme.titleText(
-                                                      size: 16,
-                                                      color: ComicTheme
-                                                          .comicYellow,
-                                                    ),
+                                                const SizedBox(height: 6),
+                                                _buildLanguageOption(
+                                                  lang: AppLanguage.en,
+                                                  current: currentLang,
+                                                  flagBadge: 'EN',
+                                                  title: 'ENGLISH',
+                                                  subtitle: AppLocalizations.tr(
+                                                    'lang_en',
                                                   ),
+                                                  activeColor:
+                                                      ComicTheme.energyCyan,
+                                                ),
+                                                const SizedBox(height: 5),
+                                                _buildLanguageOption(
+                                                  lang: AppLanguage.es,
+                                                  current: currentLang,
+                                                  flagBadge: 'ES',
+                                                  title: 'ESPAÑOL',
+                                                  subtitle: AppLocalizations.tr(
+                                                    'lang_es',
+                                                  ),
+                                                  activeColor:
+                                                      ComicTheme.comicYellow,
+                                                ),
+                                                const SizedBox(height: 5),
+                                                _buildLanguageOption(
+                                                  lang: AppLanguage.ja,
+                                                  current: currentLang,
+                                                  flagBadge: 'JP',
+                                                  title: '日本語',
+                                                  subtitle: AppLocalizations.tr(
+                                                    'lang_ja',
+                                                  ),
+                                                  activeColor: ComicTheme.actionRed,
                                                 ),
                                               ],
                                             ),
-                                            const SizedBox(height: 8),
-                                            _buildLanguageOption(
-                                              lang: AppLanguage.en,
-                                              current: currentLang,
-                                              flagBadge: 'EN',
-                                              title: 'ENGLISH',
-                                              subtitle: AppLocalizations.tr(
-                                                'lang_en',
+                                          ),
+                                          const SizedBox(height: 8),
+
+                                          // 2. Audio & Haptics Section
+                                          Container(
+                                            padding: const EdgeInsets.all(10),
+                                            decoration: BoxDecoration(
+                                              color: ComicTheme.mangaPanelBg,
+                                              borderRadius:
+                                                  BorderRadius.circular(12),
+                                              border: Border.all(
+                                                color: ComicTheme.inkBlack,
+                                                width: 3.5,
                                               ),
-                                              activeColor:
-                                                  ComicTheme.energyCyan,
                                             ),
-                                            const SizedBox(height: 6),
-                                            _buildLanguageOption(
-                                              lang: AppLanguage.es,
-                                              current: currentLang,
-                                              flagBadge: 'ES',
-                                              title: 'ESPAÑOL',
-                                              subtitle: AppLocalizations.tr(
-                                                'lang_es',
-                                              ),
-                                              activeColor:
-                                                  ComicTheme.comicYellow,
+                                            child: Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                Row(
+                                                  children: [
+                                                    const Icon(
+                                                      Icons.volume_up,
+                                                      color: ComicTheme.energyCyan,
+                                                      size: 18,
+                                                    ),
+                                                    const SizedBox(width: 8),
+                                                    Text(
+                                                      AppLocalizations.tr(
+                                                        'audio_settings_title',
+                                                      ),
+                                                      style: ComicTheme.titleText(
+                                                        size: 14,
+                                                        color: ComicTheme.energyCyan,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                                const SizedBox(height: 6),
+
+                                                // Button Vibration Toggle
+                                                ValueListenableBuilder<bool>(
+                                                  valueListenable:
+                                                      AppLocalizations.hapticsEnabled,
+                                                  builder: (context, haptics, _) {
+                                                    return _buildToggleRow(
+                                                      icon: Icons.vibration,
+                                                      label: AppLocalizations.tr(
+                                                        'vibration_label',
+                                                      ),
+                                                      isEnabled: haptics,
+                                                      activeColor: ComicTheme.comicYellow,
+                                                      onToggle: () {
+                                                        AppLocalizations
+                                                            .setHapticsEnabled(!haptics);
+                                                        AudioService.buttonHaptic();
+                                                      },
+                                                    );
+                                                  },
+                                                ),
+                                                const SizedBox(height: 5),
+
+                                                // Music BGM Toggle
+                                                ValueListenableBuilder<bool>(
+                                                  valueListenable:
+                                                      AppLocalizations.bgmEnabled,
+                                                  builder: (context, bgm, _) {
+                                                    return _buildToggleRow(
+                                                      icon: Icons.music_note,
+                                                      label: AppLocalizations.tr(
+                                                        'music_label',
+                                                      ),
+                                                      isEnabled: bgm,
+                                                      activeColor: ComicTheme.energyCyan,
+                                                      onToggle: () {
+                                                        AppLocalizations
+                                                            .setBgmEnabled(!bgm);
+                                                        AudioService.updateBgmVolume();
+                                                        AudioService.buttonHaptic();
+                                                      },
+                                                    );
+                                                  },
+                                                ),
+                                                const SizedBox(height: 5),
+
+                                                // Sound SFX Toggle
+                                                ValueListenableBuilder<bool>(
+                                                  valueListenable:
+                                                      AppLocalizations.sfxEnabled,
+                                                  builder: (context, sfx, _) {
+                                                    return _buildToggleRow(
+                                                      icon: Icons.graphic_eq,
+                                                      label: AppLocalizations.tr(
+                                                        'sfx_label',
+                                                      ),
+                                                      isEnabled: sfx,
+                                                      activeColor: const Color(0xFF00E676),
+                                                      onToggle: () {
+                                                        AppLocalizations
+                                                            .setSfxEnabled(!sfx);
+                                                        AudioService.playSfx(
+                                                          AudioService.sfxClick,
+                                                        );
+                                                        AudioService.buttonHaptic();
+                                                      },
+                                                    );
+                                                  },
+                                                ),
+                                              ],
                                             ),
-                                            const SizedBox(height: 6),
-                                            _buildLanguageOption(
-                                              lang: AppLanguage.ja,
-                                              current: currentLang,
-                                              flagBadge: 'JP',
-                                              title: '日本語',
-                                              subtitle: AppLocalizations.tr(
-                                                'lang_ja',
-                                              ),
-                                              activeColor: ComicTheme.actionRed,
-                                            ),
-                                          ],
-                                        ),
+                                          ),
+                                        ],
                                       ),
                                     ),
                                     const SizedBox(width: 14),
@@ -674,6 +791,60 @@ class SettingsOverlay extends StatelessWidget {
                   size: 18,
                 ),
               ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildToggleRow({
+    required IconData icon,
+    required String label,
+    required bool isEnabled,
+    required VoidCallback onToggle,
+    Color activeColor = const Color(0xFF00E676),
+  }) {
+    return GestureDetector(
+      onTap: onToggle,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: ComicTheme.inkBlack, width: 2.2),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, size: 18, color: ComicTheme.inkBlack),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: ComicTheme.titleText(
+                  size: 13,
+                  color: ComicTheme.inkBlack,
+                ),
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+              decoration: BoxDecoration(
+                color: isEnabled ? activeColor : Colors.grey.shade400,
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: ComicTheme.inkBlack, width: 2),
+              ),
+              child: Text(
+                isEnabled
+                    ? AppLocalizations.tr('enabled')
+                    : AppLocalizations.tr('disabled'),
+                style: ComicTheme.titleText(
+                  size: 11,
+                  color: ComicTheme.inkBlack,
+                ),
+              ),
+            ),
           ],
         ),
       ),

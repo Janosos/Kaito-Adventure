@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../game/cartoon_assets.dart';
 import '../game/manga_game.dart';
+import '../game/services/audio_service.dart';
 import 'app_localizations.dart';
 import 'comic_theme.dart';
 
@@ -104,7 +105,11 @@ class PauseOverlay extends StatelessWidget {
     required VoidCallback onTap,
   }) {
     return GestureDetector(
-      onTap: onTap,
+      onTap: () {
+        AudioService.buttonHaptic();
+        AudioService.playSfx(AudioService.sfxClick);
+        onTap();
+      },
       child: Container(
         width: double.infinity,
         padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 14),

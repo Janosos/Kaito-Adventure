@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../game/cartoon_assets.dart';
 import '../game/manga_game.dart';
+import '../game/services/audio_service.dart';
 import 'app_localizations.dart';
 import 'comic_theme.dart';
 
@@ -260,7 +261,13 @@ class _MainMenuOverlayState extends State<MainMenuOverlay> {
     bool compact = false,
   }) {
     return GestureDetector(
-      onTap: onTap,
+      onTap: () {
+        AudioService.buttonHaptic();
+        AudioService.playSfx(
+          isPrimary ? AudioService.sfxStart : AudioService.sfxClick,
+        );
+        onTap();
+      },
       child: Container(
         padding: EdgeInsets.symmetric(
           horizontal: compact ? 12 : 18,

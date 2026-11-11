@@ -5,6 +5,7 @@ import 'package:flame/sprite.dart';
 import 'package:flutter/material.dart';
 import '../cartoon_assets.dart';
 import '../manga_game.dart';
+import '../services/audio_service.dart';
 import '../../ui/comic_theme.dart';
 import 'manga_effects.dart';
 
@@ -51,6 +52,7 @@ class InkScroll extends PositionComponent
   }
 
   void collect() {
+    AudioService.playSfx(AudioService.sfxPickupCoin);
     game.addScore(points);
     game.addSpirit(15);
     game.add(MangaTextEffect(
@@ -114,6 +116,7 @@ class RamenBowl extends PositionComponent
   }
 
   void collect() {
+    AudioService.playSfx(AudioService.sfxPickupCoin);
     game.healPlayer(1);
     game.addSpirit(10);
     game.add(MangaTextEffect(

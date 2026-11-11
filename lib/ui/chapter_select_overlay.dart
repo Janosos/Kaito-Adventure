@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../game/cartoon_assets.dart';
 import '../game/manga_game.dart';
+import '../game/services/audio_service.dart';
 import 'app_localizations.dart';
 import 'comic_theme.dart';
 
@@ -66,12 +67,16 @@ class _ChapterSelectOverlayState extends State<ChapterSelectOverlay> {
   }
 
   void _selectPrev() {
+    AudioService.buttonHaptic();
+    AudioService.playSfx(AudioService.sfxClick);
     setState(() {
       _selectedLevel = _selectedLevel > 1 ? _selectedLevel - 1 : 5;
     });
   }
 
   void _selectNext() {
+    AudioService.buttonHaptic();
+    AudioService.playSfx(AudioService.sfxClick);
     setState(() {
       _selectedLevel = _selectedLevel < 5 ? _selectedLevel + 1 : 1;
     });
@@ -171,8 +176,11 @@ class _ChapterSelectOverlayState extends State<ChapterSelectOverlay> {
                                 const SizedBox(width: 12),
                                 // Safe BACK button: returns to Game Over (retry), Victory, or Menu without freezing!
                                 GestureDetector(
-                                  onTap: () =>
-                                      widget.game.closeChapterSelect(),
+                                  onTap: () {
+                                    AudioService.buttonHaptic();
+                                    AudioService.playSfx(AudioService.sfxClick);
+                                    widget.game.closeChapterSelect();
+                                  },
                                   child: Container(
                                     padding: const EdgeInsets.symmetric(
                                       horizontal: 16,
@@ -280,6 +288,8 @@ class _ChapterSelectOverlayState extends State<ChapterSelectOverlay> {
                     padding: const EdgeInsets.symmetric(horizontal: 3),
                     child: GestureDetector(
                       onTap: () {
+                        AudioService.buttonHaptic();
+                        AudioService.playSfx(AudioService.sfxClick);
                         setState(() {
                           _selectedLevel = ch.level;
                         });
@@ -529,6 +539,8 @@ class _ChapterSelectOverlayState extends State<ChapterSelectOverlay> {
           // Big 2D Cartoon PLAY Button
           GestureDetector(
             onTap: () {
+              AudioService.buttonHaptic();
+              AudioService.playSfx(AudioService.sfxStart);
               widget.game.startFromMainMenu(level: ch.level);
             },
             child: Container(
