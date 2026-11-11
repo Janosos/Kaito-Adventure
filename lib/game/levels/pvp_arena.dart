@@ -2,6 +2,7 @@ import 'package:flame/components.dart';
 import 'package:flutter/material.dart';
 import '../components/manga_effects.dart';
 import '../components/platform.dart';
+import '../components/player.dart';
 import '../components/remote_player.dart';
 import '../manga_game.dart';
 import '../services/audio_service.dart';
@@ -19,8 +20,23 @@ class PvPArenaLevel extends Component with HasGameReference<MangaGame> {
 
   static const double voidDeathY = 560.0;
 
-  late final RemotePlayer remotePlayer;
+  final RemotePlayer remotePlayer;
   bool matchEnded = false;
+
+  PvPArenaLevel()
+      : remotePlayer = RemotePlayer(
+          position: Vector2(
+            LanMultiplayerService.instance.role == MatchRole.host
+                ? (platformX + platformWidth - 120.0)
+                : (platformX + 120.0),
+            platformY,
+          ),
+          nickname: LanMultiplayerService.instance.opponentNickname,
+          playerColor: LanMultiplayerService.instance.opponentColor,
+        ) {
+    final isHost = LanMultiplayerService.instance.role == MatchRole.host;
+    remotePlayer.facingDirection = isHost ? -1 : 1;
+  }
 
   @override
   Future<void> onLoad() async {
@@ -40,25 +56,24 @@ class PvPArenaLevel extends Component with HasGameReference<MangaGame> {
       size: Vector2(platformWidth, platformHeight),
     ));
 
-    // 3. Spawn Local Player on the platform
+    // 3. Setup Local Player on platform
     final isHost = LanMultiplayerService.instance.role == MatchRole.host;
-    final localSpawnX = isHost ? platformX + 120.0 : platformX + platformWidth - 120.0;
-    final remoteSpawnX = isHost ? platformX + platformWidth - 120.0 : platformX + 120.0;
+    final localSpawnX =
+        isHost ? platformX + 120.0 : platformX + platformWidth - 120.0;
 
-    game.player.position = Vector2(localSpawnX, platformY - 50.0);
+    game.player.position = Vector2(localSpawnX, platformY);
     game.player.velocity = Vector2.zero();
     game.player.facingDirection = isHost ? 1 : -1;
     game.player.hp = 100;
     game.player.maxHp = 100;
     game.player.spirit = 0.0;
+    game.player.isOnGround = true;
+    game.player.isDying = false;
+    game.player.action = PlayerAction.idle;
+    game.player.touchMoveInput = 0.0;
+    game.player.keyboardMoveInput = 0.0;
 
-    // 4. Spawn Remote Opponent on opposite side of the platform
-    remotePlayer = RemotePlayer(
-      position: Vector2(remoteSpawnX, platformY),
-      nickname: LanMultiplayerService.instance.opponentNickname,
-      playerColor: LanMultiplayerService.instance.opponentColor,
-    );
-    remotePlayer.facingDirection = isHost ? -1 : 1;
+    // 4. Add Remote Opponent to the arena
     add(remotePlayer);
 
     // Initial Battle Cry Effect
@@ -99,4 +114,3 @@ class PvPArenaLevel extends Component with HasGameReference<MangaGame> {
     }
   }
 }
-

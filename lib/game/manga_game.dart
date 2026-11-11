@@ -350,73 +350,86 @@ class MangaGame extends FlameGame
   }
 
   Future<void> startPvPMatch() async {
-    isMultiplayer = true;
-    overlays.remove('multiplayer_lobby');
-    overlays.remove('main_menu');
-    overlays.remove('game_over');
-    overlays.remove('victory');
-    overlays.remove('hud');
+    try {
+      isMultiplayer = true;
+      overlays.remove('multiplayer_lobby');
+      overlays.remove('main_menu');
+      overlays.remove('game_over');
+      overlays.remove('victory');
+      overlays.remove('hud');
 
-    // Remove existing story level and components from world
-    if (_currentLevelComponent != null) {
-      world.remove(_currentLevelComponent!);
-      _currentLevelComponent = null;
-    }
-    final oldChildren = world.children.toList();
-    for (final child in oldChildren) {
-      world.remove(child);
-    }
-
-    // Add Player to world
-    await world.add(player);
-
-    // Create and add PvP Arena
-    final arena = PvPArenaLevel();
-    await world.add(arena);
-    _currentLevelComponent = arena;
-    pvpRemotePlayer = arena.remotePlayer;
-
-    // PvP Arena Bounds and camera
-    minPlayerX = 0.0;
-    maxPlayerX = PvPArenaLevel.arenaWidth;
-    camera.viewfinder.position = Vector2(600, 270);
-
-    // Listen to LAN network packets
-    _multiplayerSub?.cancel();
-    _multiplayerSub = LanMultiplayerService.instance.onMatchData.listen((data) {
-      final type = data['type'] as String?;
-      if (type == 'state') {
-        pvpRemotePlayer?.updateFromNetwork(
-          x: (data['x'] as num).toDouble(),
-          y: (data['y'] as num).toDouble(),
-          vx: (data['vx'] as num).toDouble(),
-          vy: (data['vy'] as num).toDouble(),
-          facing: data['f'] as int,
-          actionName: data['act'] as String,
-          remoteHp: (data['hp'] as num).toDouble(),
-          remoteOugi: (data['ougi'] as num).toDouble(),
-        );
-      } else if (type == 'hit') {
-        final dmg = (data['dmg'] as num).toDouble();
-        final kbX = (data['kbX'] as num?)?.toDouble() ?? 0.0;
-        final kbY = (data['kbY'] as num?)?.toDouble() ?? 0.0;
-        player.takeMultiplayerDamage(dmg, knockbackX: kbX, knockbackY: kbY);
-      } else if (type == 'ring_out') {
-        final loser = data['loser'] as String?;
-        if (loser == LanMultiplayerService.instance.opponentNickname) {
-          onMultiplayerMatchOver(
-            winnerName: LanMultiplayerService.instance.myNickname,
-            didLocalWin: true,
-          );
-        }
+      // Remove existing story level components, preserving local player!
+      final toRemove = world.children.where((c) => c != player).toList();
+      for (final child in toRemove) {
+        world.remove(child);
       }
-    });
+      _currentLevelComponent = null;
 
-    _addOverlay('multiplayer_hud');
-    _addOverlay('virtual_controls');
+      if (!world.children.contains(player)) {
+        await world.add(player);
+      }
 
-    AudioService.playBgm(AudioService.bgmBoss);
-    resumeEngine();
+      // Reset local player state for PvP match
+      player.hp = 100;
+      player.maxHp = 100;
+      player.spirit = 0.0;
+      player.isDying = false;
+      player.action = PlayerAction.idle;
+      player.velocity = Vector2.zero();
+      player.touchMoveInput = 0.0;
+      player.keyboardMoveInput = 0.0;
+
+      // Create and add PvP Arena (RemotePlayer is instantiated in constructor)
+      final arena = PvPArenaLevel();
+      pvpRemotePlayer = arena.remotePlayer;
+      await world.add(arena);
+      _currentLevelComponent = arena;
+
+      // PvP Arena Bounds and camera
+      minPlayerX = 0.0;
+      maxPlayerX = PvPArenaLevel.arenaWidth;
+      camera.viewfinder.position = Vector2(600, 270);
+
+      // Listen to LAN network packets
+      _multiplayerSub?.cancel();
+      _multiplayerSub = LanMultiplayerService.instance.onMatchData.listen((data) {
+        final type = data['type'] as String?;
+        if (type == 'state') {
+          pvpRemotePlayer?.updateFromNetwork(
+            x: (data['x'] as num).toDouble(),
+            y: (data['y'] as num).toDouble(),
+            vx: (data['vx'] as num).toDouble(),
+            vy: (data['vy'] as num).toDouble(),
+            facing: data['f'] as int,
+            actionName: data['act'] as String,
+            remoteHp: (data['hp'] as num).toDouble(),
+            remoteOugi: (data['ougi'] as num).toDouble(),
+          );
+        } else if (type == 'hit') {
+          final dmg = (data['dmg'] as num).toDouble();
+          final kbX = (data['kbX'] as num?)?.toDouble() ?? 0.0;
+          final kbY = (data['kbY'] as num?)?.toDouble() ?? 0.0;
+          player.takeMultiplayerDamage(dmg, knockbackX: kbX, knockbackY: kbY);
+        } else if (type == 'ring_out') {
+          final loser = data['loser'] as String?;
+          if (loser == LanMultiplayerService.instance.opponentNickname) {
+            onMultiplayerMatchOver(
+              winnerName: LanMultiplayerService.instance.myNickname,
+              didLocalWin: true,
+            );
+          }
+        }
+      });
+
+      _addOverlay('multiplayer_hud');
+      _addOverlay('virtual_controls');
+
+      AudioService.playBgm(AudioService.bgmBoss);
+    } catch (e, stack) {
+      debugPrint('[PvP Match Error] $e\n$stack');
+    } finally {
+      resumeEngine();
+    }
   }
 
   void onMultiplayerMatchOver({

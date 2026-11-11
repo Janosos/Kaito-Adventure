@@ -782,8 +782,8 @@ class MangaPlayer extends PositionComponent
     position += velocity * dt;
     position.x = position.x.clamp(game.minPlayerX, game.maxPlayerX);
 
-    // Pit fall respawn
-    if (position.y > 590) {
+    // Pit fall respawn (only in story mode; in multiplayer PvPArenaLevel handles ring out)
+    if (!game.isMultiplayer && position.y > 590) {
       takeDamage(1);
       if (hp > 0) {
         position = game.currentSpawnPoint.clone();
@@ -887,8 +887,21 @@ class MangaPlayer extends PositionComponent
     Paint? overridePaint;
     if (game.isMultiplayer) {
       final myColor = LanMultiplayerService.instance.myColor;
+      // Manga aura ring at Kaito's feet in multiplayer mode
+      final auraPaint = Paint()
+        ..color = myColor.withValues(alpha: 0.35)
+        ..style = PaintingStyle.fill;
+      canvas.drawOval(
+        Rect.fromCenter(center: const Offset(0, -3), width: 50, height: 12),
+        auraPaint,
+      );
+
+      // Clean sprite tinting that strictly respects transparent PNG edges
       overridePaint = Paint()
-        ..colorFilter = ColorFilter.mode(myColor, BlendMode.hue);
+        ..colorFilter = ColorFilter.mode(
+          myColor.withValues(alpha: 0.50),
+          BlendMode.srcATop,
+        );
     }
 
     sprite.render(

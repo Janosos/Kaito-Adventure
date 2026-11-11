@@ -35,7 +35,7 @@ class RemotePlayer extends PositionComponent
           anchor: Anchor.bottomCenter,
         ) {
     targetPosition = position.clone();
-    priority = 500;
+    priority = 800;
   }
 
   @override
@@ -210,11 +210,23 @@ class RemotePlayer extends PositionComponent
       canvas.scale(-1, 1);
     }
 
+    // Manga aura ring at opponent's feet
+    final auraPaint = Paint()
+      ..color = playerColor.withValues(alpha: 0.35)
+      ..style = PaintingStyle.fill;
+    canvas.drawOval(
+      Rect.fromCenter(center: const Offset(0, -3), width: 50, height: 12),
+      auraPaint,
+    );
+
     final overridePaint = hitFlashTimer > 0
         ? (Paint()
           ..colorFilter = const ColorFilter.mode(Colors.white, BlendMode.srcATop))
         : (Paint()
-          ..colorFilter = ColorFilter.mode(playerColor, BlendMode.hue));
+          ..colorFilter = ColorFilter.mode(
+              playerColor.withValues(alpha: 0.50),
+              BlendMode.srcATop,
+            ));
 
     sprite.render(
       canvas,
