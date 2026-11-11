@@ -7,11 +7,15 @@ import 'package:flame/game.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../ui/app_localizations.dart';
+import '../ui/comic_theme.dart';
 import 'cartoon_assets.dart';
 import 'components/player.dart';
 import 'components/manga_effects.dart';
 import 'components/bosses/boss_base.dart';
 import 'services/audio_service.dart';
+import 'services/lan_multiplayer_service.dart';
+import 'components/remote_player.dart';
+import 'levels/pvp_arena.dart';
 import 'levels/level_one.dart';
 import 'levels/level_two.dart';
 import 'levels/level_three.dart';
@@ -40,6 +44,11 @@ class MangaGame extends FlameGame
   bool isBossArenaLocked = false;
   double currentBossGateX = 3650.0;
   double currentArenaCamX = 4140.0;
+
+  // Local WiFi PvP Multiplayer State
+  bool isMultiplayer = false;
+  RemotePlayer? pvpRemotePlayer;
+  StreamSubscription? _multiplayerSub;
   double currentLevelWidth = 4620.0;
   double viewportWidth = 960.0;
 
@@ -293,6 +302,12 @@ class MangaGame extends FlameGame
   }
 
   void returnToMainMenu() {
+    isMultiplayer = false;
+    _multiplayerSub?.cancel();
+    _multiplayerSub = null;
+    LanMultiplayerService.instance.disconnect();
+    pvpRemotePlayer = null;
+
     AppLocalizations.isEditingHudLayout.value = false;
     isGameOver = false;
     isLevelVictory = false;
@@ -311,10 +326,128 @@ class MangaGame extends FlameGame
     overlays.remove('chapter_select');
     overlays.remove('hud');
     overlays.remove('virtual_controls');
+    overlays.remove('multiplayer_lobby');
+    overlays.remove('multiplayer_hud');
     AudioService.stopBgm();
     pauseEngine();
     _addOverlay('main_menu');
     AudioService.playBgm(AudioService.bgmMenu);
+  }
+
+  void openMultiplayerLobby() {
+    isMultiplayer = false;
+    overlays.remove('main_menu');
+    overlays.remove('hud');
+    overlays.remove('virtual_controls');
+    pauseEngine();
+    _addOverlay('multiplayer_lobby');
+  }
+
+  void closeMultiplayerLobby() {
+    LanMultiplayerService.instance.disconnect();
+    overlays.remove('multiplayer_lobby');
+    _addOverlay('main_menu');
+  }
+
+  Future<void> startPvPMatch() async {
+    isMultiplayer = true;
+    overlays.remove('multiplayer_lobby');
+    overlays.remove('main_menu');
+    overlays.remove('game_over');
+    overlays.remove('victory');
+    overlays.remove('hud');
+
+    // Remove existing story level and components from world
+    if (_currentLevelComponent != null) {
+      world.remove(_currentLevelComponent!);
+      _currentLevelComponent = null;
+    }
+    final oldChildren = world.children.toList();
+    for (final child in oldChildren) {
+      world.remove(child);
+    }
+
+    // Add Player to world
+    await world.add(player);
+
+    // Create and add PvP Arena
+    final arena = PvPArenaLevel();
+    await world.add(arena);
+    _currentLevelComponent = arena;
+    pvpRemotePlayer = arena.remotePlayer;
+
+    // PvP Arena Bounds and camera
+    minPlayerX = 0.0;
+    maxPlayerX = PvPArenaLevel.arenaWidth;
+    camera.viewfinder.position = Vector2(600, 270);
+
+    // Listen to LAN network packets
+    _multiplayerSub?.cancel();
+    _multiplayerSub = LanMultiplayerService.instance.onMatchData.listen((data) {
+      final type = data['type'] as String?;
+      if (type == 'state') {
+        pvpRemotePlayer?.updateFromNetwork(
+          x: (data['x'] as num).toDouble(),
+          y: (data['y'] as num).toDouble(),
+          vx: (data['vx'] as num).toDouble(),
+          vy: (data['vy'] as num).toDouble(),
+          facing: data['f'] as int,
+          actionName: data['act'] as String,
+          remoteHp: (data['hp'] as num).toDouble(),
+          remoteOugi: (data['ougi'] as num).toDouble(),
+        );
+      } else if (type == 'hit') {
+        final dmg = (data['dmg'] as num).toDouble();
+        final kbX = (data['kbX'] as num?)?.toDouble() ?? 0.0;
+        final kbY = (data['kbY'] as num?)?.toDouble() ?? 0.0;
+        player.takeMultiplayerDamage(dmg, knockbackX: kbX, knockbackY: kbY);
+      } else if (type == 'ring_out') {
+        final loser = data['loser'] as String?;
+        if (loser == LanMultiplayerService.instance.opponentNickname) {
+          onMultiplayerMatchOver(
+            winnerName: LanMultiplayerService.instance.myNickname,
+            didLocalWin: true,
+          );
+        }
+      }
+    });
+
+    _addOverlay('multiplayer_hud');
+    _addOverlay('virtual_controls');
+
+    AudioService.playBgm(AudioService.bgmBoss);
+    resumeEngine();
+  }
+
+  void onMultiplayerMatchOver({
+    required String winnerName,
+    required bool didLocalWin,
+  }) {
+    if (!isMultiplayer) return;
+    _multiplayerSub?.cancel();
+    _multiplayerSub = null;
+
+    add(MangaTextEffect(
+      position: Vector2(600, 240),
+      text: didLocalWin ? '¡VICTORIA SHINOBI!' : '¡DERROTA!',
+      fillColor: didLocalWin ? ComicTheme.comicYellow : ComicTheme.actionRed,
+      targetScale: 2.5,
+      maxLifetime: 3.0,
+    ));
+
+    if (didLocalWin) {
+      AudioService.playSfx(AudioService.sfxVictory);
+    } else {
+      AudioService.playSfx(AudioService.sfxPlayerDeath);
+    }
+
+    Future.delayed(const Duration(milliseconds: 3000), () {
+      if (isMultiplayer) {
+        overlays.remove('multiplayer_hud');
+        overlays.remove('virtual_controls');
+        returnToMainMenu();
+      }
+    });
   }
 
   void openIntroStory() {
@@ -620,6 +753,29 @@ class MangaGame extends FlameGame
         ranged: ranged,
         ultimate: ultimate,
       );
+
+      if (isMultiplayer) {
+        LanMultiplayerService.instance.sendPlayerState(
+          x: player.position.x,
+          y: player.position.y,
+          vx: player.velocity.x,
+          vy: player.velocity.y,
+          facing: player.facingDirection,
+          action: player.action.name,
+          hp: player.hp.toDouble(),
+          ougi: player.spirit,
+        );
+
+        const double targetCamX = 600.0;
+        const double targetCamY = 270.0;
+        final currentCam = camera.viewfinder.position;
+        final lerpFactor = 1.0 - math.exp(-8.5 * clampedDt);
+        camera.viewfinder.position = Vector2(
+          currentCam.x + (targetCamX - currentCam.x) * lerpFactor,
+          currentCam.y + (targetCamY - currentCam.y) * lerpFactor,
+        );
+        return;
+      }
 
       // Smoothly scroll camera horizontally along the level or lock into the Boss Arena.
       // Exponential decay smoothing (1.0 - exp(-k * dt)) provides mathematically identical

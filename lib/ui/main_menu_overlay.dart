@@ -171,7 +171,19 @@ class _MainMenuOverlayState extends State<MainMenuOverlay> {
                                           );
                                         },
                                       ),
-                                      const SizedBox(height: 10),
+                                      const SizedBox(height: 8),
+                                      _buildCartoonMenuButton(
+                                        iconAsset: CartoonAssets.uiBtnControls,
+                                        label: AppLocalizations.tr(
+                                          'btn_multiplayer',
+                                        ),
+                                        bgColor: const Color(0xFF6A1B9A),
+                                        textColor: ComicTheme.paperWhite,
+                                        onTap: () {
+                                          widget.game.openMultiplayerLobby();
+                                        },
+                                      ),
+                                      const SizedBox(height: 8),
                                       _buildCartoonMenuButton(
                                         iconAsset: CartoonAssets.uiBtnChapters,
                                         label: AppLocalizations.tr(

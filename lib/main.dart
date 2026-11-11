@@ -15,6 +15,8 @@ import 'ui/intro_overlay.dart';
 import 'ui/main_menu_overlay.dart';
 import 'ui/settings_overlay.dart';
 import 'ui/story_epilogue_overlay.dart';
+import 'ui/multiplayer_hud.dart';
+import 'ui/multiplayer_overlay.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -155,6 +157,10 @@ class _MangaGameScreenState extends State<MangaGameScreen>
                         ChapterSelectOverlay(game: game),
                     'story_epilogue': (context, game) =>
                         StoryEpilogueOverlay(game: game),
+                    'multiplayer_lobby': (context, game) =>
+                        MultiplayerOverlay(game: game),
+                    'multiplayer_hud': (context, game) =>
+                        MultiplayerHud(game: game),
                   },
                 ),
               ),

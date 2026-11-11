@@ -13,6 +13,8 @@ import 'enemies/enemy_grunt.dart';
 import 'enemies/enemy_drone.dart';
 import 'enemies/enemy_oni_archer.dart';
 import 'bosses/boss_base.dart';
+import 'remote_player.dart';
+import '../services/lan_multiplayer_service.dart';
 
 /// Kunai thrown by the player
 class InkKunai extends PositionComponent
@@ -94,6 +96,15 @@ class InkKunai extends PositionComponent
       _impact(other.position);
     } else if (other is SwitchOrb) {
       other.triggerSwitch();
+      _impact(other.position);
+    } else if (other is RemotePlayer) {
+      other.takeDamage(damage, knockback: Vector2(kbDir * 8.0, -3.0));
+      LanMultiplayerService.instance.sendHitDamage(
+        damage: damage,
+        knockbackX: kbDir * 8.0,
+        knockbackY: -3.0,
+        targetRemainingHp: other.hp,
+      );
       _impact(other.position);
     }
   }

@@ -14,6 +14,9 @@ import 'package:manga_platformer/ui/main_menu_overlay.dart';
 import 'package:manga_platformer/ui/manga_cutin_overlay.dart';
 import 'package:manga_platformer/ui/settings_overlay.dart';
 import 'package:manga_platformer/ui/story_epilogue_overlay.dart';
+import 'package:manga_platformer/ui/multiplayer_hud.dart';
+import 'package:manga_platformer/ui/multiplayer_overlay.dart';
+import 'package:manga_platformer/game/services/lan_multiplayer_service.dart';
 import 'package:manga_platformer/ui/virtual_joystick_overlay.dart';
 
 void main() {
@@ -366,6 +369,70 @@ void main() {
 
     // Restore for any following tests
     PwaService.forceShowInstallButtonForTest = true;
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets(
+      'Multiplayer overlay & HUD render cleanly on mobile landscape (800x360) and palette has 8 colors',
+      (WidgetTester tester) async {
+    // 1. Verify palette options
+    expect(kMultiplayerColors.length, equals(8));
+
+    final game = MangaGame();
+    await tester.runAsync(() async {
+      game.onGameResize(Vector2(800, 360));
+      await game.onLoad();
+      // ignore: invalid_use_of_internal_member
+      game.setLoaded();
+      // ignore: invalid_use_of_internal_member
+      game.setMounted();
+      game.update(0);
+      await game.ready();
+    });
+
+    await tester.binding.setSurfaceSize(const Size(800, 360));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    // 2. Main menu displays the Multiplayer button
+    await tester.pumpWidget(
+      MaterialApp(
+        home: MediaQuery(
+          data: const MediaQueryData(size: Size(800, 360)),
+          child: MainMenuOverlay(game: game),
+        ),
+      ),
+    );
+    await tester.pump();
+    expect(tester.takeException(), isNull);
+    expect(find.text(AppLocalizations.tr('btn_multiplayer')), findsOneWidget);
+
+    // 3. Multiplayer Lobby Overlay renders without overflow
+    await tester.pumpWidget(
+      MaterialApp(
+        home: MediaQuery(
+          data: const MediaQueryData(size: Size(800, 360)),
+          child: MultiplayerOverlay(game: game),
+        ),
+      ),
+    );
+    await tester.pump();
+    expect(tester.takeException(), isNull);
+    expect(find.byType(MultiplayerOverlay), findsOneWidget);
+
+    // 4. Multiplayer HUD renders with 100 HP health bars
+    game.isMultiplayer = true;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: MediaQuery(
+          data: const MediaQueryData(size: Size(800, 360)),
+          child: MultiplayerHud(game: game),
+        ),
+      ),
+    );
+    await tester.pump();
+    expect(tester.takeException(), isNull);
+    expect(find.byType(MultiplayerHud), findsOneWidget);
+
     await tester.pumpWidget(const SizedBox.shrink());
   });
 }

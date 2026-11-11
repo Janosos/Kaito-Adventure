@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:manga_platformer/game/cartoon_assets.dart';
 import 'package:manga_platformer/game/manga_game.dart';
 import 'package:manga_platformer/game/services/audio_service.dart';
+import 'package:manga_platformer/game/services/lan_multiplayer_service.dart';
 import 'package:manga_platformer/ui/comic_theme.dart';
 import 'manga_effects.dart';
 import 'projectiles.dart';
@@ -415,6 +416,20 @@ class MangaPlayer extends PositionComponent
       );
       game.activeBoss!.breakGuard();
     }
+    if (game.isMultiplayer && game.pvpRemotePlayer != null) {
+      final remote = game.pvpRemotePlayer!;
+      if ((remote.position.x - position.x).abs() < 420) {
+        final dmg = 45.0;
+        final kb = Vector2(facingDirection * 24.0, -8.0);
+        remote.takeDamage(dmg, knockback: kb);
+        LanMultiplayerService.instance.sendHitDamage(
+          damage: dmg,
+          knockbackX: kb.x,
+          knockbackY: kb.y,
+          targetRemainingHp: remote.hp,
+        );
+      }
+    }
   }
 
   bool _isInSlashArc(Vector2 targetCenter, {double extraReach = 0.0}) {
@@ -506,13 +521,74 @@ class MangaPlayer extends PositionComponent
         drum.triggerBounce();
       }
     }
+
+    // 7. PvP Duel: Hit Remote Opponent
+    if (game.isMultiplayer && game.pvpRemotePlayer != null) {
+      final remote = game.pvpRemotePlayer!;
+      if (!remote.isDying) {
+        final remoteCenter = Vector2(remote.position.x, remote.position.y - remote.size.y * 0.5);
+        if (_isInSlashArc(remoteCenter, extraReach: 15.0)) {
+          final dmg = 15.0 + comboIndex * 8.0;
+          final kbDir = facingDirection;
+          final kbForce = 12.0 + comboIndex * 4.0;
+          remote.takeDamage(dmg, knockback: Vector2(kbDir * kbForce, -4.0));
+          _registerHit();
+          LanMultiplayerService.instance.sendHitDamage(
+            damage: dmg,
+            knockbackX: kbDir * kbForce,
+            knockbackY: -4.0,
+            targetRemainingHp: remote.hp,
+          );
+        }
+      }
+    }
   }
 
   void _registerHit() {
     comboCount++;
     comboTimer = 2.5;
-    spirit = (spirit + 9.0).clamp(0.0, 100.0);
+    final spiritGain = game.isMultiplayer ? 3.0 : 9.0;
+    spirit = (spirit + spiritGain).clamp(0.0, 100.0);
     game.addScore(50 * comboCount);
+  }
+
+  void takeMultiplayerDamage(double amount, {double knockbackX = 0, double knockbackY = 0}) {
+    if (isInvulnerable || isDying) return;
+
+    hp -= amount.toInt();
+    if (hp <= 0) {
+      hp = 0;
+      _startDeathSequence();
+      LanMultiplayerService.instance.sendRingOut(
+        defeatedNickname: LanMultiplayerService.instance.myNickname,
+      );
+      game.onMultiplayerMatchOver(
+        winnerName: LanMultiplayerService.instance.opponentNickname,
+        didLocalWin: false,
+      );
+      return;
+    }
+
+    AudioService.playSfx(AudioService.sfxPlayerHurt);
+    AudioService.heavyHaptic();
+
+    invulnerableTimer = 0.8;
+    hurtAnimTimer = 0.30;
+    action = PlayerAction.hurt;
+    if (knockbackX != 0 || knockbackY != 0) {
+      velocity.x = knockbackX * 25.0;
+      velocity.y = knockbackY * 25.0;
+    } else {
+      velocity.y = -220;
+      velocity.x = -facingDirection * 120;
+    }
+
+    game.add(MangaTextEffect(
+      position: Vector2(position.x, position.y - size.y * 0.7),
+      text: '-${amount.toInt()}',
+      fillColor: ComicTheme.actionRed,
+      targetScale: 1.4,
+    ));
   }
 
   void takeDamage(int amount) {
@@ -808,10 +884,18 @@ class MangaPlayer extends PositionComponent
       canvas.scale(-1, 1);
     }
 
+    Paint? overridePaint;
+    if (game.isMultiplayer) {
+      final myColor = LanMultiplayerService.instance.myColor;
+      overridePaint = Paint()
+        ..colorFilter = ColorFilter.mode(myColor, BlendMode.hue);
+    }
+
     sprite.render(
       canvas,
       position: Vector2(-renderW / 2, -renderH),
       size: Vector2(renderW, renderH),
+      overridePaint: overridePaint,
     );
 
     canvas.restore();
