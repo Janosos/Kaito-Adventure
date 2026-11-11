@@ -10,6 +10,7 @@ import '../ui/app_localizations.dart';
 import '../ui/comic_theme.dart';
 import 'cartoon_assets.dart';
 import 'components/player.dart';
+import 'components/projectiles.dart';
 import 'components/manga_effects.dart';
 import 'components/bosses/boss_base.dart';
 import 'services/audio_service.dart';
@@ -47,7 +48,8 @@ class MangaGame extends FlameGame
 
   // Local WiFi PvP Multiplayer State
   bool isMultiplayer = false;
-  RemotePlayer? pvpRemotePlayer;
+  PvPArenaLevel? pvpArena;
+  RemotePlayer? get pvpRemotePlayer => pvpArena?.remotePlayers.values.firstOrNull;
   StreamSubscription? _multiplayerSub;
   double currentLevelWidth = 4620.0;
   double viewportWidth = 960.0;
@@ -305,8 +307,10 @@ class MangaGame extends FlameGame
     isMultiplayer = false;
     _multiplayerSub?.cancel();
     _multiplayerSub = null;
+    LanMultiplayerService.instance.resultsPodiumNotifier
+        .removeListener(_onResultsPodiumChanged);
     LanMultiplayerService.instance.disconnect();
-    pvpRemotePlayer = null;
+    pvpArena = null;
 
     AppLocalizations.isEditingHudLayout.value = false;
     isGameOver = false;
@@ -328,10 +332,20 @@ class MangaGame extends FlameGame
     overlays.remove('virtual_controls');
     overlays.remove('multiplayer_lobby');
     overlays.remove('multiplayer_hud');
+    overlays.remove('multiplayer_results');
     AudioService.stopBgm();
     pauseEngine();
     _addOverlay('main_menu');
     AudioService.playBgm(AudioService.bgmMenu);
+  }
+
+  void _onResultsPodiumChanged() {
+    final podium = LanMultiplayerService.instance.resultsPodiumNotifier.value;
+    if (podium != null && isMultiplayer) {
+      overlays.remove('multiplayer_hud');
+      overlays.remove('virtual_controls');
+      _addOverlay('multiplayer_results');
+    }
   }
 
   void openMultiplayerLobby() {
@@ -339,6 +353,7 @@ class MangaGame extends FlameGame
     overlays.remove('main_menu');
     overlays.remove('hud');
     overlays.remove('virtual_controls');
+    overlays.remove('multiplayer_results');
     pauseEngine();
     _addOverlay('multiplayer_lobby');
   }
@@ -353,6 +368,7 @@ class MangaGame extends FlameGame
     try {
       isMultiplayer = true;
       overlays.remove('multiplayer_lobby');
+      overlays.remove('multiplayer_results');
       overlays.remove('main_menu');
       overlays.remove('game_over');
       overlays.remove('victory');
@@ -379,9 +395,9 @@ class MangaGame extends FlameGame
       player.touchMoveInput = 0.0;
       player.keyboardMoveInput = 0.0;
 
-      // Create and add PvP Arena (RemotePlayer is instantiated in constructor)
+      // Create and add PvP Arena (Supports up to 5 players)
       final arena = PvPArenaLevel();
-      pvpRemotePlayer = arena.remotePlayer;
+      pvpArena = arena;
       await world.add(arena);
       _currentLevelComponent = arena;
 
@@ -392,34 +408,61 @@ class MangaGame extends FlameGame
 
       // Listen to LAN network packets
       _multiplayerSub?.cancel();
-      _multiplayerSub = LanMultiplayerService.instance.onMatchData.listen((data) {
+      _multiplayerSub =
+          LanMultiplayerService.instance.onMatchData.listen((data) {
         final type = data['type'] as String?;
         if (type == 'state') {
-          pvpRemotePlayer?.updateFromNetwork(
-            x: (data['x'] as num).toDouble(),
-            y: (data['y'] as num).toDouble(),
-            vx: (data['vx'] as num).toDouble(),
-            vy: (data['vy'] as num).toDouble(),
-            facing: data['f'] as int,
-            actionName: data['act'] as String,
-            remoteHp: (data['hp'] as num).toDouble(),
-            remoteOugi: (data['ougi'] as num).toDouble(),
-          );
-        } else if (type == 'hit') {
-          final dmg = (data['dmg'] as num).toDouble();
-          final kbX = (data['kbX'] as num?)?.toDouble() ?? 0.0;
-          final kbY = (data['kbY'] as num?)?.toDouble() ?? 0.0;
-          player.takeMultiplayerDamage(dmg, knockbackX: kbX, knockbackY: kbY);
-        } else if (type == 'ring_out') {
-          final loser = data['loser'] as String?;
-          if (loser == LanMultiplayerService.instance.opponentNickname) {
-            onMultiplayerMatchOver(
-              winnerName: LanMultiplayerService.instance.myNickname,
-              didLocalWin: true,
+          final pid = data['id'] as String?;
+          if (pid != null) {
+            pvpArena?.remotePlayers[pid]?.updateFromNetwork(
+              x: (data['x'] as num).toDouble(),
+              y: (data['y'] as num).toDouble(),
+              vx: (data['vx'] as num).toDouble(),
+              vy: (data['vy'] as num).toDouble(),
+              facing: data['f'] as int,
+              actionName: data['act'] as String,
+              remoteHp: (data['hp'] as num).toDouble(),
+              remoteOugi: (data['ougi'] as num).toDouble(),
             );
+          }
+        } else if (type == 'spawn_kunai') {
+          final throwerId = data['throwerId'] as String?;
+          if (throwerId != LanMultiplayerService.instance.myPlayerId) {
+            world.add(InkKunai(
+              position: Vector2(
+                (data['x'] as num).toDouble(),
+                (data['y'] as num).toDouble(),
+              ),
+              velocity: Vector2(
+                (data['vx'] as num).toDouble(),
+                (data['vy'] as num).toDouble(),
+              ),
+              damage: 32.0,
+              throwerId: throwerId ?? '',
+              isFromRemote: true,
+            ));
+          }
+        } else if (type == 'hit') {
+          final targetId = data['targetId'] as String?;
+          if (targetId == LanMultiplayerService.instance.myPlayerId) {
+            final dmg = (data['dmg'] as num).toDouble();
+            final kbX = (data['kbX'] as num?)?.toDouble() ?? 0.0;
+            final kbY = (data['kbY'] as num?)?.toDouble() ?? 0.0;
+            player.takeMultiplayerDamage(dmg, knockbackX: kbX, knockbackY: kbY);
+          }
+        } else if (type == 'player_eliminated') {
+          final pid = data['id'] as String?;
+          if (pid != null) {
+            pvpArena?.remotePlayers[pid]?.takeDamage(100.0);
           }
         }
       });
+
+      // Listen to match results podium
+      LanMultiplayerService.instance.resultsPodiumNotifier
+          .removeListener(_onResultsPodiumChanged);
+      LanMultiplayerService.instance.resultsPodiumNotifier
+          .addListener(_onResultsPodiumChanged);
 
       _addOverlay('multiplayer_hud');
       _addOverlay('virtual_controls');
@@ -430,6 +473,19 @@ class MangaGame extends FlameGame
     } finally {
       resumeEngine();
     }
+  }
+
+  void onLocalPlayerEliminated() {
+    if (!isMultiplayer) return;
+    overlays.remove('virtual_controls');
+    add(MangaTextEffect(
+      position: Vector2(600, 240),
+      text: '¡K.O. - HAS CAÍDO!',
+      fillColor: ComicTheme.actionRed,
+      targetScale: 2.2,
+      maxLifetime: 2.5,
+    ));
+    AudioService.playSfx(AudioService.sfxPlayerDeath);
   }
 
   void onMultiplayerMatchOver({
@@ -453,14 +509,6 @@ class MangaGame extends FlameGame
     } else {
       AudioService.playSfx(AudioService.sfxPlayerDeath);
     }
-
-    Future.delayed(const Duration(milliseconds: 3000), () {
-      if (isMultiplayer) {
-        overlays.remove('multiplayer_hud');
-        overlays.remove('virtual_controls');
-        returnToMainMenu();
-      }
-    });
   }
 
   void openIntroStory() {

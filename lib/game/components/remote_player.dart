@@ -9,6 +9,8 @@ import 'player.dart';
 
 class RemotePlayer extends PositionComponent
     with CollisionCallbacks, HasGameReference<MangaGame> {
+  final String id;
+  final int slot;
   String nickname;
   Color playerColor;
   double hp = 100.0;
@@ -26,12 +28,14 @@ class RemotePlayer extends PositionComponent
   late final Map<PlayerAction, SpriteAnimationTicker> _tickers;
 
   RemotePlayer({
+    required this.id,
     required Vector2 position,
     required this.nickname,
     required this.playerColor,
+    this.slot = 1,
   }) : super(
           position: position,
-          size: Vector2(40, 56),
+          size: Vector2(34, 52),
           anchor: Anchor.bottomCenter,
         ) {
     targetPosition = position.clone();
@@ -47,84 +51,84 @@ class RemotePlayer extends PositionComponent
       PlayerAction.idle: CartoonAssets.animation(
         imgs,
         'characters/kaito_idle.png',
-        frames: 4,
-        textureSize: Vector2(180, 180),
-        stepTime: 0.12,
+        frames: 6,
+        textureSize: Vector2(128, 128),
+        stepTime: 0.11,
       ).createTicker(),
       PlayerAction.running: CartoonAssets.animation(
         imgs,
         'characters/kaito_run.png',
-        frames: 6,
-        textureSize: Vector2(180, 180),
-        stepTime: 0.08,
+        frames: 8,
+        textureSize: Vector2(128, 128),
+        stepTime: 0.065,
       ).createTicker(),
       PlayerAction.jumping: CartoonAssets.animation(
         imgs,
         'characters/kaito_jump.png',
-        frames: 3,
-        textureSize: Vector2(180, 180),
+        frames: 4,
+        textureSize: Vector2(128, 128),
         stepTime: 0.09,
         loop: false,
       ).createTicker(),
       PlayerAction.falling: CartoonAssets.animation(
         imgs,
-        'characters/kaito_jump.png',
-        frames: 3,
-        textureSize: Vector2(180, 180),
+        'characters/kaito_fall.png',
+        frames: 4,
+        textureSize: Vector2(128, 128),
         stepTime: 0.09,
         loop: false,
       ).createTicker(),
       PlayerAction.dashing: CartoonAssets.animation(
         imgs,
         'characters/kaito_dash.png',
-        frames: 2,
-        textureSize: Vector2(180, 180),
-        stepTime: 0.1,
+        frames: 4,
+        textureSize: Vector2(128, 128),
+        stepTime: 0.05,
       ).createTicker(),
       PlayerAction.attack1: CartoonAssets.animation(
         imgs,
-        'characters/kaito_slash_combo.png',
-        frames: 6,
-        textureSize: Vector2(240, 180),
-        stepTime: 0.06,
+        'characters/kaito_attack1.png',
+        frames: 5,
+        textureSize: Vector2(144, 128),
+        stepTime: 0.05,
         loop: false,
       ).createTicker(),
       PlayerAction.attack2: CartoonAssets.animation(
         imgs,
-        'characters/kaito_slash_combo.png',
-        frames: 6,
-        textureSize: Vector2(240, 180),
-        stepTime: 0.06,
+        'characters/kaito_attack2.png',
+        frames: 5,
+        textureSize: Vector2(144, 128),
+        stepTime: 0.05,
         loop: false,
       ).createTicker(),
       PlayerAction.attack3: CartoonAssets.animation(
         imgs,
-        'characters/kaito_slash_combo.png',
+        'characters/kaito_attack3.png',
         frames: 6,
-        textureSize: Vector2(240, 180),
-        stepTime: 0.06,
+        textureSize: Vector2(144, 128),
+        stepTime: 0.05,
         loop: false,
       ).createTicker(),
       PlayerAction.hurt: CartoonAssets.animation(
         imgs,
         'characters/kaito_hurt.png',
-        frames: 2,
-        textureSize: Vector2(180, 180),
-        stepTime: 0.12,
+        frames: 3,
+        textureSize: Vector2(128, 128),
+        stepTime: 0.08,
       ).createTicker(),
       PlayerAction.death: CartoonAssets.animation(
         imgs,
         'characters/kaito_death.png',
-        frames: 6,
-        textureSize: Vector2(240, 180),
-        stepTime: 0.11,
+        frames: 7,
+        textureSize: Vector2(144, 128),
+        stepTime: 0.17,
         loop: false,
       ).createTicker(),
     };
 
     add(RectangleHitbox(
       position: Vector2(2, 4),
-      size: Vector2(36, 52),
+      size: Vector2(30, 48),
     ));
   }
 
@@ -144,10 +148,17 @@ class RemotePlayer extends PositionComponent
     hp = remoteHp;
     ougi = remoteOugi;
 
+    if (hp <= 0 && !isDying) {
+      isDying = true;
+      action = PlayerAction.death;
+      _tickers[action]?.reset();
+      return;
+    }
+
     // Map action string to PlayerAction enum
     for (final a in PlayerAction.values) {
       if (a.name == actionName) {
-        if (action != a) {
+        if (action != a && !isDying) {
           action = a;
           _tickers[a]?.reset();
         }
@@ -157,6 +168,7 @@ class RemotePlayer extends PositionComponent
   }
 
   void takeDamage(double dmg, {Vector2? knockback}) {
+    if (isDying) return;
     hp = (hp - dmg).clamp(0.0, maxHp);
     hitFlashTimer = 0.18;
     game.add(MangaDustEffect(position: Vector2(position.x, position.y - 30)));
@@ -166,6 +178,12 @@ class RemotePlayer extends PositionComponent
       fillColor: Colors.redAccent,
       targetScale: 1.6,
     ));
+
+    if (hp <= 0) {
+      isDying = true;
+      action = PlayerAction.death;
+      _tickers[action]?.reset();
+    }
 
     if (knockback != null) {
       position.add(knockback);
@@ -185,15 +203,16 @@ class RemotePlayer extends PositionComponent
       position.lerp(targetPosition, (dt * 24.0).clamp(0.0, 1.0));
     }
 
-    final ticker = _tickers[action] ?? _tickers[PlayerAction.idle]!;
-    ticker.update(dt);
+    final ticker = _tickers[action] ?? _tickers[PlayerAction.idle];
+    ticker?.update(dt);
   }
 
   @override
   void render(Canvas canvas) {
     super.render(canvas);
 
-    final ticker = _tickers[action] ?? _tickers[PlayerAction.idle]!;
+    final ticker = _tickers[action] ?? _tickers[PlayerAction.idle];
+    if (ticker == null) return;
     final sprite = ticker.getSprite();
 
     final isWideSheet = action == PlayerAction.attack1 ||
@@ -210,14 +229,16 @@ class RemotePlayer extends PositionComponent
       canvas.scale(-1, 1);
     }
 
-    // Manga aura ring at opponent's feet
-    final auraPaint = Paint()
-      ..color = playerColor.withValues(alpha: 0.35)
-      ..style = PaintingStyle.fill;
-    canvas.drawOval(
-      Rect.fromCenter(center: const Offset(0, -3), width: 50, height: 12),
-      auraPaint,
-    );
+    if (!isDying) {
+      // Manga aura ring at opponent's feet
+      final auraPaint = Paint()
+        ..color = playerColor.withValues(alpha: 0.35)
+        ..style = PaintingStyle.fill;
+      canvas.drawOval(
+        Rect.fromCenter(center: const Offset(0, -3), width: 50, height: 12),
+        auraPaint,
+      );
+    }
 
     final overridePaint = hitFlashTimer > 0
         ? (Paint()
@@ -237,11 +258,12 @@ class RemotePlayer extends PositionComponent
 
     canvas.restore();
 
-    // Floating Nickname Banner above Opponent Head
+    // Floating Nickname Tag above Opponent Head
     _renderNicknameTag(canvas);
   }
 
   void _renderNicknameTag(Canvas canvas) {
+    final displayName = 'P${slot + 1} $nickname';
     const textStyle = TextStyle(
       color: Colors.white,
       fontSize: 10,
@@ -252,13 +274,13 @@ class RemotePlayer extends PositionComponent
       ],
     );
 
-    final textSpan = TextSpan(text: nickname, style: textStyle);
+    final textSpan = TextSpan(text: displayName, style: textStyle);
     final textPainter = TextPainter(
       text: textSpan,
       textDirection: TextDirection.ltr,
     )..layout();
 
-    final tagW = textPainter.width + 12;
+    final tagW = textPainter.width + 14;
     const tagH = 16.0;
     final tagX = (size.x - tagW) / 2;
     const tagY = -18.0;
@@ -266,7 +288,7 @@ class RemotePlayer extends PositionComponent
     // Manga box background
     final bgPaint = Paint()..color = const Color(0xFF141419);
     final borderPaint = Paint()
-      ..color = playerColor
+      ..color = isDying ? Colors.grey : playerColor
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2.0;
 
@@ -279,8 +301,7 @@ class RemotePlayer extends PositionComponent
 
     textPainter.paint(
       canvas,
-      Offset(tagX + 6, tagY + (tagH - textPainter.height) / 2),
+      Offset(tagX + 7, tagY + (tagH - textPainter.height) / 2),
     );
   }
 }
-

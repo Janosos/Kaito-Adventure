@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../game/manga_game.dart';
 import '../game/services/audio_service.dart';
 import '../game/services/lan_multiplayer_service.dart';
@@ -20,8 +21,8 @@ class _MultiplayerOverlayState extends State<MultiplayerOverlay> {
   late final TextEditingController _ipController;
   late final TextEditingController _roomNameController;
 
-  bool _isCreatingRoom = false;
   String? _statusMessage;
+  bool _copiedIpFeedback = false;
 
   @override
   void initState() {
@@ -29,7 +30,8 @@ class _MultiplayerOverlayState extends State<MultiplayerOverlay> {
     final net = LanMultiplayerService.instance;
     _nicknameController = TextEditingController(text: net.myNickname);
     _ipController = TextEditingController(text: kIsWeb ? '127.0.0.1' : '');
-    _roomNameController = TextEditingController(text: 'Dojo de ${net.myNickname}');
+    _roomNameController =
+        TextEditingController(text: 'Dojo de ${net.myNickname}');
 
     // Start WiFi discovery and listen to match start
     net.startRoomDiscovery();
@@ -47,7 +49,8 @@ class _MultiplayerOverlayState extends State<MultiplayerOverlay> {
 
   @override
   void dispose() {
-    LanMultiplayerService.instance.inMatchNotifier.removeListener(_onMatchStarted);
+    LanMultiplayerService.instance.inMatchNotifier
+        .removeListener(_onMatchStarted);
     LanMultiplayerService.instance.stopRoomDiscovery();
     _nicknameController.dispose();
     _ipController.dispose();
@@ -82,7 +85,6 @@ class _MultiplayerOverlayState extends State<MultiplayerOverlay> {
       AudioService.buttonHaptic();
       AudioService.playSfx(AudioService.sfxClick);
       setState(() {
-        _isCreatingRoom = false;
         _statusMessage =
             'En navegador Web sólo puedes unirte como cliente.\nCrea la sala en Windows o Android e ingresa su IP a la derecha.';
       });
@@ -92,7 +94,6 @@ class _MultiplayerOverlayState extends State<MultiplayerOverlay> {
     AudioService.buttonHaptic();
     AudioService.playSfx(AudioService.sfxStart);
     setState(() {
-      _isCreatingRoom = true;
       _statusMessage = 'Iniciando servidor local...';
     });
 
@@ -102,18 +103,17 @@ class _MultiplayerOverlayState extends State<MultiplayerOverlay> {
 
     if (mounted) {
       setState(() {
-        if (success) {
-          _statusMessage =
-              '¡SALA CREADA!\nEsperando rival en la red WiFi...\nIP Local: ${LanMultiplayerService.instance.localIpAddress}:7777';
-        } else {
-          _isCreatingRoom = false;
+        if (!success) {
           _statusMessage = 'Error al crear la sala en este puerto.';
+        } else {
+          _statusMessage = null;
         }
       });
     }
   }
 
-  Future<void> _handleJoinRoom(String ip, [int port = LanMultiplayerService.kGamePort]) async {
+  Future<void> _handleJoinRoom(String ip,
+      [int port = LanMultiplayerService.kGamePort]) async {
     final targetIp = ip.trim();
     if (targetIp.isEmpty) return;
 
@@ -123,11 +123,16 @@ class _MultiplayerOverlayState extends State<MultiplayerOverlay> {
       _statusMessage = 'Conectando con $targetIp...';
     });
 
-    final ok = await LanMultiplayerService.instance.connectToRoom(targetIp, port);
+    final ok =
+        await LanMultiplayerService.instance.connectToRoom(targetIp, port);
     if (!ok && mounted) {
       setState(() {
         _statusMessage =
             'No se pudo conectar a la sala en $targetIp.\nVerifica que la app Host tenga la sala creada.';
+      });
+    } else if (mounted) {
+      setState(() {
+        _statusMessage = null;
       });
     }
   }
@@ -139,15 +144,31 @@ class _MultiplayerOverlayState extends State<MultiplayerOverlay> {
     await LanMultiplayerService.instance.startRoomDiscovery();
     if (mounted) {
       setState(() {
-        _isCreatingRoom = false;
         _statusMessage = null;
       });
     }
   }
 
+  void _copyIpToClipboard(String ip) {
+    Clipboard.setData(ClipboardData(text: ip));
+    AudioService.buttonHaptic();
+    AudioService.playSfx(AudioService.sfxClick);
+    setState(() {
+      _copiedIpFeedback = true;
+    });
+    Future.delayed(const Duration(seconds: 2), () {
+      if (mounted) {
+        setState(() {
+          _copiedIpFeedback = false;
+        });
+      }
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final net = LanMultiplayerService.instance;
+    final inWaitingRoom = net.isConnected && net.role != MatchRole.none;
 
     return Material(
       color: Colors.black.withValues(alpha: 0.90),
@@ -168,7 +189,8 @@ class _MultiplayerOverlayState extends State<MultiplayerOverlay> {
           SafeArea(
             child: Center(
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                 child: FittedBox(
                   fit: BoxFit.scaleDown,
                   child: Container(
@@ -180,39 +202,9 @@ class _MultiplayerOverlayState extends State<MultiplayerOverlay> {
                       borderWidth: 4.5,
                       shadowOffset: 8,
                     ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        // 1. Top Header Bar
-                        _buildHeader(net),
-                        const SizedBox(height: 10),
-
-                        // 2. Nickname & Kaito Custom Color Selector
-                        _buildCustomizerBar(net),
-                        const SizedBox(height: 10),
-
-                        // 3. Main Center Split: Left (Available Rooms) | Right (Create or Direct Connect)
-                        Expanded(
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              // Left: Discovered Rooms List
-                              Expanded(
-                                flex: 6,
-                                child: _buildRoomsListCard(net),
-                              ),
-                              const SizedBox(width: 12),
-
-                              // Right: Host / Direct Connect Controls
-                              Expanded(
-                                flex: 5,
-                                child: _buildHostAndJoinCard(net),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
+                    child: inWaitingRoom
+                        ? _buildWaitingRoomLobby(net)
+                        : _buildRoomSetupView(net),
                   ),
                 ),
               ),
@@ -220,6 +212,502 @@ class _MultiplayerOverlayState extends State<MultiplayerOverlay> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildRoomSetupView(LanMultiplayerService net) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // 1. Top Header Bar
+        _buildHeader(net),
+        const SizedBox(height: 10),
+
+        // 2. Nickname & Kaito Custom Color Selector
+        _buildCustomizerBar(net),
+        const SizedBox(height: 10),
+
+        // 3. Main Center Split: Left (Available Rooms) | Right (Create or Direct Connect)
+        Expanded(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Left: Discovered Rooms List
+              Expanded(
+                flex: 6,
+                child: _buildRoomsListCard(net),
+              ),
+              const SizedBox(width: 12),
+
+              // Right: Host / Direct Connect Controls
+              Expanded(
+                flex: 5,
+                child: _buildHostAndJoinCard(net),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildWaitingRoomLobby(LanMultiplayerService net) {
+    final isHost = net.role == MatchRole.host;
+    final fullIp = '${net.localIpAddress ?? "127.0.0.1"}:7777';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // 1. Top Bar of Waiting Room
+        Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: isHost ? ComicTheme.comicYellow : ComicTheme.energyCyan,
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: Colors.black, width: 2),
+              ),
+              child: Icon(
+                isHost ? Icons.shield : Icons.wifi,
+                color: Colors.black,
+                size: 24,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    net.currentRoomName.toUpperCase(),
+                    style: ComicTheme.titleText(
+                      size: 20,
+                      color: ComicTheme.actionRed,
+                    ),
+                  ),
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          'IP DE LA SALA: $fullIp',
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Colors.black87,
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      GestureDetector(
+                        onTap: () => _copyIpToClipboard(
+                            net.localIpAddress ?? '127.0.0.1'),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: _copiedIpFeedback
+                                ? const Color(0xFF00E676)
+                                : Colors.black12,
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(color: Colors.black26),
+                          ),
+                          child: Text(
+                            _copiedIpFeedback ? '¡COPIADO!' : 'COPIAR IP',
+                            style: const TextStyle(
+                              color: Colors.black,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: const Color(0xFF14141E),
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: Colors.black, width: 2),
+              ),
+              child: Text(
+                'SALA DE ESPERA (2 A 5 JUGADORES)',
+                style: ComicTheme.titleText(
+                  size: 11,
+                  color: ComicTheme.comicYellow,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+
+        // 2. 5 Player Slots Grid
+        Expanded(
+          child: ValueListenableBuilder<List<MultiplayerPlayer>>(
+            valueListenable: net.roomPlayersNotifier,
+            builder: (context, players, _) {
+              return _buildSlotsGrid(players, net);
+            },
+          ),
+        ),
+        const SizedBox(height: 12),
+
+        // 3. Bottom Action Bar
+        _buildWaitingRoomBottomBar(net),
+      ],
+    );
+  }
+
+  Widget _buildSlotsGrid(
+      List<MultiplayerPlayer> players, LanMultiplayerService net) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: ComicTheme.panelDecoration(
+        backgroundColor: ComicTheme.mangaPanelBg,
+        borderWidth: 3.5,
+        shadowOffset: 4,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'JUGADORES EN LA SALA (${players.length} / 5)',
+                style: ComicTheme.titleText(
+                  size: 14,
+                  color: ComicTheme.comicYellow,
+                ),
+              ),
+              const Text(
+                'Red Local WiFi Activa',
+                style: TextStyle(
+                  color: Color(0xFF00E676),
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Expanded(
+            child: Row(
+              children: [
+                for (int slot = 0; slot < 5; slot++) ...[
+                  if (slot > 0) const SizedBox(width: 10),
+                  Expanded(
+                    child: _buildSlotCard(slot, players, net),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSlotCard(
+      int slot, List<MultiplayerPlayer> players, LanMultiplayerService net) {
+    final player = players.where((p) => p.slot == slot).firstOrNull;
+    final isOccupied = player != null;
+    final isLocal = player?.id == net.myPlayerId;
+
+    if (!isOccupied) {
+      return Container(
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.04),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: Colors.white24,
+            width: 2,
+          ),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.white10,
+                border: Border.all(color: Colors.white24, width: 2),
+              ),
+              child: Center(
+                child: Text(
+                  'P${slot + 1}',
+                  style: const TextStyle(
+                    color: Colors.white38,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              'RANURA ${slot + 1}',
+              style: const TextStyle(
+                color: Colors.white38,
+                fontWeight: FontWeight.bold,
+                fontSize: 12,
+              ),
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'Esperando...',
+              style: TextStyle(
+                color: Colors.white24,
+                fontSize: 10,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final pColor = player.color;
+
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: pColor.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: isLocal ? ComicTheme.comicYellow : pColor,
+          width: isLocal ? 3.0 : 2.5,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: pColor.withValues(alpha: 0.35),
+            blurRadius: 8,
+            offset: const Offset(2, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          // Slot circle + avatar
+          Stack(
+            alignment: Alignment.center,
+            children: [
+              Container(
+                width: 52,
+                height: 52,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: pColor,
+                  border: Border.all(color: Colors.black, width: 2.5),
+                ),
+                child: Center(
+                  child: Text(
+                    'P${slot + 1}',
+                    style: const TextStyle(
+                      color: Colors.black,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 16,
+                    ),
+                  ),
+                ),
+              ),
+              if (player.isHost)
+                Positioned(
+                  right: -2,
+                  top: -2,
+                  child: Container(
+                    padding: const EdgeInsets.all(2),
+                    decoration: const BoxDecoration(
+                      color: ComicTheme.comicYellow,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.star,
+                      size: 14,
+                      color: Colors.black,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+
+          // Role Badge
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            decoration: BoxDecoration(
+              color: player.isHost
+                  ? ComicTheme.comicYellow
+                  : ComicTheme.energyCyan,
+              borderRadius: BorderRadius.circular(4),
+              border: Border.all(color: Colors.black, width: 1.5),
+            ),
+            child: Text(
+              player.isHost ? 'ANFITRIÓN' : 'CLIENTE',
+              style: const TextStyle(
+                color: Colors.black,
+                fontSize: 9,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+          const SizedBox(height: 6),
+
+          // Nickname
+          Text(
+            player.nickname + (isLocal ? ' (TÚ)' : ''),
+            textAlign: TextAlign.center,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: ComicTheme.titleText(
+              size: 13,
+              color: Colors.white,
+            ),
+          ),
+          const SizedBox(height: 4),
+
+          // Ready Tag
+          const Text(
+            '✓ CONECTADO',
+            style: TextStyle(
+              color: Color(0xFF00E676),
+              fontSize: 10,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildWaitingRoomBottomBar(LanMultiplayerService net) {
+    final isHost = net.role == MatchRole.host;
+
+    return ValueListenableBuilder<List<MultiplayerPlayer>>(
+      valueListenable: net.roomPlayersNotifier,
+      builder: (context, players, _) {
+        final canStart = players.length >= 2;
+
+        return Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            // Cancel / Leave Room
+            GestureDetector(
+              onTap: _handleCancelRoom,
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                decoration: ComicTheme.panelDecoration(
+                  backgroundColor: const Color(0xFF333344),
+                  borderWidth: 2.5,
+                  shadowOffset: 3,
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.arrow_back, color: Colors.white, size: 16),
+                    const SizedBox(width: 6),
+                    Text(
+                      isHost ? 'CERRAR SALA' : 'ABANDONAR SALA',
+                      style: ComicTheme.titleText(
+                        size: 13,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            // Host: Start Match Button | Client: Waiting Message
+            if (isHost)
+              GestureDetector(
+                onTap: canStart
+                    ? () {
+                        AudioService.buttonHaptic();
+                        AudioService.playSfx(AudioService.sfxStart);
+                        net.hostStartMatch();
+                      }
+                    : null,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 16, vertical: 10),
+                  decoration: ComicTheme.panelDecoration(
+                    backgroundColor: canStart
+                        ? ComicTheme.comicYellow
+                        : Colors.grey.shade700,
+                    borderWidth: 3.0,
+                    shadowOffset: 3,
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.sports_kabaddi,
+                        color: canStart ? Colors.black : Colors.white38,
+                        size: 20,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        canStart
+                            ? 'INICIAR PARTIDA (${players.length}/5)'
+                            : 'ESPERANDO AL MENOS 1 RIVAL (${players.length}/5)',
+                        style: ComicTheme.titleText(
+                          size: 14,
+                          color: canStart ? Colors.black : Colors.white38,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              )
+            else
+              Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 20, vertical: 10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF14141E),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(
+                      color: ComicTheme.energyCyan.withValues(alpha: 0.6),
+                      width: 2),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: ComicTheme.energyCyan,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Text(
+                      'Esperando a que el Anfitrión inicie la partida... (${players.length}/5)',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        );
+      },
     );
   }
 
@@ -249,7 +737,7 @@ class _MultiplayerOverlayState extends State<MultiplayerOverlay> {
                 ),
               ),
               Text(
-                'CONÉCTATE CON OTRO JUGADOR EN LA MISMA RED WIFI • DUELO 1V1',
+                'CONÉCTATE CON HASTA 5 JUGADORES EN LA MISMA RED WIFI • DUELO & BATTLE ROYALE',
                 style: ComicTheme.bodyText(
                   size: 11,
                   color: ComicTheme.inkBlack,
@@ -351,7 +839,9 @@ class _MultiplayerOverlayState extends State<MultiplayerOverlay> {
                       borderWidth: 2,
                       shadowOffset: 2,
                     ),
-                    child: const Icon(Icons.casino, size: 18, color: Colors.black),
+                    child: const Center(
+                      child: Icon(Icons.shuffle, size: 18, color: Colors.black),
+                    ),
                   ),
                 ),
               ],
@@ -359,7 +849,7 @@ class _MultiplayerOverlayState extends State<MultiplayerOverlay> {
           ),
           const SizedBox(width: 14),
 
-          // Kaito Color Customizer (8 Colors)
+          // Kaito Palette Picker
           Expanded(
             flex: 6,
             child: Row(
@@ -386,7 +876,8 @@ class _MultiplayerOverlayState extends State<MultiplayerOverlay> {
                             net.myColorIndex = idx;
                           });
                         },
-                        child: Container(
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 150),
                           width: 26,
                           height: 26,
                           decoration: BoxDecoration(
@@ -399,7 +890,8 @@ class _MultiplayerOverlayState extends State<MultiplayerOverlay> {
                             boxShadow: isSelected
                                 ? [
                                     BoxShadow(
-                                      color: item.primary.withValues(alpha: 0.6),
+                                      color:
+                                          item.primary.withValues(alpha: 0.6),
                                       blurRadius: 6,
                                       spreadRadius: 2,
                                     ),
@@ -444,7 +936,8 @@ class _MultiplayerOverlayState extends State<MultiplayerOverlay> {
               Expanded(
                 child: Row(
                   children: [
-                    const Icon(Icons.wifi_find, color: Colors.cyanAccent, size: 20),
+                    const Icon(Icons.wifi_find,
+                        color: Colors.cyanAccent, size: 20),
                     const SizedBox(width: 6),
                     Expanded(
                       child: Text(
@@ -467,7 +960,8 @@ class _MultiplayerOverlayState extends State<MultiplayerOverlay> {
                   net.startRoomDiscovery();
                 },
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(
                     color: Colors.white12,
                     borderRadius: BorderRadius.circular(4),
@@ -480,7 +974,8 @@ class _MultiplayerOverlayState extends State<MultiplayerOverlay> {
                       const SizedBox(width: 4),
                       Text(
                         'BUSCAR',
-                        style: ComicTheme.titleText(size: 11, color: Colors.white),
+                        style: ComicTheme.titleText(
+                            size: 11, color: Colors.white),
                       ),
                     ],
                   ),
@@ -499,56 +994,19 @@ class _MultiplayerOverlayState extends State<MultiplayerOverlay> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        if (!kIsWeb) ...[
-                          const SizedBox(
-                            width: 28,
-                            height: 28,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2.5,
-                              color: Colors.cyanAccent,
-                            ),
+                        const Icon(Icons.radar,
+                            size: 38, color: Colors.white24),
+                        const SizedBox(height: 6),
+                        Text(
+                          kIsWeb
+                              ? 'En navegador Web únete ingresando la IP directa a la derecha.'
+                              : 'Buscando salas en la misma red WiFi...\nAsegúrate de que otro dispositivo haya creado una sala.',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            color: Colors.white54,
+                            fontSize: 11,
                           ),
-                          const SizedBox(height: 12),
-                          Text(
-                            'Escaneando red local WiFi...',
-                            style: ComicTheme.titleText(
-                              size: 14,
-                              color: Colors.white70,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            'Crea una sala en el otro celular o conéctate por IP directa.',
-                            textAlign: TextAlign.center,
-                            style: ComicTheme.bodyText(
-                              size: 11,
-                              color: Colors.white54,
-                            ),
-                          ),
-                        ] else ...[
-                          const Icon(
-                            Icons.language,
-                            size: 32,
-                            color: Colors.cyanAccent,
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            'Modo Navegador Web (Cliente)',
-                            style: ComicTheme.titleText(
-                              size: 14,
-                              color: Colors.cyanAccent,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            'Los navegadores web no admiten escaneo UDP.\nIngresa la IP del Host a la derecha para unirte.',
-                            textAlign: TextAlign.center,
-                            style: ComicTheme.bodyText(
-                              size: 11,
-                              color: Colors.white70,
-                            ),
-                          ),
-                        ],
+                        ),
                       ],
                     ),
                   );
@@ -556,21 +1014,22 @@ class _MultiplayerOverlayState extends State<MultiplayerOverlay> {
 
                 return ListView.separated(
                   itemCount: rooms.length,
-                  separatorBuilder: (_, _) => const SizedBox(height: 6),
-                  itemBuilder: (context, index) {
-                    final room = rooms[index];
-                    final color = kMultiplayerColors[
-                        room.hostColorIndex.clamp(0, kMultiplayerColors.length - 1)];
+                  separatorBuilder: (_, __) => const SizedBox(height: 6),
+                  itemBuilder: (context, idx) {
+                    final room = rooms[idx];
+                    final hostColor = kMultiplayerColors[room.hostColorIndex
+                            .clamp(0, kMultiplayerColors.length - 1)]
+                        .primary;
 
                     return Container(
                       padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
+                        horizontal: 10,
                         vertical: 8,
                       ),
                       decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.07),
+                        color: Colors.white.withValues(alpha: 0.06),
                         borderRadius: BorderRadius.circular(6),
-                        border: Border.all(color: color.primary, width: 2),
+                        border: Border.all(color: Colors.white24),
                       ),
                       child: Row(
                         children: [
@@ -578,7 +1037,7 @@ class _MultiplayerOverlayState extends State<MultiplayerOverlay> {
                             width: 14,
                             height: 14,
                             decoration: BoxDecoration(
-                              color: color.primary,
+                              color: hostColor,
                               shape: BoxShape.circle,
                             ),
                           ),
@@ -586,20 +1045,19 @@ class _MultiplayerOverlayState extends State<MultiplayerOverlay> {
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisSize: MainAxisSize.min,
                               children: [
                                 Text(
                                   room.roomName,
                                   style: ComicTheme.titleText(
-                                    size: 14,
+                                    size: 13,
                                     color: Colors.white,
                                   ),
                                 ),
                                 Text(
-                                  'Host: ${room.hostName} • ${room.ip}:${room.port}',
-                                  style: ComicTheme.bodyText(
-                                    size: 11,
+                                  'Host: ${room.hostName} • ${room.ip}:${room.port} (${room.playerCount}/5)',
+                                  style: const TextStyle(
                                     color: Colors.white60,
+                                    fontSize: 10,
                                   ),
                                 ),
                               ],
@@ -609,19 +1067,19 @@ class _MultiplayerOverlayState extends State<MultiplayerOverlay> {
                             onTap: () => _handleJoinRoom(room.ip, room.port),
                             child: Container(
                               padding: const EdgeInsets.symmetric(
-                                horizontal: 16,
+                                horizontal: 14,
                                 vertical: 6,
                               ),
                               decoration: ComicTheme.panelDecoration(
-                                backgroundColor: ComicTheme.actionRed,
-                                borderWidth: 2.5,
-                                shadowOffset: 3,
+                                backgroundColor: const Color(0xFF00E676),
+                                borderWidth: 2,
+                                shadowOffset: 2,
                               ),
                               child: Text(
                                 'UNIRSE',
                                 style: ComicTheme.titleText(
-                                  size: 13,
-                                  color: Colors.white,
+                                  size: 12,
+                                  color: Colors.black,
                                 ),
                               ),
                             ),
@@ -650,227 +1108,162 @@ class _MultiplayerOverlayState extends State<MultiplayerOverlay> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          Row(
+            children: [
+              const Icon(Icons.add_to_queue,
+                  color: ComicTheme.comicYellow, size: 20),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  'CREAR SALA O CONEXIÓN DIRECTA',
+                  overflow: TextOverflow.ellipsis,
+                  style: ComicTheme.titleText(
+                    size: 13,
+                    color: ComicTheme.comicYellow,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+
+          // Room Name Field
           Text(
-            _isCreatingRoom ? 'SALA EN ESPERA' : 'CREAR O ENTRAR DIRECTO',
-            style: ComicTheme.titleText(
-              size: 14,
-              color: ComicTheme.comicYellow,
+            'Nombre del Dojo / Sala:',
+            style: ComicTheme.bodyText(size: 11, color: Colors.white70),
+          ),
+          const SizedBox(height: 4),
+          Container(
+            height: 34,
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: Colors.black, width: 2),
+            ),
+            child: TextField(
+              controller: _roomNameController,
+              style: const TextStyle(
+                color: Colors.black,
+                fontWeight: FontWeight.bold,
+                fontSize: 12,
+              ),
+              decoration: const InputDecoration(
+                border: InputBorder.none,
+                isDense: true,
+                contentPadding: EdgeInsets.symmetric(vertical: 8),
+              ),
             ),
           ),
           const SizedBox(height: 8),
 
-          if (kIsWeb)
-            Container(
-              margin: const EdgeInsets.only(bottom: 8),
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              decoration: BoxDecoration(
-                color: Colors.amber.withValues(alpha: 0.15),
-                borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: Colors.amberAccent, width: 1.5),
+          // Big Create Room Button
+          GestureDetector(
+            onTap: _handleCreateRoom,
+            child: Container(
+              padding: const EdgeInsets.symmetric(vertical: 10),
+              decoration: ComicTheme.panelDecoration(
+                backgroundColor: ComicTheme.comicYellow,
+                borderWidth: 3,
+                shadowOffset: 4,
               ),
-              child: Row(
-                children: [
-                  const Icon(Icons.info_outline, color: Colors.amberAccent, size: 16),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      'En Chrome/Web: Ingresa la IP que muestra Windows (ej. 192.168.1.179 o 127.0.0.1).',
-                      style: ComicTheme.bodyText(size: 10, color: Colors.amberAccent),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-          if (_isCreatingRoom) ...[
-            Expanded(
               child: Center(
-                child: Column(
+                child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const SizedBox(
-                      width: 36,
-                      height: 36,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 3,
-                        color: Colors.amberAccent,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
+                    const Icon(Icons.add_circle, color: Colors.black, size: 20),
+                    const SizedBox(width: 8),
                     Text(
-                      _statusMessage ?? 'Esperando a otro jugador...',
-                      textAlign: TextAlign.center,
+                      'CREAR SALA LOCAL',
                       style: ComicTheme.titleText(
-                        size: 14,
-                        color: Colors.white,
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-                    GestureDetector(
-                      onTap: _handleCancelRoom,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 20,
-                          vertical: 8,
-                        ),
-                        decoration: ComicTheme.panelDecoration(
-                          backgroundColor: Colors.grey.shade800,
-                          borderWidth: 2.5,
-                          shadowOffset: 3,
-                        ),
-                        child: Text(
-                          'CANCELAR SALA',
-                          style: ComicTheme.titleText(
-                            size: 13,
-                            color: Colors.white,
-                          ),
-                        ),
+                        size: 15,
+                        color: Colors.black,
                       ),
                     ),
                   ],
                 ),
               ),
             ),
-          ] else ...[
-            // Room Name Input
-            Text(
-              'Nombre de la sala:',
-              style: ComicTheme.bodyText(size: 11, color: Colors.white70),
-            ),
-            const SizedBox(height: 4),
-            Container(
-              height: 34,
-              padding: const EdgeInsets.symmetric(horizontal: 10),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: Colors.black, width: 2),
-              ),
-              child: TextField(
-                controller: _roomNameController,
-                style: const TextStyle(
-                  color: Colors.black,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 12,
-                ),
-                decoration: const InputDecoration(
-                  border: InputBorder.none,
-                  isDense: true,
-                  contentPadding: EdgeInsets.symmetric(vertical: 8),
-                ),
-              ),
-            ),
-            const SizedBox(height: 8),
+          ),
 
-            // Big Create Room Button
-            GestureDetector(
-              onTap: _handleCreateRoom,
-              child: Container(
-                padding: const EdgeInsets.symmetric(vertical: 10),
-                decoration: ComicTheme.panelDecoration(
-                  backgroundColor: ComicTheme.comicYellow,
-                  borderWidth: 3,
-                  shadowOffset: 4,
-                ),
-                child: Center(
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.add_circle, color: Colors.black, size: 20),
-                      const SizedBox(width: 8),
-                      Text(
-                        'CREAR SALA LOCAL',
-                        style: ComicTheme.titleText(
-                          size: 15,
-                          color: Colors.black,
-                        ),
-                      ),
-                    ],
+          const Divider(color: Colors.white24, height: 20),
+
+          // Manual IP Connection
+          Text(
+            'O unirse por IP manual:',
+            style: ComicTheme.bodyText(size: 11, color: Colors.white70),
+          ),
+          const SizedBox(height: 4),
+          Row(
+            children: [
+              Expanded(
+                child: Container(
+                  height: 34,
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: Colors.black, width: 2),
+                  ),
+                  child: TextField(
+                    controller: _ipController,
+                    style: const TextStyle(
+                      color: Colors.black,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                    ),
+                    decoration: const InputDecoration(
+                      hintText: 'Ej. 192.168.1.15',
+                      border: InputBorder.none,
+                      isDense: true,
+                      contentPadding: EdgeInsets.symmetric(vertical: 8),
+                    ),
                   ),
                 ),
               ),
-            ),
-
-            const Divider(color: Colors.white24, height: 20),
-
-            // Manual IP Connection
-            Text(
-              'O unirse por IP manual:',
-              style: ComicTheme.bodyText(size: 11, color: Colors.white70),
-            ),
-            const SizedBox(height: 4),
-            Row(
-              children: [
-                Expanded(
-                  child: Container(
-                    height: 34,
-                    padding: const EdgeInsets.symmetric(horizontal: 10),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: Colors.black, width: 2),
-                    ),
-                    child: TextField(
-                      controller: _ipController,
-                      style: const TextStyle(
-                        color: Colors.black,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 12,
-                      ),
-                      decoration: const InputDecoration(
-                        hintText: 'Ej. 192.168.1.15',
-                        border: InputBorder.none,
-                        isDense: true,
-                        contentPadding: EdgeInsets.symmetric(vertical: 8),
-                      ),
+              const SizedBox(width: 8),
+              GestureDetector(
+                onTap: () {
+                  final ip = _ipController.text.trim();
+                  if (ip.isNotEmpty) {
+                    _handleJoinRoom(ip);
+                  }
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 7,
+                  ),
+                  decoration: ComicTheme.panelDecoration(
+                    backgroundColor: ComicTheme.energyCyan,
+                    borderWidth: 2.5,
+                    shadowOffset: 3,
+                  ),
+                  child: Text(
+                    'CONECTAR',
+                    style: ComicTheme.titleText(
+                      size: 12,
+                      color: Colors.black,
                     ),
                   ),
-                ),
-                const SizedBox(width: 8),
-                GestureDetector(
-                  onTap: () {
-                    final ip = _ipController.text.trim();
-                    if (ip.isNotEmpty) {
-                      _handleJoinRoom(ip);
-                    }
-                  },
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 7,
-                    ),
-                    decoration: ComicTheme.panelDecoration(
-                      backgroundColor: ComicTheme.energyCyan,
-                      borderWidth: 2.5,
-                      shadowOffset: 3,
-                    ),
-                    child: Text(
-                      'CONECTAR',
-                      style: ComicTheme.titleText(
-                        size: 12,
-                        color: Colors.black,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            if (_statusMessage != null) ...[
-              const SizedBox(height: 8),
-              Text(
-                _statusMessage!,
-                textAlign: TextAlign.center,
-                style: ComicTheme.titleText(
-                  size: 11,
-                  color: Colors.amberAccent,
                 ),
               ),
             ],
-            const Spacer(),
+          ),
+          if (_statusMessage != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              _statusMessage!,
+              textAlign: TextAlign.center,
+              style: ComicTheme.titleText(
+                size: 11,
+                color: Colors.amberAccent,
+              ),
+            ),
           ],
+          const Spacer(),
         ],
       ),
     );
   }
 }
-

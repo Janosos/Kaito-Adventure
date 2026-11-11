@@ -1,3 +1,4 @@
+import 'dart:math';
 import 'package:flame/components.dart';
 import 'package:flutter/material.dart';
 import '../components/manga_effects.dart';
@@ -20,22 +21,35 @@ class PvPArenaLevel extends Component with HasGameReference<MangaGame> {
 
   static const double voidDeathY = 560.0;
 
-  final RemotePlayer remotePlayer;
-  bool matchEnded = false;
+  final Map<String, RemotePlayer> remotePlayers = {};
+  bool localPlayerEliminated = false;
 
-  PvPArenaLevel()
-      : remotePlayer = RemotePlayer(
-          position: Vector2(
-            LanMultiplayerService.instance.role == MatchRole.host
-                ? (platformX + platformWidth - 120.0)
-                : (platformX + 120.0),
-            platformY,
-          ),
-          nickname: LanMultiplayerService.instance.opponentNickname,
-          playerColor: LanMultiplayerService.instance.opponentColor,
-        ) {
-    final isHost = LanMultiplayerService.instance.role == MatchRole.host;
-    remotePlayer.facingDirection = isHost ? -1 : 1;
+  PvPArenaLevel() {
+    final net = LanMultiplayerService.instance;
+    final players = net.roomPlayers.values.toList();
+    final total = max(2, players.length);
+
+    for (final p in players) {
+      if (p.id != net.myPlayerId) {
+        final spawnX = getSpawnX(p.slot, total);
+        final facing = p.slot < (total / 2) ? 1 : -1;
+        final remote = RemotePlayer(
+          id: p.id,
+          position: Vector2(spawnX, platformY),
+          nickname: p.nickname,
+          playerColor: p.color,
+          slot: p.slot,
+        )..facingDirection = facing;
+        remotePlayers[p.id] = remote;
+      }
+    }
+  }
+
+  static double getSpawnX(int slot, int totalPlayers) {
+    if (totalPlayers <= 1) return platformX + platformWidth * 0.5;
+    final usableWidth = platformWidth - 160.0;
+    final step = usableWidth / (max(2, totalPlayers) - 1);
+    return platformX + 80.0 + (slot.clamp(0, totalPlayers - 1)) * step;
   }
 
   @override
@@ -56,14 +70,15 @@ class PvPArenaLevel extends Component with HasGameReference<MangaGame> {
       size: Vector2(platformWidth, platformHeight),
     ));
 
-    // 3. Setup Local Player on platform
-    final isHost = LanMultiplayerService.instance.role == MatchRole.host;
-    final localSpawnX =
-        isHost ? platformX + 120.0 : platformX + platformWidth - 120.0;
+    // 3. Setup Local Player on platform based on assigned slot
+    final net = LanMultiplayerService.instance;
+    final total = max(2, net.roomPlayers.length);
+    final localSpawnX = getSpawnX(net.mySlot, total);
+    final localFacing = net.mySlot < (total / 2) ? 1 : -1;
 
     game.player.position = Vector2(localSpawnX, platformY);
     game.player.velocity = Vector2.zero();
-    game.player.facingDirection = isHost ? 1 : -1;
+    game.player.facingDirection = localFacing;
     game.player.hp = 100;
     game.player.maxHp = 100;
     game.player.spirit = 0.0;
@@ -73,13 +88,18 @@ class PvPArenaLevel extends Component with HasGameReference<MangaGame> {
     game.player.touchMoveInput = 0.0;
     game.player.keyboardMoveInput = 0.0;
 
-    // 4. Add Remote Opponent to the arena
-    add(remotePlayer);
+    // 4. Add all Remote Opponents into the arena
+    for (final remote in remotePlayers.values) {
+      add(remote);
+    }
 
     // Initial Battle Cry Effect
+    final battleText = total > 2
+        ? 'BATTLE ROYALE • $total SHINOBIS!!'
+        : 'SHINOBI DUEL • FIGHT!!';
     add(MangaTextEffect(
       position: Vector2(arenaWidth / 2, 280),
-      text: 'SHINOBI DUEL • FIGHT!!',
+      text: battleText,
       fillColor: Colors.amberAccent,
       targetScale: 2.2,
       maxLifetime: 1.8,
@@ -90,27 +110,28 @@ class PvPArenaLevel extends Component with HasGameReference<MangaGame> {
   @override
   void update(double dt) {
     super.update(dt);
-    if (matchEnded) return;
+    if (localPlayerEliminated) return;
 
     final player = game.player;
 
     // Fall to Void / Ring Out detection for Local Player
     if (player.position.y > voidDeathY) {
-      matchEnded = true;
+      localPlayerEliminated = true;
+      player.isDying = true;
       AudioService.playSfx(AudioService.sfxPlayerDeath);
+
       game.add(MangaTextEffect(
-        position: Vector2(player.position.x, 380),
+        position: Vector2(
+          player.position.x.clamp(platformX, platformX + platformWidth),
+          380,
+        ),
         text: 'RING OUT!!',
         fillColor: Colors.redAccent,
         targetScale: 2.4,
       ));
-      LanMultiplayerService.instance.sendRingOut(
-        defeatedNickname: LanMultiplayerService.instance.myNickname,
-      );
-      game.onMultiplayerMatchOver(
-        winnerName: LanMultiplayerService.instance.opponentNickname,
-        didLocalWin: false,
-      );
+
+      LanMultiplayerService.instance.sendLocalPlayerEliminated();
+      game.onLocalPlayerEliminated();
     }
   }
 }

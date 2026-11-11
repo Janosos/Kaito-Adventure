@@ -16,6 +16,7 @@ import 'package:manga_platformer/ui/settings_overlay.dart';
 import 'package:manga_platformer/ui/story_epilogue_overlay.dart';
 import 'package:manga_platformer/ui/multiplayer_hud.dart';
 import 'package:manga_platformer/ui/multiplayer_overlay.dart';
+import 'package:manga_platformer/ui/multiplayer_results_overlay.dart';
 import 'package:manga_platformer/game/services/lan_multiplayer_service.dart';
 import 'package:manga_platformer/ui/virtual_joystick_overlay.dart';
 
@@ -432,6 +433,119 @@ void main() {
     await tester.pump();
     expect(tester.takeException(), isNull);
     expect(find.byType(MultiplayerHud), findsOneWidget);
+
+    // 5. Multiplayer 5-Player Waiting Room Lobby renders all 5 slots
+    final net = LanMultiplayerService.instance;
+    net.role = MatchRole.host;
+    net.isConnected = true;
+    net.myPlayerId = 'p_host';
+    net.roomPlayers.clear();
+    net.roomPlayers['p_host'] = MultiplayerPlayer(
+      id: 'p_host',
+      nickname: 'Jano',
+      colorIndex: 0,
+      slot: 0,
+      isHost: true,
+    );
+    net.roomPlayers['p_1'] = MultiplayerPlayer(
+      id: 'p_1',
+      nickname: 'Rival1',
+      colorIndex: 1,
+      slot: 1,
+      isHost: false,
+    );
+    net.roomPlayers['p_2'] = MultiplayerPlayer(
+      id: 'p_2',
+      nickname: 'Rival2',
+      colorIndex: 2,
+      slot: 2,
+      isHost: false,
+    );
+    net.roomPlayersNotifier.value = net.roomPlayers.values.toList();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: MediaQuery(
+          data: const MediaQueryData(size: Size(800, 360)),
+          child: MultiplayerOverlay(game: game),
+        ),
+      ),
+    );
+    await tester.pump();
+    expect(tester.takeException(), isNull);
+    expect(find.textContaining('INICIAR PARTIDA (3/5)'), findsOneWidget);
+    expect(find.text('RANURA 4'), findsOneWidget);
+    expect(find.text('RANURA 5'), findsOneWidget);
+
+    // 6. Multiplayer 5-Player Battle Royale HUD
+    await tester.pumpWidget(
+      MaterialApp(
+        home: MediaQuery(
+          data: const MediaQueryData(size: Size(800, 360)),
+          child: MultiplayerHud(game: game),
+        ),
+      ),
+    );
+    await tester.pump();
+    expect(tester.takeException(), isNull);
+    expect(find.textContaining('Jano (TÚ)'), findsOneWidget);
+    expect(find.text('Rival1'), findsOneWidget);
+
+    // 7. Smash Bros Style Victory Podium Screen (MultiplayerResultsOverlay)
+    final podium = [
+      MultiplayerPlayer(
+        id: 'p_host',
+        nickname: 'Jano',
+        colorIndex: 0,
+        slot: 0,
+        isHost: true,
+        placement: 1,
+      ),
+      MultiplayerPlayer(
+        id: 'p_1',
+        nickname: 'Rival1',
+        colorIndex: 1,
+        slot: 1,
+        placement: 2,
+      ),
+      MultiplayerPlayer(
+        id: 'p_2',
+        nickname: 'Rival2',
+        colorIndex: 2,
+        slot: 2,
+        placement: 3,
+      ),
+    ];
+    net.resultsPodiumNotifier.value = podium;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: MediaQuery(
+          data: const MediaQueryData(size: Size(800, 360)),
+          child: MultiplayerResultsOverlay(game: game),
+        ),
+      ),
+    );
+    await tester.pump();
+    expect(tester.takeException(), isNull);
+    expect(find.text('RESULTADOS DE LA BATALLA'), findsOneWidget);
+    expect(find.text('1° LUGAR'), findsOneWidget);
+    expect(find.text('¡CAMPEÓN!'), findsOneWidget);
+    expect(find.text('2° LUGAR'), findsOneWidget);
+    expect(find.textContaining('VOLVER A JUGAR'), findsOneWidget);
+
+    // Tap Rematch vote
+    await tester.tap(find.textContaining('VOLVER A JUGAR'));
+    await tester.pump();
+    expect(find.textContaining('¡LISTO PARA REVANCHA!'), findsOneWidget);
+
+    // Countdown active
+    net.rematchCountdownNotifier.value = 3;
+    await tester.pump();
+    expect(find.textContaining('¡REVANCHA CONFIRMADA! INICIANDO EN 3...'), findsOneWidget);
+
+    await net.disconnect();
+    await tester.pumpWidget(const SizedBox.shrink());
 
     await tester.pumpWidget(const SizedBox.shrink());
   });

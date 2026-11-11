@@ -13,22 +13,28 @@ import 'enemies/enemy_grunt.dart';
 import 'enemies/enemy_drone.dart';
 import 'enemies/enemy_oni_archer.dart';
 import 'bosses/boss_base.dart';
+import 'player.dart';
 import 'remote_player.dart';
 import '../services/lan_multiplayer_service.dart';
 
-/// Kunai thrown by the player
+/// Kunai thrown by the player or remote opponents
 class InkKunai extends PositionComponent
     with CollisionCallbacks, HasGameReference<MangaGame> {
   final Vector2 velocity;
   final double damage;
+  final String throwerId;
+  final bool isFromRemote;
   double _lifeTimer = 0.0;
   static const double maxLife = 1.6;
   late final SpriteAnimationTicker _ticker;
+  bool _hasCollided = false;
 
   InkKunai({
     required Vector2 position,
     required this.velocity,
-    this.damage = 25.0,
+    this.damage = 32.0,
+    this.throwerId = '',
+    this.isFromRemote = false,
   }) : super(
           position: position,
           size: Vector2(36, 18),
@@ -58,7 +64,7 @@ class InkKunai extends PositionComponent
     position += velocity * dt;
     _lifeTimer += dt;
 
-    if (_lifeTimer >= maxLife) {
+    if (_lifeTimer >= maxLife && isMounted) {
       removeFromParent();
     }
   }
@@ -77,47 +83,75 @@ class InkKunai extends PositionComponent
   void onCollisionStart(
       Set<Vector2> intersectionPoints, PositionComponent other) {
     super.onCollisionStart(intersectionPoints, other);
+    if (_hasCollided) return;
+
+    // Do not hit local player if locally thrown
+    if (!isFromRemote && other == game.player) return;
 
     final kbDir = velocity.x >= 0 ? 1 : -1;
     if (other is EnemyGrunt) {
+      _hasCollided = true;
       other.takeDamage(damage, knockbackDir: kbDir, knockbackForce: 8.0);
       _impact(other.position);
     } else if (other is EnemyDrone) {
+      _hasCollided = true;
       other.takeDamage(damage, knockbackDir: kbDir, knockbackForce: 8.0);
       _impact(other.position);
     } else if (other is EnemyOniArcher) {
+      _hasCollided = true;
       other.takeDamage(damage, knockbackDir: kbDir, knockbackForce: 8.0);
       _impact(other.position);
     } else if (other is BossBase) {
+      _hasCollided = true;
       other.takeDamage(damage, knockbackDir: kbDir, knockbackForce: 4.0);
       _impact(other.position);
     } else if (other is BreakableCrate) {
+      _hasCollided = true;
       other.hit();
       _impact(other.position);
     } else if (other is SwitchOrb) {
+      _hasCollided = true;
       other.triggerSwitch();
       _impact(other.position);
     } else if (other is RemotePlayer) {
+      if (other.id == throwerId || other.isDying) return;
+      _hasCollided = true;
       other.takeDamage(damage, knockback: Vector2(kbDir * 8.0, -3.0));
       LanMultiplayerService.instance.sendHitDamage(
+        targetId: other.id,
         damage: damage,
         knockbackX: kbDir * 8.0,
         knockbackY: -3.0,
         targetRemainingHp: other.hp,
       );
       _impact(other.position);
+    } else if (other is MangaPlayer) {
+      // Remote kunai hits local player
+      if (isFromRemote && !other.isDying) {
+        _hasCollided = true;
+        other.takeMultiplayerDamage(
+          damage,
+          knockbackX: kbDir * 8.0,
+          knockbackY: -3.0,
+        );
+        _impact(other.position);
+      }
     }
   }
 
   void _impact(Vector2 hitPos) {
     AudioService.playSfx(AudioService.sfxKunaiHit);
-    game.add(MangaTextEffect(
-      position: hitPos.clone(),
-      text: 'SHINK!',
-      fillColor: ComicTheme.comicYellow,
-    ));
-    game.add(MangaDustEffect(position: hitPos.clone()));
-    removeFromParent();
+    try {
+      game.add(MangaTextEffect(
+        position: hitPos.clone(),
+        text: 'SHINK!',
+        fillColor: ComicTheme.comicYellow,
+      ));
+      game.add(MangaDustEffect(position: hitPos.clone()));
+    } catch (_) {}
+    if (isMounted) {
+      removeFromParent();
+    }
   }
 }
 

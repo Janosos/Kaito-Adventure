@@ -12,6 +12,7 @@ import 'projectiles.dart';
 import 'platform.dart';
 import 'traps.dart';
 import 'collectibles.dart';
+import 'remote_player.dart';
 import 'enemies/enemy_grunt.dart';
 import 'enemies/enemy_drone.dart';
 import 'enemies/enemy_oni_archer.dart';
@@ -339,12 +340,25 @@ class MangaPlayer extends PositionComponent
       targetScale: 0.95,
     ));
 
+    final kunaiPos = Vector2(
+        position.x + facingDirection * 20, position.y - size.y * 0.55);
+    final kunaiVel = Vector2(facingDirection * 640.0, 0);
+
     game.add(InkKunai(
-      position: Vector2(
-          position.x + facingDirection * 15, position.y - size.y * 0.55),
-      velocity: Vector2(facingDirection * 640.0, 0),
+      position: kunaiPos,
+      velocity: kunaiVel,
       damage: 32.0,
+      throwerId: LanMultiplayerService.instance.myPlayerId,
     ));
+
+    if (game.isMultiplayer) {
+      LanMultiplayerService.instance.sendSpawnKunai(
+        x: kunaiPos.x,
+        y: kunaiPos.y,
+        vx: kunaiVel.x,
+        vy: kunaiVel.y,
+      );
+    }
   }
 
   void performUltimate() {
@@ -416,18 +430,20 @@ class MangaPlayer extends PositionComponent
       );
       game.activeBoss!.breakGuard();
     }
-    if (game.isMultiplayer && game.pvpRemotePlayer != null) {
-      final remote = game.pvpRemotePlayer!;
-      if ((remote.position.x - position.x).abs() < 420) {
-        final dmg = 45.0;
-        final kb = Vector2(facingDirection * 24.0, -8.0);
-        remote.takeDamage(dmg, knockback: kb);
-        LanMultiplayerService.instance.sendHitDamage(
-          damage: dmg,
-          knockbackX: kb.x,
-          knockbackY: kb.y,
-          targetRemainingHp: remote.hp,
-        );
+    if (game.isMultiplayer) {
+      for (final remote in game.queryWorld<RemotePlayer>().toList()) {
+        if ((remote.position.x - position.x).abs() < 420 && !remote.isDying) {
+          final dmg = 45.0;
+          final kb = Vector2(facingDirection * 24.0, -8.0);
+          remote.takeDamage(dmg, knockback: kb);
+          LanMultiplayerService.instance.sendHitDamage(
+            targetId: remote.id,
+            damage: dmg,
+            knockbackX: kb.x,
+            knockbackY: kb.y,
+            targetRemainingHp: remote.hp,
+          );
+        }
       }
     }
   }
@@ -522,23 +538,26 @@ class MangaPlayer extends PositionComponent
       }
     }
 
-    // 7. PvP Duel: Hit Remote Opponent
-    if (game.isMultiplayer && game.pvpRemotePlayer != null) {
-      final remote = game.pvpRemotePlayer!;
-      if (!remote.isDying) {
-        final remoteCenter = Vector2(remote.position.x, remote.position.y - remote.size.y * 0.5);
-        if (_isInSlashArc(remoteCenter, extraReach: 15.0)) {
-          final dmg = 15.0 + comboIndex * 8.0;
-          final kbDir = facingDirection;
-          final kbForce = 12.0 + comboIndex * 4.0;
-          remote.takeDamage(dmg, knockback: Vector2(kbDir * kbForce, -4.0));
-          _registerHit();
-          LanMultiplayerService.instance.sendHitDamage(
-            damage: dmg,
-            knockbackX: kbDir * kbForce,
-            knockbackY: -4.0,
-            targetRemainingHp: remote.hp,
-          );
+    // 7. PvP Duel & Battle Royale: Hit Remote Opponents
+    if (game.isMultiplayer) {
+      for (final remote in game.queryWorld<RemotePlayer>().toList()) {
+        if (!remote.isDying) {
+          final remoteCenter =
+              Vector2(remote.position.x, remote.position.y - remote.size.y * 0.5);
+          if (_isInSlashArc(remoteCenter, extraReach: 15.0)) {
+            final dmg = 15.0 + comboIndex * 8.0;
+            final kbDir = facingDirection;
+            final kbForce = 12.0 + comboIndex * 4.0;
+            remote.takeDamage(dmg, knockback: Vector2(kbDir * kbForce, -4.0));
+            _registerHit();
+            LanMultiplayerService.instance.sendHitDamage(
+              targetId: remote.id,
+              damage: dmg,
+              knockbackX: kbDir * kbForce,
+              knockbackY: -4.0,
+              targetRemainingHp: remote.hp,
+            );
+          }
         }
       }
     }
@@ -559,13 +578,8 @@ class MangaPlayer extends PositionComponent
     if (hp <= 0) {
       hp = 0;
       _startDeathSequence();
-      LanMultiplayerService.instance.sendRingOut(
-        defeatedNickname: LanMultiplayerService.instance.myNickname,
-      );
-      game.onMultiplayerMatchOver(
-        winnerName: LanMultiplayerService.instance.opponentNickname,
-        didLocalWin: false,
-      );
+      LanMultiplayerService.instance.sendLocalPlayerEliminated();
+      game.onLocalPlayerEliminated();
       return;
     }
 
