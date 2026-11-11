@@ -2,7 +2,9 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:web_socket_channel/web_socket_channel.dart';
 
 /// Predefined manga color palette for Kaito in multiplayer mode
 class MultiplayerColor {
@@ -80,6 +82,35 @@ class DiscoveredRoom {
 
 enum MatchRole { none, host, client }
 
+/// Unified socket interface for Native (dart:io) and Web (web_socket_channel)
+abstract class LanSocket {
+  Stream<dynamic> get stream;
+  void send(String data);
+  Future<void> close();
+}
+
+class IoWebSocket implements LanSocket {
+  final WebSocket _ws;
+  IoWebSocket(this._ws);
+  @override
+  Stream<dynamic> get stream => _ws;
+  @override
+  void send(String data) => _ws.add(data);
+  @override
+  Future<void> close() => _ws.close();
+}
+
+class ChannelWebSocket implements LanSocket {
+  final WebSocketChannel _channel;
+  ChannelWebSocket(this._channel);
+  @override
+  Stream<dynamic> get stream => _channel.stream;
+  @override
+  void send(String data) => _channel.sink.add(data);
+  @override
+  Future<void> close() => _channel.sink.close();
+}
+
 class LanMultiplayerService {
   static final LanMultiplayerService instance = LanMultiplayerService._();
   LanMultiplayerService._();
@@ -100,9 +131,9 @@ class LanMultiplayerService {
   bool isConnected = false;
   String? localIpAddress;
 
-  // Server (Host) internals
+  // Server (Host) internals (Native only)
   HttpServer? _server;
-  WebSocket? _socket;
+  LanSocket? _socket;
   RawDatagramSocket? _broadcastSocket;
   Timer? _beaconTimer;
 
@@ -119,14 +150,22 @@ class LanMultiplayerService {
   // Match state notifier
   final ValueNotifier<bool> inMatchNotifier = ValueNotifier<bool>(false);
 
-  Color get myColor => kMultiplayerColors[myColorIndex.clamp(0, kMultiplayerColors.length - 1)].primary;
-  Color get opponentColor => kMultiplayerColors[opponentColorIndex.clamp(0, kMultiplayerColors.length - 1)].primary;
+  Color get myColor =>
+      kMultiplayerColors[myColorIndex.clamp(0, kMultiplayerColors.length - 1)]
+          .primary;
+  Color get opponentColor => kMultiplayerColors[
+          opponentColorIndex.clamp(0, kMultiplayerColors.length - 1)]
+      .primary;
 
   Future<void> init() async {
     await refreshLocalIp();
   }
 
   Future<String> refreshLocalIp() async {
+    if (kIsWeb) {
+      localIpAddress = '127.0.0.1';
+      return localIpAddress!;
+    }
     try {
       final interfaces = await NetworkInterface.list(
         type: InternetAddressType.IPv4,
@@ -134,9 +173,10 @@ class LanMultiplayerService {
       );
       for (final iface in interfaces) {
         for (final addr in iface.addresses) {
-          if (!addr.isLoopback && addr.address.startsWith('192.168.') ||
-              addr.address.startsWith('10.') ||
-              addr.address.startsWith('172.')) {
+          if (!addr.isLoopback &&
+              (addr.address.startsWith('192.168.') ||
+                  addr.address.startsWith('10.') ||
+                  addr.address.startsWith('172.'))) {
             localIpAddress = addr.address;
             return addr.address;
           }
@@ -152,9 +192,14 @@ class LanMultiplayerService {
   }
 
   // =========================================================================
-  // HOST: Create Room & Listen for Clients
+  // HOST: Create Room & Listen for Clients (Native: Windows, Android, iOS)
   // =========================================================================
   Future<bool> startHostRoom({String? roomName}) async {
+    if (kIsWeb) {
+      debugPrint('[LAN Host] Hosting is not supported on web browsers.');
+      return false;
+    }
+
     await disconnect();
     await refreshLocalIp();
 
@@ -169,6 +214,32 @@ class LanMultiplayerService {
       isConnected = false;
 
       _server!.listen((HttpRequest request) async {
+        // Enable CORS headers so Web Chrome clients can connect seamlessly
+        request.response.headers.add('Access-Control-Allow-Origin', '*');
+        request.response.headers
+            .add('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+        request.response.headers.add('Access-Control-Allow-Headers', '*');
+
+        if (request.method == 'OPTIONS') {
+          request.response.statusCode = HttpStatus.ok;
+          await request.response.close();
+          return;
+        }
+
+        if (request.uri.path == '/info' || request.uri.path == '/beacon') {
+          request.response.headers.contentType = ContentType.json;
+          request.response.write(jsonEncode({
+            'type': 'kaito_beacon',
+            'roomName': actualRoomName,
+            'hostName': myNickname,
+            'hostColor': myColorIndex,
+            'ip': localIpAddress ?? '127.0.0.1',
+            'port': kGamePort,
+          }));
+          await request.response.close();
+          return;
+        }
+
         if (WebSocketTransformer.isUpgradeRequest(request)) {
           final ws = await WebSocketTransformer.upgrade(request);
           if (_socket != null) {
@@ -176,7 +247,7 @@ class LanMultiplayerService {
             ws.close(1008, 'Room Full');
             return;
           }
-          _handleConnectedSocket(ws, isHostSide: true);
+          _handleConnectedSocket(IoWebSocket(ws), isHostSide: true);
         }
       });
 
@@ -217,11 +288,17 @@ class LanMultiplayerService {
   }
 
   // =========================================================================
-  // CLIENT: Discovery & Join Room
+  // CLIENT: Discovery & Join Room (Native & Web)
   // =========================================================================
   Future<void> startRoomDiscovery() async {
     stopRoomDiscovery();
     discoveredRooms.value = [];
+
+    if (kIsWeb) {
+      // Browsers sandbox blocks raw UDP sockets.
+      // Web connects directly via host IP.
+      return;
+    }
 
     try {
       _discoverySocket = await RawDatagramSocket.bind(
@@ -243,8 +320,10 @@ class LanMultiplayerService {
                 final hostName = map['hostName'] as String? ?? 'Host';
                 final hostColor = map['hostColor'] as int? ?? 0;
 
-                final existing = List<DiscoveredRoom>.from(discoveredRooms.value);
-                final idx = existing.indexWhere((r) => r.ip == ip && r.port == port);
+                final existing =
+                    List<DiscoveredRoom>.from(discoveredRooms.value);
+                final idx =
+                    existing.indexWhere((r) => r.ip == ip && r.port == port);
                 final room = DiscoveredRoom(
                   roomName: roomName,
                   hostName: hostName,
@@ -271,22 +350,37 @@ class LanMultiplayerService {
   }
 
   void stopRoomDiscovery() {
-    _discoverySocket?.close();
+    if (!kIsWeb) {
+      try {
+        _discoverySocket?.close();
+      } catch (_) {}
+    }
     _discoverySocket = null;
   }
 
   Future<bool> connectToRoom(String ip, [int port = kGamePort]) async {
     await disconnect();
     role = MatchRole.client;
-    try {
-      final ws = await WebSocket.connect(
-        'ws://$ip:$port',
-      ).timeout(const Duration(seconds: 5));
 
-      _handleConnectedSocket(ws, isHostSide: false);
+    String cleanIp = ip.trim();
+    int actualPort = port;
+    if (cleanIp.contains(':')) {
+      final parts = cleanIp.split(':');
+      cleanIp = parts[0].trim();
+      actualPort = int.tryParse(parts[1].trim()) ?? port;
+    }
+
+    try {
+      final wsUri = Uri.parse('ws://$cleanIp:$actualPort');
+      debugPrint('[LAN Client] Connecting via WebSocketChannel to $wsUri ...');
+
+      final channel = WebSocketChannel.connect(wsUri);
+      await channel.ready.timeout(const Duration(seconds: 5));
+
+      _handleConnectedSocket(ChannelWebSocket(channel), isHostSide: false);
       return true;
     } catch (e) {
-      debugPrint('[LAN Client] Connection failed to $ip:$port: $e');
+      debugPrint('[LAN Client] Connection failed to $cleanIp:$actualPort: $e');
       await disconnect();
       return false;
     }
@@ -295,8 +389,8 @@ class LanMultiplayerService {
   // =========================================================================
   // Internal Socket & Messaging
   // =========================================================================
-  void _handleConnectedSocket(WebSocket ws, {required bool isHostSide}) {
-    _socket = ws;
+  void _handleConnectedSocket(LanSocket socket, {required bool isHostSide}) {
+    _socket = socket;
     isConnected = true;
 
     // Send Handshake
@@ -306,10 +400,11 @@ class LanMultiplayerService {
       'color': myColorIndex,
     });
 
-    _socket!.listen(
+    _socket!.stream.listen(
       (data) {
         try {
-          final map = jsonDecode(data as String) as Map<String, dynamic>;
+          final text = data is String ? data : utf8.decode(data as List<int>);
+          final map = jsonDecode(text) as Map<String, dynamic>;
           final type = map['type'] as String?;
 
           if (type == 'handshake') {
@@ -329,7 +424,8 @@ class LanMultiplayerService {
             }
           } else if (type == 'match_start') {
             opponentNickname = map['hostName'] as String? ?? opponentNickname;
-            opponentColorIndex = map['hostColor'] as int? ?? opponentColorIndex;
+            opponentColorIndex =
+                map['hostColor'] as int? ?? opponentColorIndex;
             inMatchNotifier.value = true;
           }
 
@@ -350,7 +446,7 @@ class LanMultiplayerService {
   void sendRaw(Map<String, dynamic> data) {
     if (_socket != null && isConnected) {
       try {
-        _socket!.add(jsonEncode(data));
+        _socket!.send(jsonEncode(data));
       } catch (_) {}
     }
   }
@@ -420,8 +516,12 @@ class LanMultiplayerService {
     _beaconTimer?.cancel();
     _beaconTimer = null;
 
-    _broadcastSocket?.close();
-    _broadcastSocket = null;
+    if (!kIsWeb) {
+      try {
+        _broadcastSocket?.close();
+      } catch (_) {}
+      _broadcastSocket = null;
+    }
 
     stopRoomDiscovery();
 
@@ -430,14 +530,15 @@ class LanMultiplayerService {
     } catch (_) {}
     _socket = null;
 
-    try {
-      await _server?.close(force: true);
-    } catch (_) {}
-    _server = null;
+    if (!kIsWeb) {
+      try {
+        await _server?.close(force: true);
+      } catch (_) {}
+      _server = null;
+    }
 
     role = MatchRole.none;
     isConnected = false;
     inMatchNotifier.value = false;
   }
 }
-

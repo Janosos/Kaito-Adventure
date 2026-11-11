@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../game/manga_game.dart';
 import '../game/services/audio_service.dart';
@@ -27,7 +28,7 @@ class _MultiplayerOverlayState extends State<MultiplayerOverlay> {
     super.initState();
     final net = LanMultiplayerService.instance;
     _nicknameController = TextEditingController(text: net.myNickname);
-    _ipController = TextEditingController();
+    _ipController = TextEditingController(text: kIsWeb ? '127.0.0.1' : '');
     _roomNameController = TextEditingController(text: 'Dojo de ${net.myNickname}');
 
     // Start WiFi discovery and listen to match start
@@ -77,6 +78,17 @@ class _MultiplayerOverlayState extends State<MultiplayerOverlay> {
   }
 
   Future<void> _handleCreateRoom() async {
+    if (kIsWeb) {
+      AudioService.buttonHaptic();
+      AudioService.playSfx(AudioService.sfxClick);
+      setState(() {
+        _isCreatingRoom = false;
+        _statusMessage =
+            'En navegador Web sólo puedes unirte como cliente.\nCrea la sala en Windows o Android e ingresa su IP a la derecha.';
+      });
+      return;
+    }
+
     AudioService.buttonHaptic();
     AudioService.playSfx(AudioService.sfxStart);
     setState(() {
@@ -102,16 +114,20 @@ class _MultiplayerOverlayState extends State<MultiplayerOverlay> {
   }
 
   Future<void> _handleJoinRoom(String ip, [int port = LanMultiplayerService.kGamePort]) async {
+    final targetIp = ip.trim();
+    if (targetIp.isEmpty) return;
+
     AudioService.buttonHaptic();
     AudioService.playSfx(AudioService.sfxStart);
     setState(() {
-      _statusMessage = 'Conectando con $ip...';
+      _statusMessage = 'Conectando con $targetIp...';
     });
 
-    final ok = await LanMultiplayerService.instance.connectToRoom(ip, port);
+    final ok = await LanMultiplayerService.instance.connectToRoom(targetIp, port);
     if (!ok && mounted) {
       setState(() {
-        _statusMessage = 'No se pudo conectar a la sala en $ip.';
+        _statusMessage =
+            'No se pudo conectar a la sala en $targetIp.\nVerifica que la app Host tenga la sala creada.';
       });
     }
   }
@@ -483,31 +499,56 @@ class _MultiplayerOverlayState extends State<MultiplayerOverlay> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const SizedBox(
-                          width: 28,
-                          height: 28,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2.5,
+                        if (!kIsWeb) ...[
+                          const SizedBox(
+                            width: 28,
+                            height: 28,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2.5,
+                              color: Colors.cyanAccent,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            'Escaneando red local WiFi...',
+                            style: ComicTheme.titleText(
+                              size: 14,
+                              color: Colors.white70,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Crea una sala en el otro celular o conéctate por IP directa.',
+                            textAlign: TextAlign.center,
+                            style: ComicTheme.bodyText(
+                              size: 11,
+                              color: Colors.white54,
+                            ),
+                          ),
+                        ] else ...[
+                          const Icon(
+                            Icons.language,
+                            size: 32,
                             color: Colors.cyanAccent,
                           ),
-                        ),
-                        const SizedBox(height: 12),
-                        Text(
-                          'Escaneando red local WiFi...',
-                          style: ComicTheme.titleText(
-                            size: 14,
-                            color: Colors.white70,
+                          const SizedBox(height: 8),
+                          Text(
+                            'Modo Navegador Web (Cliente)',
+                            style: ComicTheme.titleText(
+                              size: 14,
+                              color: Colors.cyanAccent,
+                            ),
                           ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'Crea una sala en el otro celular o conéctate por IP directa.',
-                          textAlign: TextAlign.center,
-                          style: ComicTheme.bodyText(
-                            size: 11,
-                            color: Colors.white54,
+                          const SizedBox(height: 4),
+                          Text(
+                            'Los navegadores web no admiten escaneo UDP.\nIngresa la IP del Host a la derecha para unirte.',
+                            textAlign: TextAlign.center,
+                            style: ComicTheme.bodyText(
+                              size: 11,
+                              color: Colors.white70,
+                            ),
                           ),
-                        ),
+                        ],
                       ],
                     ),
                   );
@@ -617,6 +658,29 @@ class _MultiplayerOverlayState extends State<MultiplayerOverlay> {
             ),
           ),
           const SizedBox(height: 8),
+
+          if (kIsWeb)
+            Container(
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.amber.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: Colors.amberAccent, width: 1.5),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.info_outline, color: Colors.amberAccent, size: 16),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      'En Chrome/Web: Ingresa la IP que muestra Windows (ej. 192.168.1.179 o 127.0.0.1).',
+                      style: ComicTheme.bodyText(size: 10, color: Colors.amberAccent),
+                    ),
+                  ),
+                ],
+              ),
+            ),
 
           if (_isCreatingRoom) ...[
             Expanded(
