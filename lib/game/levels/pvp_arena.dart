@@ -79,8 +79,8 @@ class PvPArenaLevel extends Component with HasGameReference<MangaGame> {
     game.player.position = Vector2(localSpawnX, platformY);
     game.player.velocity = Vector2.zero();
     game.player.facingDirection = localFacing;
-    game.player.hp = 100;
-    game.player.maxHp = 100;
+    game.player.hp = LanMultiplayerService.kPvpMaxHpInt;
+    game.player.maxHp = LanMultiplayerService.kPvpMaxHpInt;
     game.player.spirit = 0.0;
     game.player.isOnGround = true;
     game.player.isDying = false;
@@ -112,7 +112,10 @@ class PvPArenaLevel extends Component with HasGameReference<MangaGame> {
   @override
   void update(double dt) {
     super.update(dt);
-    if (localPlayerEliminated) return;
+    if (localPlayerEliminated ||
+        LanMultiplayerService.instance.victoryCelebrationNotifier.value != null) {
+      return;
+    }
 
     final player = game.player;
 

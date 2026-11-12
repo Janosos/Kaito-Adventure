@@ -23,3 +23,4 @@ echo "Compilando Flutter Web en modo Release..."
 flutter build web --release --no-tree-shake-icons
 
 echo "=== Compilación completada con éxito. Archivos listos en build/web ==="
+

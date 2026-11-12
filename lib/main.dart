@@ -68,16 +68,24 @@ class _MangaGameScreenState extends State<MangaGameScreen>
     with WidgetsBindingObserver {
   late final MangaGame _game;
   final GlobalKey _gameWidgetKey = GlobalKey();
+  final FocusNode _gameFocusNode = FocusNode();
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _game = MangaGame();
+    _game.onRequestGameFocus = () {
+      FocusManager.instance.primaryFocus?.unfocus();
+      if (_gameFocusNode.canRequestFocus) {
+        _gameFocusNode.requestFocus();
+      }
+    };
   }
 
   @override
   void dispose() {
+    _gameFocusNode.dispose();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -138,6 +146,7 @@ class _MangaGameScreenState extends State<MangaGameScreen>
               child: RepaintBoundary(
                 child: GameWidget<MangaGame>(
                   key: _gameWidgetKey,
+                  focusNode: _gameFocusNode,
                   game: _game,
                   overlayBuilderMap: {
                     'intro': (context, game) => SplashIntroOverlay(game: game),

@@ -101,7 +101,7 @@ class MultiplayerPlayer {
     required this.slot,
     this.isHost = false,
     this.isAlive = true,
-    this.hp = 100.0,
+    this.hp = LanMultiplayerService.kPvpMaxHp,
     this.ougi = 0.0,
     this.placement = 0,
     this.votedRematch = false,
@@ -132,7 +132,7 @@ class MultiplayerPlayer {
         slot: map['slot'] as int? ?? 0,
         isHost: map['isHost'] as bool? ?? false,
         isAlive: map['isAlive'] as bool? ?? true,
-        hp: (map['hp'] as num?)?.toDouble() ?? 100.0,
+        hp: (map['hp'] as num?)?.toDouble() ?? LanMultiplayerService.kPvpMaxHp,
         ougi: (map['ougi'] as num?)?.toDouble() ?? 0.0,
         placement: map['placement'] as int? ?? 0,
         votedRematch: map['votedRematch'] as bool? ?? false,
@@ -177,6 +177,11 @@ class LanMultiplayerService {
   static const int kGamePort = 7777;
   static const int kDiscoveryPort = 7778;
   static const int maxPlayers = 5;
+  static const double kPvpMaxHp = 300.0;
+  static const int kPvpMaxHpInt = 300;
+  static const int kRematchCountdownSeconds = 10;
+  static const Duration kVictoryCelebrationDuration =
+      Duration(milliseconds: 3200);
 
   // Local Player Config
   String myPlayerId = 'p_host';
@@ -198,9 +203,13 @@ class LanMultiplayerService {
   // Rematch & Results State
   final ValueNotifier<int?> rematchCountdownNotifier =
       ValueNotifier<int?>(null);
+  final ValueNotifier<MultiplayerPlayer?> victoryCelebrationNotifier =
+      ValueNotifier<MultiplayerPlayer?>(null);
   final ValueNotifier<List<MultiplayerPlayer>?> resultsPodiumNotifier =
       ValueNotifier<List<MultiplayerPlayer>?>(null);
   Timer? _rematchTimer;
+  Timer? _victoryDelayTimer;
+  bool _matchEnded = false;
 
   // Host internals (Native only)
   HttpServer? _server;
@@ -220,8 +229,9 @@ class LanMultiplayerService {
       StreamController<Map<String, dynamic>>.broadcast();
   Stream<Map<String, dynamic>> get onMatchData => _matchDataController.stream;
 
-  // Match state notifier
+  // Match state notifier & monotonic session counter (triggers fresh rematches)
   final ValueNotifier<bool> inMatchNotifier = ValueNotifier<bool>(false);
+  final ValueNotifier<int> matchSessionIdNotifier = ValueNotifier<int>(0);
 
   Color get myColor =>
       kMultiplayerColors[myColorIndex.clamp(0, kMultiplayerColors.length - 1)]
@@ -460,8 +470,16 @@ class LanMultiplayerService {
       if (inMatchNotifier.value) {
         _checkMatchEndCondition();
       }
+      // If on results/rematch screen, re-evaluate whether >= 2 ready players remain
+      if (resultsPodiumNotifier.value != null || _rematchTimer != null) {
+        _checkRematchVoteCondition();
+      }
     }
   }
+
+  @visibleForTesting
+  void debugInjectClientPacket(String senderId, Map<String, dynamic> map) =>
+      _handleClientPacket(senderId, map);
 
   void _handleClientPacket(String? senderId, Map<String, dynamic> map) {
     final type = map['type'] as String?;
@@ -469,7 +487,8 @@ class LanMultiplayerService {
     if (type == 'state') {
       final pid = senderId ?? map['id'] as String?;
       if (pid != null && roomPlayers.containsKey(pid)) {
-        roomPlayers[pid]!.hp = (map['hp'] as num?)?.toDouble() ?? 100.0;
+        roomPlayers[pid]!.hp =
+            (map['hp'] as num?)?.toDouble() ?? LanMultiplayerService.kPvpMaxHp;
         roomPlayers[pid]!.ougi = (map['ougi'] as num?)?.toDouble() ?? 0.0;
       }
       // Re-broadcast state to all OTHER clients
@@ -507,7 +526,8 @@ class LanMultiplayerService {
     } else if (type == 'rematch_vote') {
       final pid = senderId ?? map['id'] as String?;
       if (pid != null && roomPlayers.containsKey(pid)) {
-        roomPlayers[pid]!.votedRematch = true;
+        final voted = map['voted'] as bool? ?? !roomPlayers[pid]!.votedRematch;
+        roomPlayers[pid]!.votedRematch = voted;
         _updateRoomPlayersNotifier();
         _broadcastRematchStatus();
         _checkRematchVoteCondition();
@@ -515,53 +535,86 @@ class LanMultiplayerService {
     }
   }
 
-  /// Host triggers match start for all connected players
+  /// Host triggers match start (or rematch) for all connected players
   void hostStartMatch() {
     if (role != MatchRole.host || roomPlayers.length < 2) return;
 
     _rematchTimer?.cancel();
     _rematchTimer = null;
+    _victoryDelayTimer?.cancel();
+    _victoryDelayTimer = null;
+    _matchEnded = false;
+
     rematchCountdownNotifier.value = null;
+    victoryCelebrationNotifier.value = null;
     resultsPodiumNotifier.value = null;
 
     // Reset combat state for all room players
     for (final p in roomPlayers.values) {
       p.isAlive = true;
-      p.hp = 100.0;
+      p.hp = kPvpMaxHp;
       p.ougi = 0.0;
       p.placement = 0;
       p.votedRematch = false;
     }
     _updateRoomPlayersNotifier();
 
+    final nextSessionId = matchSessionIdNotifier.value + 1;
     final startPacket = {
       'type': 'match_start',
+      'sessionId': nextSessionId,
       'players': roomPlayers.values.map((p) => p.toJson()).toList(),
     };
     _broadcastToClients(startPacket);
+    matchSessionIdNotifier.value = nextSessionId;
     inMatchNotifier.value = true;
   }
 
   void _checkMatchEndCondition() {
-    if (role != MatchRole.host || !inMatchNotifier.value) return;
+    if (role != MatchRole.host || !inMatchNotifier.value || _matchEnded) return;
 
     final alive = roomPlayers.values.where((p) => p.isAlive).toList();
     if (alive.length <= 1) {
+      _matchEnded = true;
+      MultiplayerPlayer? winner;
       if (alive.length == 1) {
         alive.first.placement = 1;
+        winner = alive.first;
       }
 
       // Sort podium by placement ascending (1st place first)
       final podium = roomPlayers.values.toList()
-        ..sort((a, b) => a.placement.compareTo(b.placement));
+        ..sort((a, b) {
+          final pa = a.placement <= 0 ? 999 : a.placement;
+          final pb = b.placement <= 0 ? 999 : b.placement;
+          return pa.compareTo(pb);
+        });
+      if (podium.isNotEmpty && podium.first.placement != 1) {
+        podium.first.placement = 1;
+      }
+      winner ??= podium.firstOrNull;
+
+      // Announce champion immediately for post-KO celebration before podium
+      final victoryPacket = {
+        'type': 'match_victory',
+        'winner': winner?.toJson(),
+      };
+      _broadcastToClients(victoryPacket);
+      victoryCelebrationNotifier.value = winner;
 
       final resultsPacket = {
         'type': 'match_results',
         'podium': podium.map((p) => p.toJson()).toList(),
       };
 
-      _broadcastToClients(resultsPacket);
-      resultsPodiumNotifier.value = podium;
+      _victoryDelayTimer?.cancel();
+      _victoryDelayTimer = Timer(kVictoryCelebrationDuration, () {
+        _victoryDelayTimer = null;
+        if (role != MatchRole.host || !inMatchNotifier.value) return;
+        victoryCelebrationNotifier.value = null;
+        _broadcastToClients(resultsPacket);
+        resultsPodiumNotifier.value = podium;
+      });
     }
   }
 
@@ -573,14 +626,31 @@ class LanMultiplayerService {
     _broadcastToClients(packet);
   }
 
+  void _cancelRematchTimer() {
+    _rematchTimer?.cancel();
+    _rematchTimer = null;
+    if (rematchCountdownNotifier.value != null) {
+      rematchCountdownNotifier.value = null;
+      _broadcastToClients({
+        'type': 'rematch_countdown',
+        'seconds': null,
+      });
+    }
+  }
+
   void _checkRematchVoteCondition() {
     if (role != MatchRole.host) return;
 
     final readyCount =
         roomPlayers.values.where((p) => p.votedRematch).length;
-    if (readyCount >= 2 && _rematchTimer == null) {
-      // 3-second countdown to rematch
-      int seconds = 3;
+
+    if (readyCount < 2 || roomPlayers.length < 2) {
+      _cancelRematchTimer();
+      return;
+    }
+
+    if (_rematchTimer == null) {
+      int seconds = kRematchCountdownSeconds;
       rematchCountdownNotifier.value = seconds;
       _broadcastToClients({
         'type': 'rematch_countdown',
@@ -588,6 +658,19 @@ class LanMultiplayerService {
       });
 
       _rematchTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+        final currentReady =
+            roomPlayers.values.where((p) => p.votedRematch).length;
+        if (currentReady < 2 || roomPlayers.length < 2) {
+          timer.cancel();
+          _rematchTimer = null;
+          rematchCountdownNotifier.value = null;
+          _broadcastToClients({
+            'type': 'rematch_countdown',
+            'seconds': null,
+          });
+          return;
+        }
+
         seconds--;
         if (seconds <= 0) {
           timer.cancel();
@@ -752,9 +835,22 @@ class LanMultiplayerService {
                 roomPlayers[p.id] = p;
               }
               _updateRoomPlayersNotifier();
+              victoryCelebrationNotifier.value = null;
               resultsPodiumNotifier.value = null;
               rematchCountdownNotifier.value = null;
+              final incomingSession = map['sessionId'] as int?;
+              if (incomingSession != null &&
+                  incomingSession > matchSessionIdNotifier.value) {
+                matchSessionIdNotifier.value = incomingSession;
+              } else {
+                matchSessionIdNotifier.value =
+                    matchSessionIdNotifier.value + 1;
+              }
               inMatchNotifier.value = true;
+            } else if (type == 'match_victory') {
+              final wMap = map['winner'] as Map<String, dynamic>?;
+              victoryCelebrationNotifier.value =
+                  wMap != null ? MultiplayerPlayer.fromJson(wMap) : null;
             } else if (type == 'player_eliminated') {
               final pid = map['id'] as String?;
               if (pid != null && roomPlayers.containsKey(pid)) {
@@ -768,16 +864,17 @@ class LanMultiplayerService {
                   .map((e) =>
                       MultiplayerPlayer.fromJson(e as Map<String, dynamic>))
                   .toList();
+              victoryCelebrationNotifier.value = null;
               resultsPodiumNotifier.value = podium;
             } else if (type == 'rematch_update') {
               final pList = (map['players'] as List<dynamic>)
                   .map((e) =>
                       MultiplayerPlayer.fromJson(e as Map<String, dynamic>))
                   .toList();
+              final incomingIds = pList.map((e) => e.id).toSet();
+              roomPlayers.removeWhere((k, _) => !incomingIds.contains(k));
               for (final p in pList) {
-                if (roomPlayers.containsKey(p.id)) {
-                  roomPlayers[p.id]!.votedRematch = p.votedRematch;
-                }
+                roomPlayers[p.id] = p;
               }
               _updateRoomPlayersNotifier();
             } else if (type == 'rematch_countdown') {
@@ -900,16 +997,31 @@ class LanMultiplayerService {
     }
   }
 
-  void voteRematch() {
+  void toggleRematchVote() {
+    final current = roomPlayers[myPlayerId]?.votedRematch ?? false;
+    setRematchVote(!current);
+  }
+
+  void voteRematch() => setRematchVote(true);
+
+  void cancelRematchVote() => setRematchVote(false);
+
+  void setRematchVote(bool ready) {
     if (role == MatchRole.host) {
-      roomPlayers[myPlayerId]?.votedRematch = true;
-      _updateRoomPlayersNotifier();
-      _broadcastRematchStatus();
-      _checkRematchVoteCondition();
+      final p = roomPlayers[myPlayerId];
+      if (p != null) {
+        p.votedRematch = ready;
+        _updateRoomPlayersNotifier();
+        _broadcastRematchStatus();
+        _checkRematchVoteCondition();
+      }
     } else {
+      roomPlayers[myPlayerId]?.votedRematch = ready;
+      _updateRoomPlayersNotifier();
       sendRaw({
         'type': 'rematch_vote',
         'id': myPlayerId,
+        'voted': ready,
       });
     }
   }
@@ -923,6 +1035,9 @@ class LanMultiplayerService {
     _beaconTimer = null;
     _rematchTimer?.cancel();
     _rematchTimer = null;
+    _victoryDelayTimer?.cancel();
+    _victoryDelayTimer = null;
+    _matchEnded = false;
 
     if (!kIsWeb) {
       try {
@@ -953,7 +1068,9 @@ class LanMultiplayerService {
     role = MatchRole.none;
     isConnected = false;
     inMatchNotifier.value = false;
+    matchSessionIdNotifier.value = 0;
     rematchCountdownNotifier.value = null;
+    victoryCelebrationNotifier.value = null;
     resultsPodiumNotifier.value = null;
     roomPlayers.clear();
     _updateRoomPlayersNotifier();

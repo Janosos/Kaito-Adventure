@@ -115,14 +115,13 @@ class AudioService {
       final player = _sfxPool[_sfxIndex];
       _sfxIndex = (_sfxIndex + 1) % _sfxPool.length;
 
-      player.stop().then((_) {
-        player.setVolume(vol).then((_) {
-          player.play(
-            AssetSource(sfxFile),
-            volume: vol,
-            mode: PlayerMode.lowLatency,
-          );
-        }).catchError((_) {});
+      player.stop().then((_) async {
+        await player.setVolume(vol);
+        await player.play(
+          AssetSource(sfxFile),
+          volume: vol,
+          mode: PlayerMode.lowLatency,
+        );
       }).catchError((_) {});
     } catch (_) {}
   }
@@ -149,11 +148,11 @@ class AudioService {
       _currentBgm = bgmFile;
       _bgmIsPlaying = true;
 
-      _bgmPlayer!.stop().then((_) {
+      _bgmPlayer!.stop().then((_) async {
         if (_currentBgm != bgmFile) return;
-        _bgmPlayer!.setReleaseMode(ReleaseMode.loop);
-        _bgmPlayer!.setVolume(vol);
-        _bgmPlayer!.play(
+        await _bgmPlayer!.setReleaseMode(ReleaseMode.loop);
+        await _bgmPlayer!.setVolume(vol);
+        await _bgmPlayer!.play(
           AssetSource(bgmFile),
           volume: vol,
           mode: PlayerMode.mediaPlayer,

@@ -1,12 +1,40 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../game/manga_game.dart';
 import '../game/services/lan_multiplayer_service.dart';
 import 'comic_theme.dart';
 
-class MultiplayerHud extends StatelessWidget {
+class MultiplayerHud extends StatefulWidget {
   final MangaGame game;
 
   const MultiplayerHud({super.key, required this.game});
+
+  @override
+  State<MultiplayerHud> createState() => _MultiplayerHudState();
+}
+
+class _MultiplayerHudState extends State<MultiplayerHud> {
+  Timer? _refreshTimer;
+
+  MangaGame get game => widget.game;
+
+  @override
+  void initState() {
+    super.initState();
+    // Throttle PvP HUD refreshes (~15 Hz) so high-frequency WebSocket packets
+    // never flood the Flutter Web / mobile UI thread with full-tree rebuilds.
+    _refreshTimer = Timer.periodic(const Duration(milliseconds: 66), (_) {
+      if (mounted) {
+        setState(() {});
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _refreshTimer?.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -16,25 +44,52 @@ class MultiplayerHud extends StatelessWidget {
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-        child: FittedBox(
-          fit: BoxFit.scaleDown,
-          child: SizedBox(
-            width: 860,
-            child: ValueListenableBuilder<List<MultiplayerPlayer>>(
-              valueListenable: net.roomPlayersNotifier,
-              builder: (context, players, _) {
-                return StreamBuilder<Map<String, dynamic>>(
-                  stream: net.onMatchData,
-                  builder: (context, _) {
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              child: SizedBox(
+                width: 860,
+                child: ValueListenableBuilder<List<MultiplayerPlayer>>(
+                  valueListenable: net.roomPlayersNotifier,
+                  builder: (context, players, _) {
                     if (players.length <= 2) {
                       return _buildDuelLayout(net, player);
                     }
                     return _buildBattleRoyaleLayout(net, player, players);
                   },
+                ),
+              ),
+            ),
+            ValueListenableBuilder<MultiplayerPlayer?>(
+              valueListenable: net.victoryCelebrationNotifier,
+              builder: (context, winner, _) {
+                if (winner == null) return const SizedBox.shrink();
+                return Padding(
+                  padding: const EdgeInsets.only(top: 10),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 8,
+                    ),
+                    decoration: ComicTheme.panelDecoration(
+                      backgroundColor: ComicTheme.comicYellow,
+                      borderWidth: 3.5,
+                      shadowOffset: 5,
+                    ),
+                    child: Text(
+                      '¡CAMPEÓN: ${winner.nickname.toUpperCase()}!',
+                      style: ComicTheme.titleText(
+                        size: 20,
+                        color: ComicTheme.inkBlack,
+                      ),
+                    ),
+                  ),
                 );
               },
             ),
-          ),
+          ],
         ),
       ),
     );
@@ -42,7 +97,7 @@ class MultiplayerHud extends StatelessWidget {
 
   Widget _buildDuelLayout(LanMultiplayerService net, dynamic player) {
     final remotePlayer = game.pvpArena?.remotePlayers.values.firstOrNull;
-    final remoteHp = remotePlayer?.hp ?? 100.0;
+    final remoteHp = remotePlayer?.hp ?? LanMultiplayerService.kPvpMaxHp;
     final remoteOugi = remotePlayer?.ougi ?? 0.0;
     final remoteName = remotePlayer?.nickname ?? 'Rival';
     final remoteColor = remotePlayer?.playerColor ?? const Color(0xFF00E5FF);
@@ -72,7 +127,7 @@ class MultiplayerHud extends StatelessWidget {
                     ),
                   ),
                   Text(
-                    '${player.hp.clamp(0, 100).toInt()} / 100',
+                    '${player.hp.clamp(0, LanMultiplayerService.kPvpMaxHpInt).toInt()} / ${LanMultiplayerService.kPvpMaxHpInt}',
                     style: ComicTheme.titleText(
                       size: 13,
                       color: ComicTheme.comicYellow,
@@ -82,7 +137,8 @@ class MultiplayerHud extends StatelessWidget {
               ),
               const SizedBox(height: 4),
               _buildHealthBar(
-                ratio: (player.hp / 100.0).clamp(0.0, 1.0),
+                ratio: (player.hp / LanMultiplayerService.kPvpMaxHp)
+                    .clamp(0.0, 1.0),
                 isReversed: false,
               ),
               const SizedBox(height: 3),
@@ -128,7 +184,7 @@ class MultiplayerHud extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
                   Text(
-                    '${remoteHp.clamp(0, 100).toInt()} / 100',
+                    '${remoteHp.clamp(0, LanMultiplayerService.kPvpMaxHp).toInt()} / ${LanMultiplayerService.kPvpMaxHpInt}',
                     style: ComicTheme.titleText(
                       size: 13,
                       color: ComicTheme.comicYellow,
@@ -155,7 +211,8 @@ class MultiplayerHud extends StatelessWidget {
               ),
               const SizedBox(height: 4),
               _buildHealthBar(
-                ratio: (remoteHp / 100.0).clamp(0.0, 1.0),
+                ratio: (remoteHp / LanMultiplayerService.kPvpMaxHp)
+                    .clamp(0.0, 1.0),
                 isReversed: true,
               ),
               const SizedBox(height: 3),
@@ -195,7 +252,8 @@ class MultiplayerHud extends StatelessWidget {
   }) {
     final remote = game.pvpArena?.remotePlayers[p.id];
     final currentHp = isLocal ? localHp : (remote?.hp ?? p.hp);
-    final ratio = (currentHp / 100.0).clamp(0.0, 1.0);
+    final ratio =
+        (currentHp / LanMultiplayerService.kPvpMaxHp).clamp(0.0, 1.0);
     final isAlive = currentHp > 0 && p.isAlive;
 
     return Container(

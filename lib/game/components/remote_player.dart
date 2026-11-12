@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flame/collisions.dart';
 import 'package:flame/components.dart';
 import 'package:flame/sprite.dart';
@@ -5,6 +7,7 @@ import 'package:flutter/material.dart';
 import '../cartoon_assets.dart';
 import 'manga_effects.dart';
 import '../manga_game.dart';
+import '../services/lan_multiplayer_service.dart';
 import 'player.dart';
 
 class RemotePlayer extends PositionComponent
@@ -13,8 +16,8 @@ class RemotePlayer extends PositionComponent
   final int slot;
   String nickname;
   Color playerColor;
-  double hp = 100.0;
-  double maxHp = 100.0;
+  double hp = LanMultiplayerService.kPvpMaxHp;
+  double maxHp = LanMultiplayerService.kPvpMaxHp;
   double ougi = 0.0;
 
   int facingDirection = -1;
@@ -23,9 +26,13 @@ class RemotePlayer extends PositionComponent
   Vector2 networkVelocity = Vector2.zero();
 
   bool isDying = false;
+  bool isCelebrating = false;
   double hitFlashTimer = 0.0;
+  double _celebrationTime = 0.0;
 
   Map<PlayerAction, SpriteAnimationTicker>? _tickers;
+  String? _cachedTagName;
+  TextPainter? _cachedTagPainter;
 
   RemotePlayer({
     required this.id,
@@ -142,18 +149,26 @@ class RemotePlayer extends PositionComponent
     required double remoteHp,
     required double remoteOugi,
   }) {
+    if (!x.isFinite || !y.isFinite || !vx.isFinite || !vy.isFinite) return;
+
     targetPosition.setValues(x, y);
     networkVelocity.setValues(vx, vy);
-    facingDirection = facing;
-    hp = remoteHp;
-    ougi = remoteOugi;
+    facingDirection = facing < 0 ? -1 : 1;
+    if (remoteHp.isFinite) {
+      hp = remoteHp.clamp(0.0, maxHp);
+    }
+    if (remoteOugi.isFinite) {
+      ougi = remoteOugi.clamp(0.0, 100.0);
+    }
 
-    if (hp <= 0 && !isDying) {
+    if (hp <= 0 && !isDying && !isCelebrating) {
       isDying = true;
       action = PlayerAction.death;
       _tickers?[action]?.reset();
       return;
     }
+
+    if (isCelebrating) return;
 
     // Map action string to PlayerAction enum
     for (final a in PlayerAction.values) {
@@ -167,8 +182,22 @@ class RemotePlayer extends PositionComponent
     }
   }
 
+  void triggerVictoryCelebration() {
+    if (isDying || isCelebrating) return;
+    isCelebrating = true;
+    _celebrationTime = 0.0;
+    action = PlayerAction.idle;
+    _tickers?[action]?.reset();
+    game.add(MangaTextEffect(
+      position: Vector2(position.x, position.y - 68),
+      text: '¡VICTORIA!',
+      fillColor: const Color(0xFFFFD600),
+      targetScale: 2.0,
+    ));
+  }
+
   void takeDamage(double dmg, {Vector2? knockback}) {
-    if (isDying) return;
+    if (isDying || isCelebrating) return;
     hp = (hp - dmg).clamp(0.0, maxHp);
     hitFlashTimer = 0.18;
     game.add(MangaDustEffect(position: Vector2(position.x, position.y - 30)));
@@ -185,7 +214,7 @@ class RemotePlayer extends PositionComponent
       _tickers?[action]?.reset();
     }
 
-    if (knockback != null) {
+    if (knockback != null && knockback.x.isFinite && knockback.y.isFinite) {
       position.add(knockback);
     }
   }
@@ -196,6 +225,9 @@ class RemotePlayer extends PositionComponent
 
     if (hitFlashTimer > 0) {
       hitFlashTimer -= dt;
+    }
+    if (isCelebrating) {
+      _celebrationTime += dt;
     }
 
     // Smooth position interpolation
@@ -224,9 +256,11 @@ class RemotePlayer extends PositionComponent
         action == PlayerAction.death;
     final renderW = isWideSheet ? 82.0 : 72.0;
     const renderH = 72.0;
+    final celebrationBounce =
+        isCelebrating ? math.sin(_celebrationTime * 9.0).abs() * 14.0 : 0.0;
 
     canvas.save();
-    canvas.translate(size.x / 2, size.y + 5);
+    canvas.translate(size.x / 2, size.y + 5 - celebrationBounce);
 
     if (facingDirection < 0) {
       canvas.scale(-1, 1);
@@ -235,10 +269,16 @@ class RemotePlayer extends PositionComponent
     if (!isDying) {
       // Manga aura ring at opponent's feet
       final auraPaint = Paint()
-        ..color = playerColor.withValues(alpha: 0.35)
+        ..color = isCelebrating
+            ? const Color(0xFFFFD600).withValues(alpha: 0.55)
+            : playerColor.withValues(alpha: 0.35)
         ..style = PaintingStyle.fill;
       canvas.drawOval(
-        Rect.fromCenter(center: const Offset(0, -3), width: 50, height: 12),
+        Rect.fromCenter(
+          center: Offset(0, -3 + celebrationBounce),
+          width: isCelebrating ? 60 : 50,
+          height: 12,
+        ),
         auraPaint,
       );
     }
@@ -267,21 +307,23 @@ class RemotePlayer extends PositionComponent
 
   void _renderNicknameTag(Canvas canvas) {
     final displayName = 'P${slot + 1} $nickname';
-    const textStyle = TextStyle(
-      color: Colors.white,
-      fontSize: 10,
-      fontWeight: FontWeight.bold,
-      fontFamily: 'sans-serif',
-      shadows: [
-        Shadow(color: Colors.black, offset: Offset(1, 1), blurRadius: 2),
-      ],
-    );
-
-    final textSpan = TextSpan(text: displayName, style: textStyle);
-    final textPainter = TextPainter(
-      text: textSpan,
-      textDirection: TextDirection.ltr,
-    )..layout();
+    if (_cachedTagPainter == null || _cachedTagName != displayName) {
+      _cachedTagName = displayName;
+      const textStyle = TextStyle(
+        color: Colors.white,
+        fontSize: 10,
+        fontWeight: FontWeight.bold,
+        fontFamily: 'sans-serif',
+        shadows: [
+          Shadow(color: Colors.black, offset: Offset(1, 1), blurRadius: 2),
+        ],
+      );
+      _cachedTagPainter = TextPainter(
+        text: TextSpan(text: displayName, style: textStyle),
+        textDirection: TextDirection.ltr,
+      )..layout();
+    }
+    final textPainter = _cachedTagPainter!;
 
     final tagW = textPainter.width + 14;
     const tagH = 16.0;

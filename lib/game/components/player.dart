@@ -72,9 +72,11 @@ class MangaPlayer extends PositionComponent
   double invulnerableTimer = 0.0;
   double hurtAnimTimer = 0.0;
   bool isDying = false;
+  bool isCelebrating = false;
   double deathAnimTimer = 0.0;
   bool _spawnedDeathCollapseFx = false;
-  bool get isInvulnerable => invulnerableTimer > 0 || isDashing || isDying;
+  bool get isInvulnerable =>
+      invulnerableTimer > 0 || isDashing || isDying || isCelebrating;
 
   double _animTime = 0.0;
 
@@ -571,8 +573,62 @@ class MangaPlayer extends PositionComponent
     game.addScore(50 * comboCount);
   }
 
+  void resetForMatch({required int maxHealth}) {
+    maxHp = maxHealth;
+    hp = maxHealth;
+    spirit = 0.0;
+    comboCount = 0;
+    comboTimer = 0.0;
+    velocity = Vector2.zero();
+    isOnGround = false;
+    isTouchingWall = false;
+    wallDirection = 0;
+    _standingPlatform = null;
+    touchMoveInput = 0.0;
+    keyboardMoveInput = 0.0;
+    isDashing = false;
+    dashTimer = 0.0;
+    dashCooldown = 0.0;
+    comboIndex = 0;
+    attackCooldown = 0.0;
+    attackAnimTimer = 0.0;
+    kunaiCooldown = 0.0;
+    externalWindX = 0.0;
+    invulnerableTimer = 0.0;
+    hurtAnimTimer = 0.0;
+    isDying = false;
+    isCelebrating = false;
+    deathAnimTimer = 0.0;
+    _spawnedDeathCollapseFx = false;
+    action = PlayerAction.idle;
+  }
+
+  void performVictoryCelebration() {
+    if (isDying || isCelebrating) return;
+    isCelebrating = true;
+    invulnerableTimer = 4.0;
+    attackAnimTimer = 0.0;
+    hurtAnimTimer = 0.0;
+    isDashing = false;
+    velocity.setValues(0, -260);
+    isOnGround = false;
+    action = PlayerAction.jumping;
+    _tickers[PlayerAction.jumping]?.reset();
+    game.add(MangaTextEffect(
+      position: Vector2(position.x, position.y - size.y - 18),
+      text: '¡VICTORIA!',
+      fillColor: ComicTheme.comicYellow,
+      targetScale: 2.1,
+    ));
+  }
+
   void takeMultiplayerDamage(double amount, {double knockbackX = 0, double knockbackY = 0}) {
-    if (isInvulnerable || isDying) return;
+    if (isInvulnerable ||
+        isDying ||
+        isCelebrating ||
+        LanMultiplayerService.instance.victoryCelebrationNotifier.value != null) {
+      return;
+    }
 
     hp -= amount.toInt();
     if (hp <= 0) {
@@ -707,7 +763,7 @@ class MangaPlayer extends PositionComponent
         ));
       }
 
-      if (deathAnimTimer <= 0) {
+      if (deathAnimTimer <= 0 && !game.isMultiplayer) {
         game.finalizePlayerDeath();
       }
       return;
@@ -742,6 +798,22 @@ class MangaPlayer extends PositionComponent
       if (dashTimer <= 0) {
         isDashing = false;
       }
+      return;
+    }
+
+    if (isCelebrating) {
+      // Lock horizontal/combat inputs and hop cheerfully until results podium opens.
+      velocity.x = 0;
+      if (isOnGround) {
+        velocity.y = -230;
+        isOnGround = false;
+        _tickers[PlayerAction.jumping]?.reset();
+      }
+      action = velocity.y < 0 ? PlayerAction.jumping : PlayerAction.idle;
+      _tickers[action]?.update(dt);
+      velocity.y += gravity * dt;
+      position += velocity * dt;
+      position.x = position.x.clamp(game.minPlayerX, game.maxPlayerX);
       return;
     }
 

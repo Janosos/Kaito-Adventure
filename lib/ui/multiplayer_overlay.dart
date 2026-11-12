@@ -1014,7 +1014,7 @@ class _MultiplayerOverlayState extends State<MultiplayerOverlay> {
 
                 return ListView.separated(
                   itemCount: rooms.length,
-                  separatorBuilder: (_, __) => const SizedBox(height: 6),
+                  separatorBuilder: (_, _) => const SizedBox(height: 6),
                   itemBuilder: (context, idx) {
                     final room = rooms[idx];
                     final hostColor = kMultiplayerColors[room.hostColorIndex

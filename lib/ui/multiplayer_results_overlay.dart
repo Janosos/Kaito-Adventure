@@ -1,5 +1,6 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
+import '../game/cartoon_assets.dart';
 import '../game/manga_game.dart';
 import '../game/services/audio_service.dart';
 import '../game/services/lan_multiplayer_service.dart';
@@ -101,8 +102,11 @@ class _MultiplayerResultsOverlayState extends State<MultiplayerResultsOverlay>
                         ),
                         const SizedBox(height: 8),
 
-                        // 4. Bottom Controls Bar
-                        _buildBottomControls(net),
+                        // 4. Bottom Controls Bar (listens live to player vote changes)
+                        ValueListenableBuilder<List<MultiplayerPlayer>>(
+                          valueListenable: net.roomPlayersNotifier,
+                          builder: (context, _, _) => _buildBottomControls(net),
+                        ),
                       ],
                     ),
                   ),
@@ -165,17 +169,23 @@ class _MultiplayerResultsOverlayState extends State<MultiplayerResultsOverlay>
         if (others.isNotEmpty)
           Expanded(
             flex: 3,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                for (int i = 0; i < others.length && i < 2; i++)
-                  _buildDefeatedPedestal(
-                    player: others[i],
-                    rank: i + 2,
-                    isLocal: others[i].id == net.myPlayerId,
-                  ),
-              ],
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.bottomCenter,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  for (int i = 0; i < others.length && i < 2; i++) ...[
+                    if (i > 0) const SizedBox(width: 10),
+                    _buildDefeatedPedestal(
+                      player: others[i],
+                      rank: i + 2,
+                      isLocal: others[i].id == net.myPlayerId,
+                    ),
+                  ],
+                ],
+              ),
             ),
           ),
 
@@ -192,17 +202,23 @@ class _MultiplayerResultsOverlayState extends State<MultiplayerResultsOverlay>
         if (others.length > 2)
           Expanded(
             flex: 3,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                for (int i = 2; i < others.length; i++)
-                  _buildDefeatedPedestal(
-                    player: others[i],
-                    rank: i + 2,
-                    isLocal: others[i].id == net.myPlayerId,
-                  ),
-              ],
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.bottomCenter,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  for (int i = 2; i < others.length; i++) ...[
+                    if (i > 2) const SizedBox(width: 10),
+                    _buildDefeatedPedestal(
+                      player: others[i],
+                      rank: i + 2,
+                      isLocal: others[i].id == net.myPlayerId,
+                    ),
+                  ],
+                ],
+              ),
             ),
           )
         else
@@ -237,7 +253,7 @@ class _MultiplayerResultsOverlayState extends State<MultiplayerResultsOverlay>
               ),
               const SizedBox(height: 4),
 
-              // Victorious Shinobi Avatar
+              // Victorious Shinobi Avatar (Happy Celebrating Kaito tinted by color)
               Container(
                 width: 90,
                 height: 90,
@@ -256,21 +272,47 @@ class _MultiplayerResultsOverlayState extends State<MultiplayerResultsOverlay>
                     ),
                   ],
                 ),
-                child: Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
+                child: ClipOval(
+                  child: Stack(
+                    alignment: Alignment.center,
                     children: [
-                      Icon(
-                        Icons.person,
-                        size: 46,
-                        color: winner.color,
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(8, 6, 8, 12),
+                        child: ColorFiltered(
+                          colorFilter: ColorFilter.mode(
+                            winner.color.withValues(alpha: 0.48),
+                            BlendMode.srcATop,
+                          ),
+                          child: Image.asset(
+                            CartoonAssets.kaitoVictory,
+                            fit: BoxFit.contain,
+                            filterQuality: FilterQuality.none,
+                          ),
+                        ),
                       ),
-                      Text(
-                        'P${winner.slot + 1}',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w900,
+                      Positioned(
+                        bottom: 3,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 7,
+                            vertical: 1,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.black87,
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(
+                              color: ComicTheme.comicYellow,
+                              width: 1.5,
+                            ),
+                          ),
+                          child: Text(
+                            'P${winner.slot + 1}',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
                         ),
                       ),
                     ],
@@ -360,35 +402,65 @@ class _MultiplayerResultsOverlayState extends State<MultiplayerResultsOverlay>
     return Column(
       mainAxisAlignment: MainAxisAlignment.end,
       children: [
-        // Fallen / Defeated Shinobi Avatar
+        // Fallen / Defeated Shinobi Avatar (final collapsed kaito_death frame tinted by color)
         Opacity(
-          opacity: 0.75,
+          opacity: 0.88,
           child: Container(
-            width: 58,
-            height: 58,
+            width: 68,
+            height: 60,
             decoration: BoxDecoration(
-              color: Colors.black45,
-              shape: BoxShape.circle,
+              color: Colors.black54,
+              borderRadius: BorderRadius.circular(10),
               border: Border.all(
-                color: player.color.withValues(alpha: 0.7),
+                color: player.color.withValues(alpha: 0.8),
                 width: 2.5,
               ),
             ),
-            child: Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: Stack(
+                alignment: Alignment.center,
                 children: [
-                  Icon(
-                    Icons.close,
-                    size: 26,
-                    color: player.color,
+                  SizedBox(
+                    width: 63,
+                    height: 56,
+                    child: ClipRect(
+                      child: ColorFiltered(
+                        colorFilter: ColorFilter.mode(
+                          player.color.withValues(alpha: 0.50),
+                          BlendMode.srcATop,
+                        ),
+                        child: Image.asset(
+                          CartoonAssets.kaitoDeath,
+                          width: 63,
+                          height: 56,
+                          fit: BoxFit.cover,
+                          alignment: Alignment.centerRight,
+                          filterQuality: FilterQuality.none,
+                        ),
+                      ),
+                    ),
                   ),
-                  Text(
-                    'P${player.slot + 1}',
-                    style: const TextStyle(
-                      color: Colors.white70,
-                      fontSize: 9,
-                      fontWeight: FontWeight.bold,
+                  Positioned(
+                    top: 2,
+                    right: 3,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 4,
+                        vertical: 1,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.black87,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        'P${player.slot + 1}',
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 8.5,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
                     ),
                   ),
                 ],
@@ -399,20 +471,23 @@ class _MultiplayerResultsOverlayState extends State<MultiplayerResultsOverlay>
         const SizedBox(height: 6),
 
         // Nickname Tag
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-          decoration: BoxDecoration(
-            color: Colors.black87,
-            borderRadius: BorderRadius.circular(4),
-            border: Border.all(color: Colors.white24, width: 1.5),
-          ),
-          child: Text(
-            player.nickname + (isLocal ? ' (TÚ)' : ''),
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: Colors.white70,
-              fontSize: 11,
-              fontWeight: FontWeight.bold,
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 112),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+            decoration: BoxDecoration(
+              color: Colors.black87,
+              borderRadius: BorderRadius.circular(4),
+              border: Border.all(color: Colors.white24, width: 1.5),
+            ),
+            child: Text(
+              player.nickname + (isLocal ? ' (TÚ)' : ''),
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Colors.white70,
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+              ),
             ),
           ),
         ),
@@ -484,19 +559,22 @@ class _MultiplayerResultsOverlayState extends State<MultiplayerResultsOverlay>
     final votedCount =
         net.roomPlayers.values.where((p) => p.votedRematch).length;
 
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        // 1. Rematch Vote Button
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+        // 1. Rematch Vote / Cancel Toggle Button
         GestureDetector(
           onTap: () {
             AudioService.buttonHaptic();
             AudioService.playSfx(AudioService.sfxStart);
-            net.voteRematch();
+            net.toggleRematchVote();
             setState(() {});
           },
           child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
             decoration: ComicTheme.panelDecoration(
               backgroundColor: hasVoted
                   ? const Color(0xFF00E676)
@@ -508,17 +586,17 @@ class _MultiplayerResultsOverlayState extends State<MultiplayerResultsOverlay>
               mainAxisSize: MainAxisSize.min,
               children: [
                 Icon(
-                  hasVoted ? Icons.check_circle : Icons.replay,
+                  hasVoted ? Icons.cancel_outlined : Icons.replay,
                   color: Colors.black,
                   size: 20,
                 ),
                 const SizedBox(width: 8),
                 Text(
                   hasVoted
-                      ? '¡LISTO PARA REVANCHA! ($votedCount/2)'
+                      ? '¡LISTO PARA REVANCHA! ($votedCount/2) · CANCELAR'
                       : 'VOLVER A JUGAR ($votedCount/2)',
                   style: ComicTheme.titleText(
-                    size: 15,
+                    size: 14,
                     color: Colors.black,
                   ),
                 ),
@@ -559,6 +637,7 @@ class _MultiplayerResultsOverlayState extends State<MultiplayerResultsOverlay>
           ),
         ),
       ],
+      ),
     );
   }
 }

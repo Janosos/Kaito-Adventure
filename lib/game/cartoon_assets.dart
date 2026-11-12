@@ -3,6 +3,9 @@ import 'package:flame/components.dart';
 
 class CartoonAssets {
   // Flame Images relative paths (under assets/images/)
+  static const String kaitoVictory = 'assets/images/characters/kaito_victory.png';
+  static const String kaitoDeath = 'assets/images/characters/kaito_death.png';
+
   static const List<String> allFlameImages = [
     // Characters (Kaito)
     'characters/kaito_idle.png',
@@ -15,6 +18,7 @@ class CartoonAssets {
     'characters/kaito_attack3.png',
     'characters/kaito_hurt.png',
     'characters/kaito_death.png',
+    'characters/kaito_victory.png',
 
     // Enemies
     'enemies/grunt_walk.png',

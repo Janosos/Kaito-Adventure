@@ -1,5 +1,5 @@
 import 'dart:ui';
-import 'package:flame/components.dart';
+import 'package:flame/game.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:manga_platformer/game/components/enemies/enemy_grunt.dart';
@@ -547,6 +547,283 @@ void main() {
 
     await net.disconnect();
     await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets(
+      'PvP uses 300 max HP, Web lifecycle focus keeps match unpaused, and RemotePlayer guards non-finite state',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(800, 360);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    final net = LanMultiplayerService.instance;
+    await net.disconnect();
+    addTearDown(() async => await net.disconnect());
+
+    expect(LanMultiplayerService.kPvpMaxHp, 300.0);
+    expect(LanMultiplayerService.kPvpMaxHpInt, 300);
+
+    net.role = MatchRole.host;
+    net.isConnected = true;
+    net.myPlayerId = 'p_host';
+    net.mySlot = 0;
+    net.myNickname = 'HostKaito';
+    net.roomPlayers['p_host'] = MultiplayerPlayer(
+      id: 'p_host',
+      nickname: 'HostKaito',
+      colorIndex: 0,
+      slot: 0,
+      isHost: true,
+    );
+    net.roomPlayers['p_2'] = MultiplayerPlayer(
+      id: 'p_2',
+      nickname: 'RivalInk',
+      colorIndex: 1,
+      slot: 1,
+      isHost: false,
+    );
+    net.roomPlayersNotifier.value = net.roomPlayers.values.toList();
+
+    expect(net.roomPlayers['p_host']!.hp, 300.0);
+
+    final game = MangaGame();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: GameWidget<MangaGame>(
+            game: game,
+            overlayBuilderMap: {
+              'multiplayer_hud': (_, g) => MultiplayerHud(game: g),
+              'virtual_controls': (_, g) => const SizedBox.shrink(),
+              'multiplayer_results': (_, g) =>
+                  MultiplayerResultsOverlay(game: g),
+            },
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    net.hostStartMatch();
+    await game.startPvPMatch();
+    await tester.pump(const Duration(milliseconds: 50));
+
+    expect(game.isMultiplayer, isTrue);
+    expect(game.player.maxHp, 300);
+    expect(game.player.hp, 300);
+
+    final remote = game.pvpArena?.remotePlayers['p_2'];
+    expect(remote, isNotNull);
+    expect(remote!.maxHp, 300.0);
+    expect(remote.hp, 300.0);
+
+    // Simulating browser focus loss & regain during PvP must never freeze the match
+    game.lifecycleStateChange(AppLifecycleState.inactive);
+    expect(game.paused, isFalse);
+    game.lifecycleStateChange(AppLifecycleState.resumed);
+    expect(game.paused, isFalse);
+
+    // Non-finite network coordinates must be ignored safely
+    final prevTargetX = remote.targetPosition.x;
+    remote.updateFromNetwork(
+      x: double.nan,
+      y: double.infinity,
+      vx: 0,
+      vy: 0,
+      facing: -1,
+      actionName: 'idle',
+      remoteHp: 250,
+      remoteOugi: 10,
+    );
+    expect(remote.targetPosition.x, prevTargetX);
+
+    remote.triggerVictoryCelebration();
+    expect(remote.isCelebrating, isTrue);
+
+    game.pauseEngine();
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
+  });
+
+  testWidgets(
+      'LanMultiplayerService delays podium for victory celebration and runs cancellable 10s rematch countdown',
+      (WidgetTester tester) async {
+    final net = LanMultiplayerService.instance;
+    await net.disconnect();
+    addTearDown(() async => await net.disconnect());
+
+    net.role = MatchRole.host;
+    net.isConnected = true;
+    net.myPlayerId = 'p_host';
+    net.mySlot = 0;
+    net.roomPlayers['p_host'] = MultiplayerPlayer(
+      id: 'p_host',
+      nickname: 'KaitoHost',
+      colorIndex: 0,
+      slot: 0,
+      isHost: true,
+    );
+    net.roomPlayers['p_2'] = MultiplayerPlayer(
+      id: 'p_2',
+      nickname: 'Shinobi2',
+      colorIndex: 2,
+      slot: 1,
+    );
+    net.roomPlayersNotifier.value = net.roomPlayers.values.toList();
+
+    net.hostStartMatch();
+    expect(net.matchSessionIdNotifier.value, 1);
+    expect(net.inMatchNotifier.value, isTrue);
+    expect(net.roomPlayers['p_2']!.hp, 300.0);
+
+    // Player 2 is eliminated -> winner enters celebration before podium appears
+    net.debugInjectClientPacket('p_2', {'type': 'player_eliminated'});
+    expect(net.victoryCelebrationNotifier.value?.id, 'p_host');
+    expect(net.resultsPodiumNotifier.value, isNull);
+
+    await tester.pump(const Duration(milliseconds: 2400));
+    expect(net.resultsPodiumNotifier.value, isNull);
+
+    await tester.pump(const Duration(milliseconds: 1000));
+    expect(net.victoryCelebrationNotifier.value, isNull);
+    expect(net.resultsPodiumNotifier.value, isNotNull);
+    expect(net.resultsPodiumNotifier.value!.first.id, 'p_host');
+    expect(net.resultsPodiumNotifier.value!.first.placement, 1);
+
+    // 1 vote is not enough to start countdown
+    net.toggleRematchVote();
+    expect(net.roomPlayers['p_host']!.votedRematch, isTrue);
+    expect(net.rematchCountdownNotifier.value, isNull);
+
+    // 2 votes start a 10-second countdown
+    net.debugInjectClientPacket('p_2', {
+      'type': 'rematch_vote',
+      'voted': true,
+    });
+    expect(net.rematchCountdownNotifier.value, 10);
+
+    await tester.pump(const Duration(seconds: 2));
+    expect(net.rematchCountdownNotifier.value, 8);
+
+    // Cancelling drops ready players below 2 -> countdown disappears & rematch does not fire
+    net.debugInjectClientPacket('p_2', {
+      'type': 'rematch_vote',
+      'voted': false,
+    });
+    expect(net.rematchCountdownNotifier.value, isNull);
+
+    await tester.pump(const Duration(seconds: 12));
+    expect(net.matchSessionIdNotifier.value, 1);
+
+    // Re-confirming starts a fresh 10s countdown and launches session 2 at 0
+    net.debugInjectClientPacket('p_2', {
+      'type': 'rematch_vote',
+      'voted': true,
+    });
+    expect(net.rematchCountdownNotifier.value, 10);
+
+    for (int i = 0; i < 10; i++) {
+      await tester.pump(const Duration(seconds: 1));
+    }
+
+    expect(net.matchSessionIdNotifier.value, 2);
+    expect(net.resultsPodiumNotifier.value, isNull);
+    expect(net.rematchCountdownNotifier.value, isNull);
+    expect(net.roomPlayers['p_2']!.isAlive, isTrue);
+    expect(net.roomPlayers['p_2']!.hp, 300.0);
+    expect(net.roomPlayers['p_host']!.votedRematch, isFalse);
+  });
+
+  testWidgets(
+      'MultiplayerResultsOverlay shows kaito_victory and kaito_death sprites and toggles rematch cleanly',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(800, 360);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    final net = LanMultiplayerService.instance;
+    await net.disconnect();
+    addTearDown(() async => await net.disconnect());
+
+    net.role = MatchRole.host;
+    net.isConnected = true;
+    net.myPlayerId = 'p_host';
+
+    final p1 = MultiplayerPlayer(
+      id: 'p_host',
+      nickname: 'Ganador',
+      colorIndex: 0,
+      slot: 0,
+      isHost: true,
+      placement: 1,
+    );
+    final p2 = MultiplayerPlayer(
+      id: 'p_2',
+      nickname: 'DerrotadoA',
+      colorIndex: 3,
+      slot: 1,
+      isAlive: false,
+      hp: 0,
+      placement: 2,
+    );
+    final p3 = MultiplayerPlayer(
+      id: 'p_3',
+      nickname: 'DerrotadoB',
+      colorIndex: 4,
+      slot: 2,
+      isAlive: false,
+      hp: 0,
+      placement: 3,
+    );
+    net.roomPlayers['p_host'] = p1;
+    net.roomPlayers['p_2'] = p2;
+    net.roomPlayers['p_3'] = p3;
+    net.roomPlayersNotifier.value = [p1, p2, p3];
+    net.resultsPodiumNotifier.value = [p1, p2, p3];
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: MultiplayerResultsOverlay(game: MangaGame()),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(
+      find.byWidgetPredicate((w) =>
+          w is Image &&
+          w.image is AssetImage &&
+          (w.image as AssetImage).assetName ==
+              'assets/images/characters/kaito_victory.png'),
+      findsOneWidget,
+    );
+    expect(
+      find.byWidgetPredicate((w) =>
+          w is Image &&
+          w.image is AssetImage &&
+          (w.image as AssetImage).assetName ==
+              'assets/images/characters/kaito_death.png'),
+      findsNWidgets(2),
+    );
+
+    await tester.tap(find.textContaining('VOLVER A JUGAR'));
+    await tester.pump();
+    expect(
+      find.textContaining('¡LISTO PARA REVANCHA! (1/2)'),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.textContaining('¡LISTO PARA REVANCHA!'));
+    await tester.pump();
+    expect(find.textContaining('VOLVER A JUGAR (0/2)'), findsOneWidget);
   });
 
   testWidgets(

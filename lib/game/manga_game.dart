@@ -51,6 +51,16 @@ class MangaGame extends FlameGame
   PvPArenaLevel? pvpArena;
   RemotePlayer? get pvpRemotePlayer => pvpArena?.remotePlayers.values.firstOrNull;
   StreamSubscription? _multiplayerSub;
+  VoidCallback? onRequestGameFocus;
+  bool _multiplayerNotifiersBound = false;
+  bool _startingPvPMatch = false;
+  int _startedMatchSessionId = 0;
+  int? _lastSentHp;
+  int? _lastSentFacing;
+  String? _lastSentAction;
+  double _lastSentX = double.nan;
+  double _lastSentY = double.nan;
+  double _stateSyncAccumulator = 0.0;
   double currentLevelWidth = 4620.0;
   double viewportWidth = 960.0;
 
@@ -84,6 +94,15 @@ class MangaGame extends FlameGame
   @override
   void lifecycleStateChange(AppLifecycleState state) {
     super.lifecycleStateChange(state);
+    // In active multiplayer matches (especially on Web when clicking/focusing),
+    // keep the simulation running so remote packets and fighters never freeze.
+    final inMultiplayerMatch = isMultiplayer &&
+        overlays.isActive('multiplayer_hud') &&
+        !overlays.isActive('multiplayer_results') &&
+        !overlays.isActive('pause') &&
+        !overlays.isActive('settings') &&
+        !overlays.isActive('main_menu');
+
     // Prevent Flame's default lifecycle handler from resetting or unpausing menus!
     if (state != AppLifecycleState.resumed) {
       _pressedKeys.clear();
@@ -91,7 +110,11 @@ class MangaGame extends FlameGame
         player.touchMoveInput = 0.0;
         player.keyboardMoveInput = 0.0;
       }
-      // If the player was in active gameplay, pause safely without losing progress!
+      if (inMultiplayerMatch) {
+        resumeEngine();
+        return;
+      }
+      // If the player was in active solo gameplay, pause safely without losing progress!
       final inActiveGameplay = overlays.isActive('hud') &&
           !overlays.isActive('pause') &&
           !overlays.isActive('settings') &&
@@ -108,8 +131,8 @@ class MangaGame extends FlameGame
         pauseEngine();
       }
     } else {
-      // Only resume engine if we are in active gameplay with no modal/menu open
-      final shouldResume = overlays.isActive('hud') &&
+      // Only resume engine if we are in active gameplay (solo or multiplayer) with no modal/menu open
+      final shouldResume = (overlays.isActive('hud') || inMultiplayerMatch) &&
           !overlays.isActive('pause') &&
           !overlays.isActive('settings') &&
           !overlays.isActive('game_over') &&
@@ -305,10 +328,10 @@ class MangaGame extends FlameGame
 
   void returnToMainMenu() {
     isMultiplayer = false;
+    _startedMatchSessionId = 0;
     _multiplayerSub?.cancel();
     _multiplayerSub = null;
-    LanMultiplayerService.instance.resultsPodiumNotifier
-        .removeListener(_onResultsPodiumChanged);
+    _unbindMultiplayerNotifiers();
     LanMultiplayerService.instance.disconnect();
     pvpArena = null;
 
@@ -316,9 +339,7 @@ class MangaGame extends FlameGame
     isGameOver = false;
     isLevelVictory = false;
     if (isLoaded && world.children.contains(player)) {
-      player.hp = player.maxHp;
-      player.isDying = false;
-      player.action = PlayerAction.idle;
+      player.resetForMatch(maxHealth: player.maxHp);
     }
     overlays.remove('manga_cutin');
     overlays.remove('pause');
@@ -339,6 +360,47 @@ class MangaGame extends FlameGame
     AudioService.playBgm(AudioService.bgmMenu);
   }
 
+  void _bindMultiplayerNotifiers() {
+    if (_multiplayerNotifiersBound) return;
+    _multiplayerNotifiersBound = true;
+    final net = LanMultiplayerService.instance;
+    net.matchSessionIdNotifier.addListener(_onMatchSessionChanged);
+    net.victoryCelebrationNotifier.addListener(_onVictoryCelebrationChanged);
+    net.resultsPodiumNotifier.addListener(_onResultsPodiumChanged);
+  }
+
+  void _unbindMultiplayerNotifiers() {
+    if (!_multiplayerNotifiersBound) return;
+    _multiplayerNotifiersBound = false;
+    final net = LanMultiplayerService.instance;
+    net.matchSessionIdNotifier.removeListener(_onMatchSessionChanged);
+    net.victoryCelebrationNotifier.removeListener(_onVictoryCelebrationChanged);
+    net.resultsPodiumNotifier.removeListener(_onResultsPodiumChanged);
+  }
+
+  void _onMatchSessionChanged() {
+    final net = LanMultiplayerService.instance;
+    final sessionId = net.matchSessionIdNotifier.value;
+    if (sessionId > 0 &&
+        sessionId != _startedMatchSessionId &&
+        (net.isConnected || net.role != MatchRole.none)) {
+      startPvPMatch();
+    }
+  }
+
+  void _onVictoryCelebrationChanged() {
+    final winner =
+        LanMultiplayerService.instance.victoryCelebrationNotifier.value;
+    if (winner == null || !isMultiplayer) return;
+    AudioService.playSfx(AudioService.sfxVictory);
+    overlays.remove('virtual_controls');
+    if (winner.id == LanMultiplayerService.instance.myPlayerId) {
+      player.performVictoryCelebration();
+    } else {
+      pvpArena?.remotePlayers[winner.id]?.triggerVictoryCelebration();
+    }
+  }
+
   void _onResultsPodiumChanged() {
     final podium = LanMultiplayerService.instance.resultsPodiumNotifier.value;
     if (podium != null && isMultiplayer) {
@@ -350,6 +412,8 @@ class MangaGame extends FlameGame
 
   void openMultiplayerLobby() {
     isMultiplayer = false;
+    _startedMatchSessionId = 0;
+    _bindMultiplayerNotifiers();
     overlays.remove('main_menu');
     overlays.remove('hud');
     overlays.remove('virtual_controls');
@@ -359,14 +423,29 @@ class MangaGame extends FlameGame
   }
 
   void closeMultiplayerLobby() {
+    _startedMatchSessionId = 0;
+    _unbindMultiplayerNotifiers();
     LanMultiplayerService.instance.disconnect();
     overlays.remove('multiplayer_lobby');
     _addOverlay('main_menu');
   }
 
   Future<void> startPvPMatch() async {
+    if (_startingPvPMatch) return;
+    _startingPvPMatch = true;
     try {
+      final net = LanMultiplayerService.instance;
+      _startedMatchSessionId = net.matchSessionIdNotifier.value;
+      _bindMultiplayerNotifiers();
       isMultiplayer = true;
+      _pressedKeys.clear();
+      _lastSentHp = null;
+      _lastSentFacing = null;
+      _lastSentAction = null;
+      _lastSentX = double.nan;
+      _lastSentY = double.nan;
+      _stateSyncAccumulator = 0.0;
+
       overlays.remove('multiplayer_lobby');
       overlays.remove('multiplayer_results');
       overlays.remove('main_menu');
@@ -386,14 +465,7 @@ class MangaGame extends FlameGame
       }
 
       // Reset local player state for PvP match
-      player.hp = 100;
-      player.maxHp = 100;
-      player.spirit = 0.0;
-      player.isDying = false;
-      player.action = PlayerAction.idle;
-      player.velocity = Vector2.zero();
-      player.touchMoveInput = 0.0;
-      player.keyboardMoveInput = 0.0;
+      player.resetForMatch(maxHealth: LanMultiplayerService.kPvpMaxHpInt);
 
       // Create and add PvP Arena (Supports up to 5 players)
       final arena = PvPArenaLevel();
@@ -406,71 +478,74 @@ class MangaGame extends FlameGame
       maxPlayerX = PvPArenaLevel.arenaWidth;
       camera.viewfinder.position = Vector2(600, 270);
 
-      // Listen to LAN network packets
+      // Listen to LAN network packets safely
       _multiplayerSub?.cancel();
-      _multiplayerSub =
-          LanMultiplayerService.instance.onMatchData.listen((data) {
-        final type = data['type'] as String?;
-        if (type == 'state') {
-          final pid = data['id'] as String?;
-          if (pid != null) {
-            pvpArena?.remotePlayers[pid]?.updateFromNetwork(
-              x: (data['x'] as num).toDouble(),
-              y: (data['y'] as num).toDouble(),
-              vx: (data['vx'] as num).toDouble(),
-              vy: (data['vy'] as num).toDouble(),
-              facing: data['f'] as int,
-              actionName: data['act'] as String,
-              remoteHp: (data['hp'] as num).toDouble(),
-              remoteOugi: (data['ougi'] as num).toDouble(),
-            );
+      _multiplayerSub = net.onMatchData.listen((data) {
+        try {
+          final type = data['type'] as String?;
+          if (type == 'state') {
+            final pid = data['id'] as String?;
+            if (pid != null) {
+              pvpArena?.remotePlayers[pid]?.updateFromNetwork(
+                x: (data['x'] as num).toDouble(),
+                y: (data['y'] as num).toDouble(),
+                vx: (data['vx'] as num).toDouble(),
+                vy: (data['vy'] as num).toDouble(),
+                facing: (data['f'] as num?)?.toInt() ?? 1,
+                actionName: (data['act'] as String?) ?? PlayerAction.idle.name,
+                remoteHp: (data['hp'] as num?)?.toDouble() ??
+                    LanMultiplayerService.kPvpMaxHp,
+                remoteOugi: (data['ougi'] as num?)?.toDouble() ?? 0.0,
+              );
+            }
+          } else if (type == 'spawn_kunai') {
+            final throwerId = data['throwerId'] as String?;
+            if (throwerId != net.myPlayerId) {
+              world.add(InkKunai(
+                position: Vector2(
+                  (data['x'] as num).toDouble(),
+                  (data['y'] as num).toDouble(),
+                ),
+                velocity: Vector2(
+                  (data['vx'] as num).toDouble(),
+                  (data['vy'] as num).toDouble(),
+                ),
+                damage: 32.0,
+                throwerId: throwerId ?? '',
+                isFromRemote: true,
+              ));
+            }
+          } else if (type == 'hit') {
+            final targetId = data['targetId'] as String?;
+            if (targetId == net.myPlayerId) {
+              final dmg = (data['dmg'] as num).toDouble();
+              final kbX = (data['kbX'] as num?)?.toDouble() ?? 0.0;
+              final kbY = (data['kbY'] as num?)?.toDouble() ?? 0.0;
+              player.takeMultiplayerDamage(dmg, knockbackX: kbX, knockbackY: kbY);
+            }
+          } else if (type == 'player_eliminated') {
+            final pid = data['id'] as String?;
+            if (pid != null) {
+              final remote = pvpArena?.remotePlayers[pid];
+              if (remote != null) {
+                remote.takeDamage(remote.maxHp);
+              }
+            }
           }
-        } else if (type == 'spawn_kunai') {
-          final throwerId = data['throwerId'] as String?;
-          if (throwerId != LanMultiplayerService.instance.myPlayerId) {
-            world.add(InkKunai(
-              position: Vector2(
-                (data['x'] as num).toDouble(),
-                (data['y'] as num).toDouble(),
-              ),
-              velocity: Vector2(
-                (data['vx'] as num).toDouble(),
-                (data['vy'] as num).toDouble(),
-              ),
-              damage: 32.0,
-              throwerId: throwerId ?? '',
-              isFromRemote: true,
-            ));
-          }
-        } else if (type == 'hit') {
-          final targetId = data['targetId'] as String?;
-          if (targetId == LanMultiplayerService.instance.myPlayerId) {
-            final dmg = (data['dmg'] as num).toDouble();
-            final kbX = (data['kbX'] as num?)?.toDouble() ?? 0.0;
-            final kbY = (data['kbY'] as num?)?.toDouble() ?? 0.0;
-            player.takeMultiplayerDamage(dmg, knockbackX: kbX, knockbackY: kbY);
-          }
-        } else if (type == 'player_eliminated') {
-          final pid = data['id'] as String?;
-          if (pid != null) {
-            pvpArena?.remotePlayers[pid]?.takeDamage(100.0);
-          }
+        } catch (e) {
+          debugPrint('[PvP Packet Error] $e');
         }
       });
 
-      // Listen to match results podium
-      LanMultiplayerService.instance.resultsPodiumNotifier
-          .removeListener(_onResultsPodiumChanged);
-      LanMultiplayerService.instance.resultsPodiumNotifier
-          .addListener(_onResultsPodiumChanged);
-
       _addOverlay('multiplayer_hud');
       _addOverlay('virtual_controls');
+      onRequestGameFocus?.call();
 
       AudioService.playBgm(AudioService.bgmBoss);
     } catch (e, stack) {
       debugPrint('[PvP Match Error] $e\n$stack');
     } finally {
+      _startingPvPMatch = false;
       resumeEngine();
     }
   }
@@ -817,16 +892,33 @@ class MangaGame extends FlameGame
       );
 
       if (isMultiplayer) {
-        LanMultiplayerService.instance.sendPlayerState(
-          x: player.position.x,
-          y: player.position.y,
-          vx: player.velocity.x,
-          vy: player.velocity.y,
-          facing: player.facingDirection,
-          action: player.action.name,
-          hp: player.hp.toDouble(),
-          ougi: player.spirit,
-        );
+        _stateSyncAccumulator += clampedDt;
+        final currentAction = player.action.name;
+        final movedSignificantly = _lastSentX.isNaN ||
+            (player.position.x - _lastSentX).abs() > 0.5 ||
+            (player.position.y - _lastSentY).abs() > 0.5;
+        final urgentChange = currentAction != _lastSentAction ||
+            player.facingDirection != _lastSentFacing ||
+            player.hp != _lastSentHp;
+        final syncInterval = movedSignificantly ? 0.033 : 0.20;
+        if (urgentChange || _stateSyncAccumulator >= syncInterval) {
+          _stateSyncAccumulator = 0.0;
+          _lastSentX = player.position.x;
+          _lastSentY = player.position.y;
+          _lastSentFacing = player.facingDirection;
+          _lastSentAction = currentAction;
+          _lastSentHp = player.hp;
+          LanMultiplayerService.instance.sendPlayerState(
+            x: player.position.x,
+            y: player.position.y,
+            vx: player.velocity.x,
+            vy: player.velocity.y,
+            facing: player.facingDirection,
+            action: currentAction,
+            hp: player.hp.toDouble(),
+            ougi: player.spirit,
+          );
+        }
 
         const double targetCamX = 600.0;
         const double targetCamY = 270.0;
