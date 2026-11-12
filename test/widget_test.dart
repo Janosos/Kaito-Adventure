@@ -650,6 +650,132 @@ void main() {
   });
 
   testWidgets(
+      'Multiplayer disables health regeneration, syncs rapid combo hits, and zeroes HP on death or ring out',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(800, 360);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    final net = LanMultiplayerService.instance;
+    await net.disconnect();
+    addTearDown(() async => await net.disconnect());
+
+    net.role = MatchRole.host;
+    net.isConnected = true;
+    net.myPlayerId = 'p_host';
+    net.mySlot = 0;
+    net.roomPlayers['p_host'] = MultiplayerPlayer(
+      id: 'p_host',
+      nickname: 'KaitoHost',
+      colorIndex: 0,
+      slot: 0,
+      isHost: true,
+    );
+    net.roomPlayers['p_2'] = MultiplayerPlayer(
+      id: 'p_2',
+      nickname: 'Rival',
+      colorIndex: 1,
+      slot: 1,
+    );
+    net.roomPlayers['p_3'] = MultiplayerPlayer(
+      id: 'p_3',
+      nickname: 'ThirdShinobi',
+      colorIndex: 2,
+      slot: 2,
+    );
+    net.roomPlayersNotifier.value = net.roomPlayers.values.toList();
+
+    final game = MangaGame();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: GameWidget<MangaGame>(
+            game: game,
+            overlayBuilderMap: {
+              'multiplayer_hud': (_, g) => MultiplayerHud(game: g),
+              'virtual_controls': (_, g) => const SizedBox.shrink(),
+              'multiplayer_results': (_, g) =>
+                  MultiplayerResultsOverlay(game: g),
+            },
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    net.hostStartMatch();
+    await game.startPvPMatch();
+    await tester.pump(const Duration(milliseconds: 50));
+
+    // Rapid consecutive combo hits apply cleanly without post-hit i-frames swallowing hits
+    game.player.takeMultiplayerDamage(15);
+    expect(game.player.hp, 285);
+    game.player.takeMultiplayerDamage(23);
+    expect(game.player.hp, 262);
+
+    // Healing is strictly blocked in multiplayer
+    game.healPlayer(50);
+    expect(game.player.hp, 262);
+
+    // Remote player HP moves monotonically downward; stale higher state packets cannot regenerate HP
+    final remote = game.pvpArena!.remotePlayers['p_2']!;
+    remote.takeDamage(40);
+    expect(remote.hp, 260.0);
+    remote.updateFromNetwork(
+      x: remote.position.x,
+      y: remote.position.y,
+      vx: 0,
+      vy: 0,
+      facing: 1,
+      actionName: 'idle',
+      remoteHp: 300.0,
+      remoteOugi: 0.0,
+    );
+    expect(remote.hp, 260.0);
+
+    //Elimination locks remote HP at 0 even if stale positive HP packets arrive afterward
+    remote.markEliminated();
+    expect(remote.isDying, isTrue);
+    expect(remote.hp, 0.0);
+    remote.updateFromNetwork(
+      x: remote.position.x,
+      y: remote.position.y,
+      vx: 0,
+      vy: 0,
+      facing: 1,
+      actionName: 'idle',
+      remoteHp: 45.0,
+      remoteOugi: 0.0,
+    );
+    expect(remote.hp, 0.0);
+
+    // Relay service state also ignores HP increases & zeroes HP on elimination
+    net.debugInjectClientPacket('p_2', {'type': 'state', 'hp': 240.0});
+    expect(net.roomPlayers['p_2']!.hp, 240.0);
+    net.debugInjectClientPacket('p_2', {'type': 'state', 'hp': 290.0});
+    expect(net.roomPlayers['p_2']!.hp, 240.0);
+    net.debugInjectClientPacket('p_2', {'type': 'player_eliminated'});
+    expect(net.roomPlayers['p_2']!.hp, 0.0);
+
+    // Ring out sets local player HP cleanly to 0 rather than leaving partial HP
+    game.player.position.y = 800;
+    game.pvpArena!.update(0.016);
+    expect(game.pvpArena!.localPlayerEliminated, isTrue);
+    expect(game.player.isDying, isTrue);
+    expect(game.player.hp, 0);
+    expect(net.victoryCelebrationNotifier.value?.id, 'p_3');
+
+    await net.disconnect();
+    game.pauseEngine();
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump();
+  });
+
+  testWidgets(
       'LanMultiplayerService delays podium for victory celebration and runs cancellable 10s rematch countdown',
       (WidgetTester tester) async {
     final net = LanMultiplayerService.instance;

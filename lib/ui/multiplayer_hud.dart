@@ -97,10 +97,23 @@ class _MultiplayerHudState extends State<MultiplayerHud> {
 
   Widget _buildDuelLayout(LanMultiplayerService net, dynamic player) {
     final remotePlayer = game.pvpArena?.remotePlayers.values.firstOrNull;
-    final remoteHp = remotePlayer?.hp ?? LanMultiplayerService.kPvpMaxHp;
-    final remoteOugi = remotePlayer?.ougi ?? 0.0;
+    final remoteEntryAlive = remotePlayer == null
+        ? true
+        : (net.roomPlayers[remotePlayer.id]?.isAlive ?? true);
+    final remoteDead =
+        remotePlayer != null && (remotePlayer.isDying || !remoteEntryAlive);
+    final remoteHp = remoteDead
+        ? 0.0
+        : (remotePlayer?.hp ?? LanMultiplayerService.kPvpMaxHp);
+    final remoteOugi = remoteDead ? 0.0 : (remotePlayer?.ougi ?? 0.0);
     final remoteName = remotePlayer?.nickname ?? 'Rival';
     final remoteColor = remotePlayer?.playerColor ?? const Color(0xFF00E5FF);
+
+    final localEntryAlive = net.roomPlayers[net.myPlayerId]?.isAlive ?? true;
+    final localDead = (player.isDying as bool) ||
+        (game.pvpArena?.localPlayerEliminated ?? false) ||
+        !localEntryAlive;
+    final localHp = localDead ? 0 : (player.hp as int);
 
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -127,7 +140,7 @@ class _MultiplayerHudState extends State<MultiplayerHud> {
                     ),
                   ),
                   Text(
-                    '${player.hp.clamp(0, LanMultiplayerService.kPvpMaxHpInt).toInt()} / ${LanMultiplayerService.kPvpMaxHpInt}',
+                    '${localHp.clamp(0, LanMultiplayerService.kPvpMaxHpInt)} / ${LanMultiplayerService.kPvpMaxHpInt}',
                     style: ComicTheme.titleText(
                       size: 13,
                       color: ComicTheme.comicYellow,
@@ -137,13 +150,15 @@ class _MultiplayerHudState extends State<MultiplayerHud> {
               ),
               const SizedBox(height: 4),
               _buildHealthBar(
-                ratio: (player.hp / LanMultiplayerService.kPvpMaxHp)
+                ratio: (localHp / LanMultiplayerService.kPvpMaxHp)
                     .clamp(0.0, 1.0),
                 isReversed: false,
               ),
               const SizedBox(height: 3),
               _buildOugiBar(
-                ratio: (player.spirit / 100.0).clamp(0.0, 1.0),
+                ratio: localDead
+                    ? 0.0
+                    : (player.spirit / 100.0).clamp(0.0, 1.0),
                 isReversed: false,
               ),
             ],
@@ -251,10 +266,15 @@ class _MultiplayerHudState extends State<MultiplayerHud> {
     required double localHp,
   }) {
     final remote = game.pvpArena?.remotePlayers[p.id];
-    final currentHp = isLocal ? localHp : (remote?.hp ?? p.hp);
+    final dead = !p.isAlive ||
+        (isLocal
+            ? (game.player.isDying ||
+                (game.pvpArena?.localPlayerEliminated ?? false))
+            : (remote?.isDying ?? false));
+    final currentHp = dead ? 0.0 : (isLocal ? localHp : (remote?.hp ?? p.hp));
     final ratio =
         (currentHp / LanMultiplayerService.kPvpMaxHp).clamp(0.0, 1.0);
-    final isAlive = currentHp > 0 && p.isAlive;
+    final isAlive = !dead && currentHp > 0;
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),

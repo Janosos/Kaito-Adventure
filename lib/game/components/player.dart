@@ -434,7 +434,10 @@ class MangaPlayer extends PositionComponent
     }
     if (game.isMultiplayer) {
       for (final remote in game.queryWorld<RemotePlayer>().toList()) {
-        if ((remote.position.x - position.x).abs() < 420 && !remote.isDying) {
+        if ((remote.position.x - position.x).abs() < 420 &&
+            !remote.isDying &&
+            !remote.isCelebrating &&
+            remote.action != PlayerAction.dashing) {
           final dmg = 45.0;
           final kb = Vector2(facingDirection * 24.0, -8.0);
           remote.takeDamage(dmg, knockback: kb);
@@ -543,7 +546,9 @@ class MangaPlayer extends PositionComponent
     // 7. PvP Duel & Battle Royale: Hit Remote Opponents
     if (game.isMultiplayer) {
       for (final remote in game.queryWorld<RemotePlayer>().toList()) {
-        if (!remote.isDying) {
+        if (!remote.isDying &&
+            !remote.isCelebrating &&
+            remote.action != PlayerAction.dashing) {
           final remoteCenter =
               Vector2(remote.position.x, remote.position.y - remote.size.y * 0.5);
           if (_isInSlashArc(remoteCenter, extraReach: 15.0)) {
@@ -623,14 +628,15 @@ class MangaPlayer extends PositionComponent
   }
 
   void takeMultiplayerDamage(double amount, {double knockbackX = 0, double knockbackY = 0}) {
-    if (isInvulnerable ||
-        isDying ||
+    if (isDying ||
         isCelebrating ||
+        isDashing ||
+        hp <= 0 ||
         LanMultiplayerService.instance.victoryCelebrationNotifier.value != null) {
       return;
     }
 
-    hp -= amount.toInt();
+    hp = (hp - amount.toInt()).clamp(0, maxHp);
     if (hp <= 0) {
       hp = 0;
       _startDeathSequence();
@@ -642,8 +648,9 @@ class MangaPlayer extends PositionComponent
     AudioService.playSfx(AudioService.sfxPlayerHurt);
     AudioService.heavyHaptic();
 
-    invulnerableTimer = 0.8;
-    hurtAnimTimer = 0.30;
+    // No post-hit invulnerability timer in PvP so combo hits & kunais stay synced with attackers.
+    invulnerableTimer = 0.0;
+    hurtAnimTimer = 0.25;
     action = PlayerAction.hurt;
     if (knockbackX != 0 || knockbackY != 0) {
       velocity.x = knockbackX * 25.0;
@@ -691,6 +698,7 @@ class MangaPlayer extends PositionComponent
   void _startDeathSequence() {
     if (isDying) return;
     isDying = true;
+    hp = 0;
     isDashing = false;
     touchMoveInput = 0.0;
     keyboardMoveInput = 0.0;

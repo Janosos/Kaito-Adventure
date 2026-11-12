@@ -526,10 +526,7 @@ class MangaGame extends FlameGame
           } else if (type == 'player_eliminated') {
             final pid = data['id'] as String?;
             if (pid != null) {
-              final remote = pvpArena?.remotePlayers[pid];
-              if (remote != null) {
-                remote.takeDamage(remote.maxHp);
-              }
+              pvpArena?.remotePlayers[pid]?.markEliminated();
             }
           }
         } catch (e) {
@@ -714,6 +711,7 @@ class MangaGame extends FlameGame
   }
 
   void healPlayer(int amount) {
+    if (isMultiplayer) return;
     player.hp = (player.hp + amount).clamp(0, player.maxHp);
   }
 
@@ -897,9 +895,11 @@ class MangaGame extends FlameGame
         final movedSignificantly = _lastSentX.isNaN ||
             (player.position.x - _lastSentX).abs() > 0.5 ||
             (player.position.y - _lastSentY).abs() > 0.5;
+        final localDead = player.isDying || player.hp <= 0;
+        final reportedHp = localDead ? 0 : player.hp;
         final urgentChange = currentAction != _lastSentAction ||
             player.facingDirection != _lastSentFacing ||
-            player.hp != _lastSentHp;
+            reportedHp != _lastSentHp;
         final syncInterval = movedSignificantly ? 0.033 : 0.20;
         if (urgentChange || _stateSyncAccumulator >= syncInterval) {
           _stateSyncAccumulator = 0.0;
@@ -907,7 +907,7 @@ class MangaGame extends FlameGame
           _lastSentY = player.position.y;
           _lastSentFacing = player.facingDirection;
           _lastSentAction = currentAction;
-          _lastSentHp = player.hp;
+          _lastSentHp = reportedHp;
           LanMultiplayerService.instance.sendPlayerState(
             x: player.position.x,
             y: player.position.y,
@@ -915,8 +915,8 @@ class MangaGame extends FlameGame
             vy: player.velocity.y,
             facing: player.facingDirection,
             action: currentAction,
-            hp: player.hp.toDouble(),
-            ougi: player.spirit,
+            hp: reportedHp.toDouble(),
+            ougi: localDead ? 0.0 : player.spirit,
           );
         }
 

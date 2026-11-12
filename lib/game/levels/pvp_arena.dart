@@ -122,7 +122,9 @@ class PvPArenaLevel extends Component with HasGameReference<MangaGame> {
     // Fall to Void / Ring Out detection for Local Player
     if (player.position.y > voidDeathY) {
       localPlayerEliminated = true;
+      player.hp = 0;
       player.isDying = true;
+      player.velocity.setZero();
       AudioService.playSfx(AudioService.sfxPlayerDeath);
 
       game.add(MangaTextEffect(

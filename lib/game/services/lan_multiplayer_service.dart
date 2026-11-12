@@ -487,9 +487,18 @@ class LanMultiplayerService {
     if (type == 'state') {
       final pid = senderId ?? map['id'] as String?;
       if (pid != null && roomPlayers.containsKey(pid)) {
-        roomPlayers[pid]!.hp =
-            (map['hp'] as num?)?.toDouble() ?? LanMultiplayerService.kPvpMaxHp;
-        roomPlayers[pid]!.ougi = (map['ougi'] as num?)?.toDouble() ?? 0.0;
+        final rp = roomPlayers[pid]!;
+        if (!rp.isAlive) {
+          rp.hp = 0.0;
+        } else {
+          final incomingHp = (map['hp'] as num?)?.toDouble() ??
+              LanMultiplayerService.kPvpMaxHp;
+          // No health regeneration in multiplayer: HP only moves downward.
+          if (incomingHp.isFinite && incomingHp < rp.hp) {
+            rp.hp = incomingHp.clamp(0.0, LanMultiplayerService.kPvpMaxHp);
+          }
+        }
+        rp.ougi = (map['ougi'] as num?)?.toDouble() ?? 0.0;
       }
       // Re-broadcast state to all OTHER clients
       _broadcastToClients(map, excludeClientId: senderId);
@@ -505,6 +514,7 @@ class LanMultiplayerService {
       final pid = senderId ?? map['id'] as String?;
       if (pid != null && roomPlayers.containsKey(pid)) {
         final deadPlayer = roomPlayers[pid]!;
+        deadPlayer.hp = 0.0;
         if (deadPlayer.isAlive) {
           deadPlayer.isAlive = false;
           final aliveCount = roomPlayers.values.where((p) => p.isAlive).length;
@@ -855,6 +865,7 @@ class LanMultiplayerService {
               final pid = map['id'] as String?;
               if (pid != null && roomPlayers.containsKey(pid)) {
                 roomPlayers[pid]!.isAlive = false;
+                roomPlayers[pid]!.hp = 0.0;
                 roomPlayers[pid]!.placement = map['placement'] as int? ?? 0;
                 _updateRoomPlayersNotifier();
               }
@@ -972,6 +983,9 @@ class LanMultiplayerService {
   void sendLocalPlayerEliminated() {
     if (role == MatchRole.host) {
       final hostPlayer = roomPlayers[myPlayerId];
+      if (hostPlayer != null) {
+        hostPlayer.hp = 0.0;
+      }
       if (hostPlayer != null && hostPlayer.isAlive) {
         hostPlayer.isAlive = false;
         final aliveCount = roomPlayers.values.where((p) => p.isAlive).length;

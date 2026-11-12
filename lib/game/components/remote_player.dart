@@ -154,7 +154,15 @@ class RemotePlayer extends PositionComponent
     targetPosition.setValues(x, y);
     networkVelocity.setValues(vx, vy);
     facingDirection = facing < 0 ? -1 : 1;
-    if (remoteHp.isFinite) {
+
+    // Never allow health regeneration or stale higher HP packets in PvP
+    if (isDying) {
+      hp = 0.0;
+      ougi = 0.0;
+      return;
+    }
+
+    if (remoteHp.isFinite && remoteHp < hp) {
       hp = remoteHp.clamp(0.0, maxHp);
     }
     if (remoteOugi.isFinite) {
@@ -163,6 +171,7 @@ class RemotePlayer extends PositionComponent
 
     if (hp <= 0 && !isDying && !isCelebrating) {
       isDying = true;
+      hp = 0.0;
       action = PlayerAction.death;
       _tickers?[action]?.reset();
       return;
@@ -182,6 +191,17 @@ class RemotePlayer extends PositionComponent
     }
   }
 
+  void markEliminated() {
+    hp = 0.0;
+    ougi = 0.0;
+    if (!isDying) {
+      isDying = true;
+      hitFlashTimer = 0.18;
+      action = PlayerAction.death;
+      _tickers?[action]?.reset();
+    }
+  }
+
   void triggerVictoryCelebration() {
     if (isDying || isCelebrating) return;
     isCelebrating = true;
@@ -197,7 +217,11 @@ class RemotePlayer extends PositionComponent
   }
 
   void takeDamage(double dmg, {Vector2? knockback}) {
-    if (isDying || isCelebrating) return;
+    if (isDying ||
+        isCelebrating ||
+        LanMultiplayerService.instance.victoryCelebrationNotifier.value != null) {
+      return;
+    }
     hp = (hp - dmg).clamp(0.0, maxHp);
     hitFlashTimer = 0.18;
     game.add(MangaDustEffect(position: Vector2(position.x, position.y - 30)));
@@ -209,6 +233,7 @@ class RemotePlayer extends PositionComponent
     ));
 
     if (hp <= 0) {
+      hp = 0.0;
       isDying = true;
       action = PlayerAction.death;
       _tickers?[action]?.reset();

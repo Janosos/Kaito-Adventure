@@ -115,7 +115,13 @@ class InkKunai extends PositionComponent
       other.triggerSwitch();
       _impact(other.position);
     } else if (other is RemotePlayer) {
-      if (other.id == throwerId || other.isDying) return;
+      if (isFromRemote ||
+          other.id == throwerId ||
+          other.isDying ||
+          other.isCelebrating ||
+          other.action == PlayerAction.dashing) {
+        return;
+      }
       _hasCollided = true;
       other.takeDamage(damage, knockback: Vector2(kbDir * 8.0, -3.0));
       LanMultiplayerService.instance.sendHitDamage(
@@ -127,14 +133,12 @@ class InkKunai extends PositionComponent
       );
       _impact(other.position);
     } else if (other is MangaPlayer) {
-      // Remote kunai hits local player
-      if (isFromRemote && !other.isDying) {
+      // Visual impact only; thrower's authoritative 'hit' packet applies PvP damage once.
+      if (isFromRemote &&
+          !other.isDying &&
+          !other.isCelebrating &&
+          other.action != PlayerAction.dashing) {
         _hasCollided = true;
-        other.takeMultiplayerDamage(
-          damage,
-          knockbackX: kbDir * 8.0,
-          knockbackY: -3.0,
-        );
         _impact(other.position);
       }
     }
