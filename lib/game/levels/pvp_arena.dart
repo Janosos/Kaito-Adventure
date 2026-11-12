@@ -88,9 +88,11 @@ class PvPArenaLevel extends Component with HasGameReference<MangaGame> {
     game.player.touchMoveInput = 0.0;
     game.player.keyboardMoveInput = 0.0;
 
-    // 4. Add all Remote Opponents into the arena
+    // 4. Add all Remote Opponents directly into game.world for identical camera & render pipeline
     for (final remote in remotePlayers.values) {
-      add(remote);
+      if (!game.world.children.contains(remote)) {
+        await game.world.add(remote);
+      }
     }
 
     // Initial Battle Cry Effect
@@ -133,5 +135,15 @@ class PvPArenaLevel extends Component with HasGameReference<MangaGame> {
       LanMultiplayerService.instance.sendLocalPlayerEliminated();
       game.onLocalPlayerEliminated();
     }
+  }
+
+  @override
+  void onRemove() {
+    for (final remote in remotePlayers.values) {
+      if (remote.isMounted) {
+        remote.removeFromParent();
+      }
+    }
+    super.onRemove();
   }
 }

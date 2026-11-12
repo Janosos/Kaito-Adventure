@@ -25,7 +25,7 @@ class RemotePlayer extends PositionComponent
   bool isDying = false;
   double hitFlashTimer = 0.0;
 
-  late final Map<PlayerAction, SpriteAnimationTicker> _tickers;
+  Map<PlayerAction, SpriteAnimationTicker>? _tickers;
 
   RemotePlayer({
     required this.id,
@@ -44,8 +44,6 @@ class RemotePlayer extends PositionComponent
 
   @override
   Future<void> onLoad() async {
-    await super.onLoad();
-
     final imgs = game.images;
     _tickers = {
       PlayerAction.idle: CartoonAssets.animation(
@@ -126,6 +124,8 @@ class RemotePlayer extends PositionComponent
       ).createTicker(),
     };
 
+    await super.onLoad();
+
     add(RectangleHitbox(
       position: Vector2(2, 4),
       size: Vector2(30, 48),
@@ -151,7 +151,7 @@ class RemotePlayer extends PositionComponent
     if (hp <= 0 && !isDying) {
       isDying = true;
       action = PlayerAction.death;
-      _tickers[action]?.reset();
+      _tickers?[action]?.reset();
       return;
     }
 
@@ -160,7 +160,7 @@ class RemotePlayer extends PositionComponent
       if (a.name == actionName) {
         if (action != a && !isDying) {
           action = a;
-          _tickers[a]?.reset();
+          _tickers?[a]?.reset();
         }
         break;
       }
@@ -182,7 +182,7 @@ class RemotePlayer extends PositionComponent
     if (hp <= 0) {
       isDying = true;
       action = PlayerAction.death;
-      _tickers[action]?.reset();
+      _tickers?[action]?.reset();
     }
 
     if (knockback != null) {
@@ -203,7 +203,7 @@ class RemotePlayer extends PositionComponent
       position.lerp(targetPosition, (dt * 24.0).clamp(0.0, 1.0));
     }
 
-    final ticker = _tickers[action] ?? _tickers[PlayerAction.idle];
+    final ticker = _tickers?[action] ?? _tickers?[PlayerAction.idle];
     ticker?.update(dt);
   }
 
@@ -211,8 +211,11 @@ class RemotePlayer extends PositionComponent
   void render(Canvas canvas) {
     super.render(canvas);
 
-    final ticker = _tickers[action] ?? _tickers[PlayerAction.idle];
-    if (ticker == null) return;
+    final ticker = _tickers?[action] ?? _tickers?[PlayerAction.idle];
+    if (ticker == null) {
+      _renderNicknameTag(canvas);
+      return;
+    }
     final sprite = ticker.getSprite();
 
     final isWideSheet = action == PlayerAction.attack1 ||

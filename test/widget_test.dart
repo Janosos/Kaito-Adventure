@@ -1,3 +1,4 @@
+import 'dart:ui';
 import 'package:flame/components.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -546,7 +547,65 @@ void main() {
 
     await net.disconnect();
     await tester.pumpWidget(const SizedBox.shrink());
+  });
 
-    await tester.pumpWidget(const SizedBox.shrink());
+  testWidgets(
+      'PvP match spawns RemotePlayer in world, updates smoothly, and renders cleanly',
+      (WidgetTester tester) async {
+    final game = MangaGame();
+    await tester.runAsync(() async {
+      game.onGameResize(Vector2(960, 540));
+      await game.onLoad();
+      // ignore: invalid_use_of_internal_member
+      game.setLoaded();
+      // ignore: invalid_use_of_internal_member
+      game.setMounted();
+      game.update(0);
+      await game.ready();
+
+      final net = LanMultiplayerService.instance;
+      net.myPlayerId = 'p_host';
+      net.mySlot = 0;
+      net.roomPlayers['p_host'] = MultiplayerPlayer(
+        id: 'p_host',
+        nickname: 'Jano',
+        colorIndex: 0,
+        slot: 0,
+        isHost: true,
+      );
+      net.roomPlayers['p_1'] = MultiplayerPlayer(
+        id: 'p_1',
+        nickname: 'Kaito_176',
+        colorIndex: 1,
+        slot: 1,
+        isHost: false,
+      );
+
+      await game.startPvPMatch();
+      await game.ready();
+
+      final remote = game.pvpArena?.remotePlayers['p_1'];
+      expect(remote, isNotNull);
+      expect(remote!.isMounted, isTrue);
+      expect(game.world.children.contains(remote), isTrue);
+
+      // Verify remote player updates and renders without crashing
+      for (int i = 0; i < 5; i++) {
+        game.update(0.016);
+      }
+
+      final recorder = PictureRecorder();
+      final canvas = Canvas(recorder);
+      game.render(canvas);
+      final pic = recorder.endRecording();
+      pic.dispose();
+
+      // Throw kunai and verify it does not crash or pause engine
+      game.player.performThrowKunai();
+      game.update(0.016);
+      expect(game.paused, isFalse);
+
+      await net.disconnect();
+    });
   });
 }

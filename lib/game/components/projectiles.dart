@@ -26,7 +26,7 @@ class InkKunai extends PositionComponent
   final bool isFromRemote;
   double _lifeTimer = 0.0;
   static const double maxLife = 1.6;
-  late final SpriteAnimationTicker _ticker;
+  SpriteAnimationTicker? _ticker;
   bool _hasCollided = false;
 
   InkKunai({
@@ -60,7 +60,7 @@ class InkKunai extends PositionComponent
   @override
   void update(double dt) {
     super.update(dt);
-    _ticker.update(dt);
+    _ticker?.update(dt);
     position += velocity * dt;
     _lifeTimer += dt;
 
@@ -71,7 +71,8 @@ class InkKunai extends PositionComponent
 
   @override
   void render(Canvas canvas) {
-    final sprite = _ticker.getSprite();
+    final sprite = _ticker?.getSprite();
+    if (sprite == null) return;
     sprite.render(
       canvas,
       position: Vector2.zero(),

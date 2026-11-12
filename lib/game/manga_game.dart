@@ -691,6 +691,7 @@ class MangaGame extends FlameGame
   }
 
   void finalizePlayerDeath() {
+    if (isMultiplayer) return; // In multiplayer, match results podium handles match end!
     isGameOver = true;
     AudioService.stopBgm();
     AudioService.playSfx(AudioService.sfxGameOver);
