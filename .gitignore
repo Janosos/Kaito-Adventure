@@ -50,3 +50,8 @@ app.*.map.json
 # Vercel & CI Build Cache
 .vercel/
 flutter/
+
+# Release artifacts
+/releases/
+*.zip
+*.apk
