@@ -41,55 +41,77 @@ class _MultiplayerHudState extends State<MultiplayerHud> {
     final net = LanMultiplayerService.instance;
     final player = game.player;
 
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            FittedBox(
-              fit: BoxFit.scaleDown,
-              child: SizedBox(
-                width: 860,
-                child: ValueListenableBuilder<List<MultiplayerPlayer>>(
-                  valueListenable: net.roomPlayersNotifier,
-                  builder: (context, players, _) {
-                    if (players.length <= 2) {
-                      return _buildDuelLayout(net, player);
-                    }
-                    return _buildBattleRoyaleLayout(net, player, players);
-                  },
-                ),
-              ),
-            ),
-            ValueListenableBuilder<MultiplayerPlayer?>(
-              valueListenable: net.victoryCelebrationNotifier,
-              builder: (context, winner, _) {
-                if (winner == null) return const SizedBox.shrink();
-                return Padding(
-                  padding: const EdgeInsets.only(top: 10),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 20,
-                      vertical: 8,
-                    ),
-                    decoration: ComicTheme.panelDecoration(
-                      backgroundColor: ComicTheme.comicYellow,
-                      borderWidth: 3.5,
-                      shadowOffset: 5,
-                    ),
-                    child: Text(
-                      '¡CAMPEÓN: ${winner.nickname.toUpperCase()}!',
-                      style: ComicTheme.titleText(
-                        size: 20,
-                        color: ComicTheme.inkBlack,
+    return SizedBox(
+      width: double.infinity,
+      child: SafeArea(
+        child: Align(
+          alignment: Alignment.topCenter,
+          heightFactor: 1.0,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final maxW = constraints.maxWidth.isFinite
+                    ? constraints.maxWidth
+                    : 860.0;
+                // On compact phones (< 860) scale down cleanly; on tablets and wide
+                // landscape screens expand responsively up to 1240px and keep centered.
+                final hudWidth =
+                    maxW > 860.0 ? (maxW * 0.94).clamp(860.0, 1240.0) : 860.0;
+
+                return Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.topCenter,
+                      child: SizedBox(
+                        width: hudWidth,
+                        child: ValueListenableBuilder<List<MultiplayerPlayer>>(
+                          valueListenable: net.roomPlayersNotifier,
+                          builder: (context, players, _) {
+                            if (players.length <= 2) {
+                              return _buildDuelLayout(net, player);
+                            }
+                            return _buildBattleRoyaleLayout(
+                                net, player, players);
+                          },
+                        ),
                       ),
                     ),
-                  ),
+                    ValueListenableBuilder<MultiplayerPlayer?>(
+                      valueListenable: net.victoryCelebrationNotifier,
+                      builder: (context, winner, _) {
+                        if (winner == null) return const SizedBox.shrink();
+                        return Padding(
+                          padding: const EdgeInsets.only(top: 10),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 20,
+                              vertical: 8,
+                            ),
+                            decoration: ComicTheme.panelDecoration(
+                              backgroundColor: ComicTheme.comicYellow,
+                              borderWidth: 3.5,
+                              shadowOffset: 5,
+                            ),
+                            child: Text(
+                              '¡CAMPEÓN: ${winner.nickname.toUpperCase()}!',
+                              style: ComicTheme.titleText(
+                                size: 20,
+                                color: ComicTheme.inkBlack,
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ],
                 );
               },
             ),
-          ],
+          ),
         ),
       ),
     );
