@@ -22,16 +22,21 @@ import 'levels/level_two.dart';
 import 'levels/level_three.dart';
 import 'levels/level_four.dart';
 import 'levels/level_five.dart';
+import 'levels/level_six.dart';
+import 'levels/level_seven.dart';
+import 'levels/level_eight.dart';
+import 'levels/level_nine.dart';
+import 'levels/level_ten.dart';
 
 class MangaGame extends FlameGame
     with HasCollisionDetection, KeyboardEvents, TapCallbacks {
-  static const int totalLevels = 5;
+  static const int totalLevels = 10;
 
   late MangaPlayer player;
   BossBase? activeBoss;
 
   int currentLevelIndex = 1;
-  int unlockedLevel = 5;
+  int unlockedLevel = 10;
   int score = 0;
   bool isGameOver = false;
   bool isLevelVictory = false;
@@ -268,12 +273,47 @@ class MangaGame extends FlameGame
         _currentLevelComponent = LevelFour();
         break;
       case 5:
-      default:
         currentSpawnPoint = LevelFive.spawnPosition.clone();
         currentLevelWidth = LevelFive.levelWidth;
         currentBossGateX = LevelFive.bossArenaTriggerX;
         currentArenaCamX = LevelFive.arenaCenterX;
         _currentLevelComponent = LevelFive();
+        break;
+      case 6:
+        currentSpawnPoint = LevelSix.spawnPosition.clone();
+        currentLevelWidth = LevelSix.levelWidth;
+        currentBossGateX = LevelSix.bossArenaTriggerX;
+        currentArenaCamX = LevelSix.arenaCenterX;
+        _currentLevelComponent = LevelSix();
+        break;
+      case 7:
+        currentSpawnPoint = LevelSeven.spawnPosition.clone();
+        currentLevelWidth = LevelSeven.levelWidth;
+        currentBossGateX = LevelSeven.bossArenaTriggerX;
+        currentArenaCamX = LevelSeven.arenaCenterX;
+        _currentLevelComponent = LevelSeven();
+        break;
+      case 8:
+        currentSpawnPoint = LevelEight.spawnPosition.clone();
+        currentLevelWidth = LevelEight.levelWidth;
+        currentBossGateX = LevelEight.bossArenaTriggerX;
+        currentArenaCamX = LevelEight.arenaCenterX;
+        _currentLevelComponent = LevelEight();
+        break;
+      case 9:
+        currentSpawnPoint = LevelNine.spawnPosition.clone();
+        currentLevelWidth = LevelNine.levelWidth;
+        currentBossGateX = LevelNine.bossArenaTriggerX;
+        currentArenaCamX = LevelNine.arenaCenterX;
+        _currentLevelComponent = LevelNine();
+        break;
+      case 10:
+      default:
+        currentSpawnPoint = LevelTen.spawnPosition.clone();
+        currentLevelWidth = LevelTen.levelWidth;
+        currentBossGateX = LevelTen.bossArenaTriggerX;
+        currentArenaCamX = LevelTen.arenaCenterX;
+        _currentLevelComponent = LevelTen();
         break;
     }
     maxPlayerX = currentLevelWidth - 40.0;
@@ -794,6 +834,16 @@ class MangaGame extends FlameGame
       cutInPortraitAsset = CartoonAssets.portraitHebiHime;
     } else if (bossName.contains('YUKI')) {
       cutInPortraitAsset = CartoonAssets.portraitYukiOni;
+    } else if (bossName.contains('GENJI') || bossName.contains('KARAKURI')) {
+      cutInPortraitAsset = CartoonAssets.portraitGenjiKarakuri;
+    } else if (bossName.contains('INARI') || bossName.contains('KYUBI')) {
+      cutInPortraitAsset = CartoonAssets.portraitInariKyubi;
+    } else if (bossName.contains('WADATSUMI')) {
+      cutInPortraitAsset = CartoonAssets.portraitWadatsumi;
+    } else if (bossName.contains('RAIJIN')) {
+      cutInPortraitAsset = CartoonAssets.portraitRaijinTei;
+    } else if (bossName.contains('AKUMA')) {
+      cutInPortraitAsset = CartoonAssets.portraitAkumaShin;
     } else {
       cutInPortraitAsset = CartoonAssets.portraitMuzanKai;
     }

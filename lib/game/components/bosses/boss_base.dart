@@ -1,5 +1,8 @@
+import 'dart:math';
 import 'package:flame/collisions.dart';
 import 'package:flame/components.dart';
+import 'package:flame/sprite.dart';
+import 'package:flutter/material.dart';
 import 'package:manga_platformer/game/manga_game.dart';
 import 'package:manga_platformer/game/services/audio_service.dart';
 import 'package:manga_platformer/ui/comic_theme.dart';
@@ -29,6 +32,13 @@ abstract class BossBase extends PositionComponent
   bool isInvulnerable = false;
   double hitFlashTimer = 0.0;
   bool isDefeated = false;
+
+  // Dynamic animation state tracking across all 10 Bosses
+  double animTime = 0.0;
+  double _attackHoldTimer = 0.0;
+  double _activeActionElapsed = 0.0;
+  SpriteAnimationTicker? _lastActiveTicker;
+  SpriteAnimationTicker? _heldCombatTicker;
 
   BossBase({
     required this.name,
@@ -208,8 +218,12 @@ abstract class BossBase extends PositionComponent
   @override
   void update(double dt) {
     super.update(dt);
+    animTime += dt;
     if (hitFlashTimer > 0) {
       hitFlashTimer -= dt;
+    }
+    if (_attackHoldTimer > 0) {
+      _attackHoldTimer -= dt;
     }
 
     if (isStunned) {
@@ -219,5 +233,146 @@ abstract class BossBase extends PositionComponent
         stunGauge = 0.0;
       }
     }
+  }
+
+  /// Resolves and updates the active boss animation ticker, automatically resetting
+  /// on transition and holding attack/cast animations through follow-through frames!
+  SpriteAnimationTicker resolveAndUpdateBossTicker(
+    double dt, {
+    required SpriteAnimationTicker desiredTicker,
+    required SpriteAnimationTicker idleTicker,
+    required SpriteAnimationTicker stunTicker,
+  }) {
+    SpriteAnimationTicker chosen = desiredTicker;
+    if (isStunned) {
+      chosen = stunTicker;
+      _heldCombatTicker = null;
+      _attackHoldTimer = 0.0;
+    } else if (desiredTicker != idleTicker) {
+      if (_heldCombatTicker != desiredTicker) {
+        _heldCombatTicker = desiredTicker;
+        _activeActionElapsed = 0.0;
+      }
+      _attackHoldTimer = 0.34;
+    } else if (_attackHoldTimer > 0 && _heldCombatTicker != null) {
+      chosen = _heldCombatTicker!;
+    } else {
+      _heldCombatTicker = null;
+    }
+
+    if (chosen != _lastActiveTicker) {
+      _lastActiveTicker = chosen;
+      _activeActionElapsed = 0.0;
+      chosen.reset();
+    } else {
+      _activeActionElapsed += dt;
+    }
+
+    chosen.update(dt);
+    return chosen;
+  }
+
+  /// Renders the boss sprite with dynamic 60/120 FPS procedural animation:
+  /// breathing, attack lunge & tilt, hit recoil jolt, guard barrier, and stun collapse!
+  void renderBossAnimated(
+    Canvas canvas, {
+    required SpriteAnimationTicker desiredTicker,
+    required SpriteAnimationTicker idleTicker,
+    required double renderW,
+    required double renderH,
+    Paint? extraOverridePaint,
+  }) {
+    if (isDefeated) return;
+    final activeTicker = _lastActiveTicker ?? desiredTicker;
+    final sprite = activeTicker.getSprite();
+    final isCombatAction = !isStunned && activeTicker != idleTicker;
+
+    // 1. Compute dynamic procedural offsets & transforms
+    double offsetX = 0.0;
+    double offsetY = 0.0;
+    double tilt = 0.0;
+    double scaleX = 1.0;
+    double scaleY = 1.0;
+
+    if (isStunned) {
+      // Natural dizzy side-to-side stagger without squishing proportions
+      offsetX = sin(animTime * 7.5) * 3.0;
+      offsetY = sin(animTime * 6.0).abs() * 1.5;
+      tilt = sin(animTime * 7.5) * 0.04;
+      scaleX = 1.0;
+      scaleY = 1.0;
+    } else if (isGuarding || isCounterStance) {
+      // Defensive brace
+      offsetY = 2.0;
+      tilt = -0.04 + sin(animTime * 10.0) * 0.02;
+      scaleX = 1.0;
+      scaleY = 1.0;
+    } else if (isCombatAction) {
+      // Dynamic wind-up -> explosive forward lunge & slash lean!
+      final p = (_activeActionElapsed / 0.42).clamp(0.0, 1.0);
+      final lungeCurve = sin(p * pi);
+      offsetX = lungeCurve * 15.0;
+      offsetY = -sin(p * pi * 2) * 5.0;
+      tilt = (p < 0.25 ? -0.14 : 0.18 * lungeCurve);
+      scaleX = 1.0 + lungeCurve * 0.07;
+      scaleY = 1.0 - lungeCurve * 0.05;
+    } else {
+      // Menacing idle breathing & subtle float
+      final breathe = sin(animTime * 4.2);
+      offsetY = breathe * 3.0;
+      scaleX = 1.0 - breathe * 0.025;
+      scaleY = 1.0 + breathe * 0.032;
+    }
+
+    // Hit recoil jolt whenever Kaito lands a slash/kunai/ougi!
+    if (hitFlashTimer > 0) {
+      final jolt = (hitFlashTimer / 0.16).clamp(0.0, 1.0);
+      offsetX -= 9.0 * jolt;
+      tilt -= 0.12 * jolt;
+      scaleX *= (1.0 - 0.06 * jolt);
+      scaleY *= (1.0 + 0.06 * jolt);
+    }
+
+    canvas.save();
+    canvas.translate(size.x / 2, size.y + 6);
+    if (facing < 0) {
+      canvas.scale(-1, 1);
+    }
+
+    // 2. Dynamic ground shadow / combat aura ring under boss's feet
+    final ringColor = isStunned
+        ? ComicTheme.energyCyan.withValues(alpha: 0.36)
+        : (isCombatAction
+            ? ComicTheme.actionRed.withValues(alpha: 0.34)
+            : Colors.black.withValues(alpha: 0.38));
+    canvas.drawOval(
+      Rect.fromCenter(
+        center: Offset(offsetX * 0.5, -3),
+        width: isCombatAction ? 96 : 82,
+        height: 16,
+      ),
+      Paint()..color = ringColor,
+    );
+
+    canvas.save();
+    canvas.translate(offsetX, offsetY);
+    canvas.rotate(tilt);
+    canvas.scale(scaleX, scaleY);
+
+    Paint? overridePaint = extraOverridePaint;
+    if (hitFlashTimer > 0) {
+      overridePaint = Paint()
+        ..colorFilter = const ColorFilter.mode(Colors.white, BlendMode.srcATop);
+    }
+
+    sprite.render(
+      canvas,
+      position: Vector2(-renderW * 0.45, -renderH),
+      size: Vector2(renderW, renderH),
+      overridePaint: overridePaint,
+    );
+    canvas.restore();
+
+    canvas.restore();
   }
 }

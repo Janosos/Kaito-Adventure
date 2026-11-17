@@ -446,3 +446,185 @@ class _BlastSpark {
     required this.isGold,
   });
 }
+
+/// Full-stage anime "Dimensional Blade Flurry" (Ougi) visual effect around Kaito
+class OugiCelestialFlurryEffect extends PositionComponent {
+  final double maxLifetime;
+  final int facingDirection;
+  double _timer = 0.0;
+  final List<_OugiCutLine> _cuts = [];
+  final List<_BlastSpark> _sparks = [];
+
+  OugiCelestialFlurryEffect({
+    required Vector2 position,
+    this.facingDirection = 1,
+    this.maxLifetime = 0.72,
+  }) : super(position: position, anchor: Anchor.center) {
+    priority = 965;
+    final rand = Random(42);
+    final palette = [
+      ComicTheme.energyCyan,
+      ComicTheme.comicYellow,
+      ComicTheme.actionRed,
+      Colors.white,
+    ];
+    for (int i = 0; i < 14; i++) {
+      final angle = (i * 0.45) + (rand.nextDouble() - 0.5) * 0.35;
+      final cx = (rand.nextDouble() - 0.45) * 340.0 * facingDirection;
+      final cy = (rand.nextDouble() - 0.5) * 150.0;
+      final halfLen = 95.0 + rand.nextDouble() * 115.0;
+      _cuts.add(_OugiCutLine(
+        cx: cx,
+        cy: cy,
+        cosA: cos(angle),
+        sinA: sin(angle),
+        halfLen: halfLen,
+        startDelay: (i / 14.0) * 0.34,
+        color: palette[i % palette.length],
+      ));
+    }
+    for (int i = 0; i < 24; i++) {
+      final a = (i / 24.0) * pi * 2;
+      final speed = 180.0 + (i % 5) * 65.0;
+      _sparks.add(_BlastSpark(
+        vx: cos(a) * speed * 1.35,
+        vy: sin(a) * speed * 0.75 - 40.0,
+        radius: 3.5 + (i % 3) * 2.0,
+        isGold: i.isEven,
+      ));
+    }
+  }
+
+  @override
+  void update(double dt) {
+    super.update(dt);
+    _timer += dt;
+    if (_timer >= maxLifetime) {
+      removeFromParent();
+    }
+  }
+
+  @override
+  void render(Canvas canvas) {
+    final t = (_timer / maxLifetime).clamp(0.0, 1.0);
+    final fade = (1.0 - Curves.easeInCubic.transform(t)).clamp(0.0, 1.0);
+    final domeScale = Curves.easeOutQuart.transform((t * 1.45).clamp(0.0, 1.0));
+
+    // 1. Expanding Celestial Spirit Dome & Twin Shockwave Rings
+    final domeW = 540.0 * domeScale;
+    final domeH = 220.0 * domeScale;
+    final domeRect =
+        Rect.fromCenter(center: Offset.zero, width: domeW, height: domeH);
+
+    canvas.drawOval(
+      domeRect,
+      Paint()
+        ..color = ComicTheme.energyCyan.withValues(alpha: fade * 0.16)
+        ..style = PaintingStyle.fill,
+    );
+    canvas.drawOval(
+      domeRect,
+      Paint()
+        ..color = ComicTheme.inkBlack.withValues(alpha: fade * 0.9)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 6.0,
+    );
+    canvas.drawOval(
+      domeRect,
+      Paint()
+        ..color = ComicTheme.comicYellow.withValues(alpha: fade)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 3.0,
+    );
+
+    final innerRect = Rect.fromCenter(
+      center: Offset.zero,
+      width: domeW * 0.68,
+      height: domeH * 0.68,
+    );
+    canvas.drawOval(
+      innerRect,
+      Paint()
+        ..color = ComicTheme.energyCyan.withValues(alpha: fade * 0.85)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.5,
+    );
+
+    // 2. Criss-Crossing Dimensional Katana Judgment Cuts
+    for (final c in _cuts) {
+      final localT = ((_timer - c.startDelay) / 0.36).clamp(0.0, 1.0);
+      if (localT <= 0.0 || localT >= 1.0) continue;
+      final cutAlpha = (1.0 - localT) * fade;
+      final reach = Curves.easeOutExpo.transform((localT * 2.2).clamp(0.0, 1.0));
+      final len = c.halfLen * reach;
+      final p1 = Offset(c.cx - c.cosA * len, c.cy - c.sinA * len);
+      final p2 = Offset(c.cx + c.cosA * len, c.cy + c.sinA * len);
+      final thickness = (7.5 * (1.0 - localT * 0.65)).clamp(1.8, 8.0);
+
+      // Ink black comic outline
+      canvas.drawLine(
+        p1,
+        p2,
+        Paint()
+          ..color = ComicTheme.inkBlack.withValues(alpha: cutAlpha)
+          ..strokeWidth = thickness + 4.5
+          ..strokeCap = StrokeCap.round,
+      );
+      // Colored blade energy
+      canvas.drawLine(
+        p1,
+        p2,
+        Paint()
+          ..color = c.color.withValues(alpha: cutAlpha)
+          ..strokeWidth = thickness
+          ..strokeCap = StrokeCap.round,
+      );
+      // White-hot katana core
+      canvas.drawLine(
+        p1,
+        p2,
+        Paint()
+          ..color = Colors.white.withValues(alpha: cutAlpha)
+          ..strokeWidth = (thickness * 0.42).clamp(1.0, 3.5)
+          ..strokeCap = StrokeCap.round,
+      );
+    }
+
+    // 3. Radiating Golden & Cyan Spirit Sparks
+    final sparkBorder = Paint()
+      ..color = ComicTheme.inkBlack.withValues(alpha: fade)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.0;
+
+    for (final s in _sparks) {
+      final sx = s.vx * _timer;
+      final sy = s.vy * _timer;
+      final r = s.radius * (1.0 - t * 0.55).clamp(0.25, 1.0);
+      final fill = Paint()
+        ..color = (s.isGold ? ComicTheme.comicYellow : ComicTheme.energyCyan)
+            .withValues(alpha: fade);
+      canvas.drawCircle(Offset(sx, sy), r, fill);
+      canvas.drawCircle(Offset(sx, sy), r, sparkBorder);
+    }
+  }
+}
+
+class _OugiCutLine {
+  final double cx;
+  final double cy;
+  final double cosA;
+  final double sinA;
+  final double halfLen;
+  final double startDelay;
+  final Color color;
+
+  const _OugiCutLine({
+    required this.cx,
+    required this.cy,
+    required this.cosA,
+    required this.sinA,
+    required this.halfLen,
+    required this.startDelay,
+    required this.color,
+  });
+}

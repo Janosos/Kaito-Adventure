@@ -80,15 +80,19 @@ class ComicPlatform extends PositionComponent
     } else {
       switch (game.currentLevelIndex) {
         case 2:
+        case 6:
           spritePath = 'environment/platform_citadel.png';
           break;
         case 3:
+        case 7:
           spritePath = 'environment/platform_bamboo.png';
           break;
         case 4:
+        case 8:
           spritePath = 'environment/platform_ice.png';
           break;
         case 5:
+        case 10:
           spritePath = 'environment/platform_sanctum.png';
           break;
         default:

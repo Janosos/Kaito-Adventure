@@ -16,6 +16,9 @@ import 'remote_player.dart';
 import 'enemies/enemy_grunt.dart';
 import 'enemies/enemy_drone.dart';
 import 'enemies/enemy_oni_archer.dart';
+import 'enemies/enemy_samurai_shield.dart';
+import 'enemies/enemy_kitsune_mage.dart';
+import 'enemies/enemy_karakuri_automaton.dart';
 
 enum PlayerAction {
   idle,
@@ -26,6 +29,7 @@ enum PlayerAction {
   attack1,
   attack2,
   attack3,
+  ougi,
   hurt,
   death,
 }
@@ -158,6 +162,14 @@ class MangaPlayer extends PositionComponent
         frames: 6,
         textureSize: Vector2(144, 128),
         stepTime: 0.05,
+        loop: false,
+      ).createTicker(),
+      PlayerAction.ougi: CartoonAssets.animation(
+        imgs,
+        'characters/kaito_ougi.png',
+        frames: 8,
+        textureSize: Vector2(160, 144),
+        stepTime: 0.08,
         loop: false,
       ).createTicker(),
       PlayerAction.hurt: CartoonAssets.animation(
@@ -395,8 +407,8 @@ class MangaPlayer extends PositionComponent
     if (isDying) return;
     spirit = 0.0;
     invulnerableTimer = 2.0;
-    attackAnimTimer = 0.5;
-    action = PlayerAction.attack3;
+    attackAnimTimer = 0.68;
+    action = PlayerAction.ougi;
     _tickers[action]?.reset();
 
     AudioService.playSfx(AudioService.sfxOugiRelease);
@@ -409,10 +421,24 @@ class MangaPlayer extends PositionComponent
         y: position.y,
         facing: facingDirection,
       );
+      LanMultiplayerService.instance.sendPlayerState(
+        x: position.x,
+        y: position.y,
+        vx: velocity.x,
+        vy: velocity.y,
+        facing: facingDirection,
+        action: PlayerAction.ougi.name,
+        hp: hp.toDouble(),
+        ougi: 0.0,
+      );
     }
 
-    // In-game dynamic Ougi sequence: No full-screen modal blocking the view!
-    // Spawns radiating anime celestial slash arcs, shockwave dust, and stylish manga onomatopoeia
+    // In-game dynamic Ougi sequence: Full-stage Celestial Blade Flurry dome & 8-frame Ougi animation!
+    game.add(OugiCelestialFlurryEffect(
+      position: Vector2(position.x, position.y - size.y * 0.5),
+      facingDirection: facingDirection,
+    ));
+
     game.add(MangaTextEffect(
       position: Vector2(position.x, position.y - size.y - 32),
       text: 'OUGI: CELESTIAL BLADE FLURRY!!',
@@ -448,17 +474,32 @@ class MangaPlayer extends PositionComponent
 
     for (final grunt in game.queryWorld<EnemyGrunt>().toList()) {
       if ((grunt.position.x - position.x).abs() < 420) {
-        grunt.takeDamage(100, knockbackDir: facingDirection, knockbackForce: 20);
+        grunt.takeDamage(120, knockbackDir: facingDirection, knockbackForce: 20);
       }
     }
     for (final drone in game.queryWorld<EnemyDrone>().toList()) {
       if ((drone.position.x - position.x).abs() < 420) {
-        drone.takeDamage(100, knockbackDir: facingDirection, knockbackForce: 20);
+        drone.takeDamage(120, knockbackDir: facingDirection, knockbackForce: 20);
       }
     }
     for (final archer in game.queryWorld<EnemyOniArcher>().toList()) {
       if ((archer.position.x - position.x).abs() < 420) {
-        archer.takeDamage(100, knockbackDir: facingDirection, knockbackForce: 20);
+        archer.takeDamage(120, knockbackDir: facingDirection, knockbackForce: 20);
+      }
+    }
+    for (final samurai in game.queryWorld<EnemySamuraiShield>().toList()) {
+      if ((samurai.position.x - position.x).abs() < 420) {
+        samurai.takeDamage(120, knockbackDir: facingDirection, knockbackForce: 20);
+      }
+    }
+    for (final kitsune in game.queryWorld<EnemyKitsuneMage>().toList()) {
+      if ((kitsune.position.x - position.x).abs() < 420) {
+        kitsune.takeDamage(120, knockbackDir: facingDirection, knockbackForce: 20);
+      }
+    }
+    for (final karakuri in game.queryWorld<EnemyKarakuriAutomaton>().toList()) {
+      if ((karakuri.position.x - position.x).abs() < 420) {
+        karakuri.takeDamage(120, knockbackDir: facingDirection, knockbackForce: 20);
       }
     }
     if (game.activeBoss != null && !game.activeBoss!.isDefeated) {
@@ -472,11 +513,15 @@ class MangaPlayer extends PositionComponent
     if (game.isMultiplayer) {
       for (final remote in game.queryWorld<RemotePlayer>().toList()) {
         if ((remote.position.x - position.x).abs() < 420 &&
+            (remote.position.y - position.y).abs() < 260 &&
             !remote.isDying &&
             !remote.isCelebrating &&
             remote.action != PlayerAction.dashing) {
-          final dmg = 45.0;
-          final kb = Vector2(facingDirection * 24.0, -8.0);
+          const dmg = 65.0;
+          final kbDir = (remote.position.x - position.x).abs() < 8.0
+              ? facingDirection
+              : (remote.position.x > position.x ? 1 : -1);
+          final kb = Vector2(kbDir * 24.0, -10.0);
           remote.takeDamage(dmg, knockback: kb);
           LanMultiplayerService.instance.sendHitDamage(
             targetId: remote.id,
@@ -534,6 +579,47 @@ class MangaPlayer extends PositionComponent
       if (_isInSlashArc(center)) {
         final dmg = 24.0 + comboIndex * 10.0;
         archer.takeDamage(
+          dmg,
+          knockbackDir: facingDirection,
+          knockbackForce: kbForce,
+        );
+        _registerHit();
+      }
+    }
+
+    // 3b. Hit Enemy Samurai Shield-Bearers, Kitsune Mages & Karakuri Automatons
+    for (final samurai in game.queryWorld<EnemySamuraiShield>().toList()) {
+      final center = Vector2(
+          samurai.position.x, samurai.position.y - samurai.size.y * 0.5);
+      if (_isInSlashArc(center)) {
+        final dmg = 24.0 + comboIndex * 12.0;
+        samurai.takeDamage(
+          dmg,
+          knockbackDir: facingDirection,
+          knockbackForce: kbForce,
+        );
+        _registerHit();
+      }
+    }
+    for (final kitsune in game.queryWorld<EnemyKitsuneMage>().toList()) {
+      final center = Vector2(
+          kitsune.position.x, kitsune.position.y - kitsune.size.y * 0.5);
+      if (_isInSlashArc(center, extraReach: 14.0)) {
+        final dmg = 26.0 + comboIndex * 10.0;
+        kitsune.takeDamage(
+          dmg,
+          knockbackDir: facingDirection,
+          knockbackForce: kbForce,
+        );
+        _registerHit();
+      }
+    }
+    for (final karakuri in game.queryWorld<EnemyKarakuriAutomaton>().toList()) {
+      final center = Vector2(
+          karakuri.position.x, karakuri.position.y - karakuri.size.y * 0.5);
+      if (_isInSlashArc(center)) {
+        final dmg = 24.0 + comboIndex * 11.0;
+        karakuri.takeDamage(
           dmg,
           knockbackDir: facingDirection,
           knockbackForce: kbForce,
@@ -610,7 +696,7 @@ class MangaPlayer extends PositionComponent
   void _registerHit() {
     comboCount++;
     comboTimer = 2.5;
-    final spiritGain = game.isMultiplayer ? 3.0 : 9.0;
+    final spiritGain = game.isMultiplayer ? 12.0 : 9.0;
     spirit = (spirit + spiritGain).clamp(0.0, 100.0);
     game.addScore(50 * comboCount);
   }
@@ -724,6 +810,7 @@ class MangaPlayer extends PositionComponent
     }
 
     hp = (hp - amount.toInt()).clamp(0, maxHp);
+    spirit = (spirit + 6.0).clamp(0.0, 100.0);
     if (hp <= 0) {
       consumeMultiplayerLifeOrEliminate(isRingOut: false);
       return;
@@ -1029,6 +1116,7 @@ class MangaPlayer extends PositionComponent
   @override
   void render(Canvas canvas) {
     if (!isDying &&
+        action != PlayerAction.ougi &&
         invulnerableTimer > 0 &&
         hurtAnimTimer <= 0 &&
         (_animTime * 20).toInt() % 2 == 0) {
@@ -1038,17 +1126,33 @@ class MangaPlayer extends PositionComponent
     final ticker = _tickers[action] ?? _tickers[PlayerAction.idle]!;
     final sprite = ticker.getSprite();
 
+    final isOugi = action == PlayerAction.ougi;
     final isWideSheet = action == PlayerAction.attack1 ||
         action == PlayerAction.attack2 ||
         action == PlayerAction.attack3 ||
         action == PlayerAction.death;
-    final renderW = isWideSheet ? 82.0 : 72.0;
-    const renderH = 72.0;
+    final renderW = isOugi ? 96.0 : (isWideSheet ? 82.0 : 72.0);
+    final renderH = isOugi ? 86.0 : 72.0;
 
     canvas.save();
     canvas.translate(size.x / 2, size.y + 5);
 
-    if (isDying) {
+    if (isOugi) {
+      final auraPaint = Paint()
+        ..color = ComicTheme.energyCyan.withValues(alpha: 0.42)
+        ..style = PaintingStyle.fill;
+      canvas.drawOval(
+        Rect.fromCenter(center: const Offset(0, -4), width: 78, height: 18),
+        auraPaint,
+      );
+      canvas.drawOval(
+        Rect.fromCenter(center: const Offset(0, -4), width: 78, height: 18),
+        Paint()
+          ..color = ComicTheme.comicYellow
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2.5,
+      );
+    } else if (isDying) {
       // Subtle dramatic crimson spotlight ring under Kaito during death collapse
       final ringPaint = Paint()
         ..color = ComicTheme.actionRed.withValues(alpha: 0.28)

@@ -12,6 +12,9 @@ import 'collectibles.dart';
 import 'enemies/enemy_grunt.dart';
 import 'enemies/enemy_drone.dart';
 import 'enemies/enemy_oni_archer.dart';
+import 'enemies/enemy_samurai_shield.dart';
+import 'enemies/enemy_kitsune_mage.dart';
+import 'enemies/enemy_karakuri_automaton.dart';
 import 'bosses/boss_base.dart';
 import 'player.dart';
 import 'remote_player.dart';
@@ -102,6 +105,18 @@ class InkKunai extends PositionComponent
       _hasCollided = true;
       other.takeDamage(damage, knockbackDir: kbDir, knockbackForce: 8.0);
       _impact(other.position);
+    } else if (other is EnemySamuraiShield) {
+      _hasCollided = true;
+      other.takeDamage(damage, knockbackDir: kbDir, knockbackForce: 8.0);
+      _impact(other.position);
+    } else if (other is EnemyKitsuneMage) {
+      _hasCollided = true;
+      other.takeDamage(damage, knockbackDir: kbDir, knockbackForce: 8.0);
+      _impact(other.position);
+    } else if (other is EnemyKarakuriAutomaton) {
+      _hasCollided = true;
+      other.takeDamage(damage, knockbackDir: kbDir, knockbackForce: 8.0);
+      _impact(other.position);
     } else if (other is BossBase) {
       _hasCollided = true;
       other.takeDamage(damage, knockbackDir: kbDir, knockbackForce: 4.0);
@@ -123,6 +138,7 @@ class InkKunai extends PositionComponent
         return;
       }
       _hasCollided = true;
+      game.addSpirit(10.0);
       other.takeDamage(damage, knockback: Vector2(kbDir * 8.0, -3.0));
       LanMultiplayerService.instance.sendHitDamage(
         targetId: other.id,

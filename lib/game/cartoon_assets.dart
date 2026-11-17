@@ -19,6 +19,7 @@ class CartoonAssets {
     'characters/kaito_hurt.png',
     'characters/kaito_death.png',
     'characters/kaito_victory.png',
+    'characters/kaito_ougi.png',
 
     // Enemies
     'enemies/grunt_walk.png',
@@ -28,8 +29,15 @@ class CartoonAssets {
     'enemies/drone_attack.png',
     'enemies/oni_idle.png',
     'enemies/oni_shoot.png',
+    'enemies/samurai_walk.png',
+    'enemies/samurai_attack.png',
+    'enemies/samurai_guard.png',
+    'enemies/kitsune_float.png',
+    'enemies/kitsune_cast.png',
+    'enemies/karakuri_march.png',
+    'enemies/karakuri_spin.png',
 
-    // Bosses (Chapters 1 to 5)
+    // Bosses (Chapters 1 to 10)
     'bosses/kurokage_idle.png',
     'bosses/kurokage_charge.png',
     'bosses/kurokage_cleave.png',
@@ -53,6 +61,29 @@ class CartoonAssets {
     'bosses/muzan_cast.png',
     'bosses/muzan_guard.png',
     'bosses/muzan_stun.png',
+    'bosses/genji_idle.png',
+    'bosses/genji_charge.png',
+    'bosses/genji_cleave.png',
+    'bosses/genji_guard.png',
+    'bosses/genji_stun.png',
+    'bosses/inari_idle.png',
+    'bosses/inari_dash.png',
+    'bosses/inari_cast.png',
+    'bosses/inari_stun.png',
+    'bosses/wadatsumi_idle.png',
+    'bosses/wadatsumi_charge.png',
+    'bosses/wadatsumi_slam.png',
+    'bosses/wadatsumi_stun.png',
+    'bosses/raijin_idle.png',
+    'bosses/raijin_dash.png',
+    'bosses/raijin_cast.png',
+    'bosses/raijin_guard.png',
+    'bosses/raijin_stun.png',
+    'bosses/akuma_idle.png',
+    'bosses/akuma_slash.png',
+    'bosses/akuma_cast.png',
+    'bosses/akuma_guard.png',
+    'bosses/akuma_stun.png',
 
     // Skills, Projectiles & VFX
     'skills/slash_arc_yellow.png',
@@ -93,12 +124,22 @@ class CartoonAssets {
     'illustrations/bg_level3_bamboo.png',
     'illustrations/bg_level4_peaks.png',
     'illustrations/bg_level5_sanctum.png',
+    'illustrations/bg_level6_karakuri.png',
+    'illustrations/bg_level7_kitsune.png',
+    'illustrations/bg_level8_abyss.png',
+    'illustrations/bg_level9_raijin.png',
+    'illustrations/bg_level10_void.png',
     'illustrations/portrait_kaito.jpg',
     'illustrations/portrait_kurokage.jpg',
     'illustrations/portrait_ryu_kotei.jpg',
     'illustrations/portrait_hebi_hime.png',
     'illustrations/portrait_yuki_oni.png',
     'illustrations/portrait_muzan_kai.png',
+    'illustrations/portrait_genji_karakuri.png',
+    'illustrations/portrait_inari_kyubi.png',
+    'illustrations/portrait_wadatsumi.png',
+    'illustrations/portrait_raijin_tei.png',
+    'illustrations/portrait_akuma_shin.png',
   ];
 
   // Flutter Widget Asset Paths
@@ -157,6 +198,16 @@ class CartoonAssets {
       'assets/images/illustrations/portrait_yuki_oni.png';
   static const String portraitMuzanKai =
       'assets/images/illustrations/portrait_muzan_kai.png';
+  static const String portraitGenjiKarakuri =
+      'assets/images/illustrations/portrait_genji_karakuri.png';
+  static const String portraitInariKyubi =
+      'assets/images/illustrations/portrait_inari_kyubi.png';
+  static const String portraitWadatsumi =
+      'assets/images/illustrations/portrait_wadatsumi.png';
+  static const String portraitRaijinTei =
+      'assets/images/illustrations/portrait_raijin_tei.png';
+  static const String portraitAkumaShin =
+      'assets/images/illustrations/portrait_akuma_shin.png';
 
   static const String bgLevel1 =
       'assets/images/illustrations/bg_level1_rooftops.jpg';
@@ -168,6 +219,16 @@ class CartoonAssets {
       'assets/images/illustrations/bg_level4_peaks.png';
   static const String bgLevel5 =
       'assets/images/illustrations/bg_level5_sanctum.png';
+  static const String bgLevel6 =
+      'assets/images/illustrations/bg_level6_karakuri.png';
+  static const String bgLevel7 =
+      'assets/images/illustrations/bg_level7_kitsune.png';
+  static const String bgLevel8 =
+      'assets/images/illustrations/bg_level8_abyss.png';
+  static const String bgLevel9 =
+      'assets/images/illustrations/bg_level9_raijin.png';
+  static const String bgLevel10 =
+      'assets/images/illustrations/bg_level10_void.png';
 
   static Future<void> preloadAll(Images images) async {
     await images.loadAll(allFlameImages);

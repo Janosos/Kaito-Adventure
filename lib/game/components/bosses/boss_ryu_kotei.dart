@@ -141,7 +141,12 @@ class BossRyuKotei extends BossBase {
     if (isStunned) {
       position.y = _stompY;
       state = RyuState.recovering;
-      _stunTicker.update(dt);
+      resolveAndUpdateBossTicker(
+        dt,
+        desiredTicker: _stunTicker,
+        idleTicker: _idleTicker,
+        stunTicker: _stunTicker,
+      );
       return;
     }
 
@@ -281,7 +286,12 @@ class BossRyuKotei extends BossBase {
         break;
     }
 
-    _activeTicker.update(dt);
+    resolveAndUpdateBossTicker(
+      dt,
+      desiredTicker: _activeTicker,
+      idleTicker: _idleTicker,
+      stunTicker: _stunTicker,
+    );
   }
 
   SpriteAnimationTicker get _activeTicker {
@@ -429,40 +439,21 @@ class BossRyuKotei extends BossBase {
 
   @override
   void render(Canvas canvas) {
-    if (isDefeated) return;
-
-    final sprite = _activeTicker.getSprite();
-    const renderW = 148.0;
-    const renderH = 136.0;
-
-    canvas.save();
-    canvas.translate(size.x / 2, size.y + 6);
-    if (facing < 0) {
-      canvas.scale(-1, 1);
-    }
-
-    Paint? overridePaint;
-    if (hitFlashTimer > 0) {
-      overridePaint = Paint()
-        ..colorFilter = const ColorFilter.mode(
-          Colors.white,
-          BlendMode.srcATop,
-        );
-    } else if (currentPhase == 3) {
-      overridePaint = Paint()
+    Paint? extraPaint;
+    if (currentPhase == 3) {
+      extraPaint = Paint()
         ..colorFilter = ColorFilter.mode(
           ComicTheme.actionRed.withValues(alpha: 0.22),
           BlendMode.srcATop,
         );
     }
-
-    sprite.render(
+    renderBossAnimated(
       canvas,
-      position: Vector2(-renderW * 0.45, -renderH),
-      size: Vector2(renderW, renderH),
-      overridePaint: overridePaint,
+      desiredTicker: _activeTicker,
+      idleTicker: _idleTicker,
+      renderW: 148.0,
+      renderH: 136.0,
+      extraOverridePaint: extraPaint,
     );
-
-    canvas.restore();
   }
 }

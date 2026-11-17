@@ -458,6 +458,15 @@ class _ComicHudState extends State<ComicHud>
     if (bossName.contains('RYU')) return CartoonAssets.portraitRyuKotei;
     if (bossName.contains('HEBI')) return CartoonAssets.portraitHebiHime;
     if (bossName.contains('YUKI')) return CartoonAssets.portraitYukiOni;
+    if (bossName.contains('GENJI') || bossName.contains('KARAKURI')) {
+      return CartoonAssets.portraitGenjiKarakuri;
+    }
+    if (bossName.contains('INARI') || bossName.contains('KYUBI')) {
+      return CartoonAssets.portraitInariKyubi;
+    }
+    if (bossName.contains('WADATSUMI')) return CartoonAssets.portraitWadatsumi;
+    if (bossName.contains('RAIJIN')) return CartoonAssets.portraitRaijinTei;
+    if (bossName.contains('AKUMA')) return CartoonAssets.portraitAkumaShin;
     return CartoonAssets.portraitMuzanKai;
   }
 

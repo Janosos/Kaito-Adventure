@@ -283,11 +283,11 @@ class AppLocalizations {
       'tap_to_continue': 'TAP ANYWHERE TO CONTINUE',
 
       // Main Menu
-      'edition_badge': '2D CARTOON EDITION • 5 CHAPTERS',
-      'hero_card_sub': '5 PROGRESSIVE STAGES • 5 WARLORD BOSSES',
+      'edition_badge': '2D CARTOON EDITION • 10 CHAPTERS',
+      'hero_card_sub': '10 PROGRESSIVE STAGES • 10 WARLORD BOSSES',
       'btn_start_adventure': 'START ADVENTURE',
       'btn_multiplayer': 'MULTIPLAYER (LOCAL WIFI)',
-      'btn_select_chapter': 'SELECT CHAPTER (1 - 5)',
+      'btn_select_chapter': 'SELECT CHAPTER (1 - 10)',
       'btn_story_intro': 'STORY INTRO',
       'btn_how_to_play': 'HOW TO PLAY',
       'btn_settings': 'SETTINGS',
@@ -365,16 +365,16 @@ class AppLocalizations {
       'story_p3_caption':
           'Drawing his Celestial Katana, Kaito leaps across five perilous stages to push back the darkness and defeat every Warlord at the end of their domain!',
 
-      // Story Epilogue (Outro after defeating Final Boss Emperor Muzan-Kai)
+      // Story Epilogue (Outro after defeating True Final Boss Akuma-Shin at Level 10)
       'epilogue_finish': 'CLAIM VICTORY',
       'epilogue_p1_chapter': 'EPILOGUE • PANEL I',
-      'epilogue_p1_title': 'FALL OF THE BLOOD ECLIPSE',
+      'epilogue_p1_title': 'FALL OF THE PRIMORDIAL INK GOD',
       'epilogue_p1_caption':
-          'With a blinding celestial slash, Emperor Muzan-Kai falls! The dark seal shatters into millions of glowing ink sparks, dissolving the corrupt shadow throne forever.',
+          'With a blinding celestial slash, Akuma-Shin and the Blood Eclipse fall! The dark seal shatters into millions of glowing ink sparks, dissolving the void throne forever.',
       'epilogue_p2_chapter': 'EPILOGUE • PANEL II',
-      'epilogue_p2_title': 'REBIRTH OF THE FIVE REALMS',
+      'epilogue_p2_title': 'REBIRTH OF THE TEN REALMS',
       'epilogue_p2_caption':
-          'As golden celestial ink rains over Neo-Tokyo, the corrupted lands heal: cherry blossoms bloom once more, holy torii gates shine, and peace returns to every temple.',
+          'As golden celestial ink rains over all ten realms, the corrupted lands heal: cherry blossoms bloom once more, holy torii gates shine, and peace returns to every temple.',
       'epilogue_p3_chapter': 'EPILOGUE • PANEL III',
       'epilogue_p3_title': 'THE LEGEND OF KAITO',
       'epilogue_p3_caption':
@@ -383,7 +383,7 @@ class AppLocalizations {
       // Chapter Select
       'select_chapter_title': 'SELECT CHAPTER',
       'select_chapter_sub':
-          'ADVANCE THROUGH 5 PROGRESSIVE STAGES & DEFEAT THE 5 WARLORDS!',
+          'ADVANCE THROUGH 10 PROGRESSIVE STAGES & DEFEAT ALL 10 WARLORDS!',
       'boss_prefix': 'BOSS: ',
       'btn_play_chapter': 'PLAY',
       'tip_label': 'TIP',
@@ -417,6 +417,31 @@ class AppLocalizations {
       'ch5_boss': 'MUZAN-KAI (Lord of the Eclipse)',
       'ch5_tip':
           "Muzan's Void Barrier counters frontal hits. Backstab him and unleash Ougi when Stunned!",
+      'ch6_title': 'CHAPTER 6: CLOCKWORK KARAKURI FORTRESS',
+      'ch6_sub': 'Brass Gear Conveyors, Sawblade Foundries & Karakuri Automatons',
+      'ch6_boss': 'GENJI-KARAKURI (The Clockwork Shogun)',
+      'ch6_tip':
+          'Genji-Karakuri reflects frontal strikes during Aegis Overdrive. Dash behind his brass shield!',
+      'ch7_title': 'CHAPTER 7: PHANTOM KITSUNE WOODS',
+      'ch7_sub': 'Foxfire Spirit Mages, Illusion Warp Portals & Torii Shrines',
+      'ch7_boss': 'INARI-KYUBI (Nine-Tail Archmage)',
+      'ch7_tip':
+          'Evade Inari-Kyubi’s aerial Foxfire Barrage and strike her between phase-blinks!',
+      'ch8_title': 'CHAPTER 8: ABYSSAL KRAKEN SHIPWRECK',
+      'ch8_sub': 'Sunken Galleon Decks, Tidal Geysers & Maelstrom Wind Squalls',
+      'ch8_boss': 'WADATSUMI (Abyssal Leviathan Lord)',
+      'ch8_tip':
+          'Jump onto upper platforms when Wadatsumi unleashes his Abyssal Tsunami Slam!',
+      'ch9_title': 'CHAPTER 9: THUNDERSTORM SKY PAGODA',
+      'ch9_sub': 'Floating Cloud Spires, Raijin Taiko Chains & Tempest Winds',
+      'ch9_boss': 'RAIJIN-TEI (The Thunder Emperor)',
+      'ch9_tip':
+          'Raijin-Tei’s Thunder Drum Barrier blocks frontal slashes. Backstab him to break his guard!',
+      'ch10_title': 'CHAPTER 10: PRIMORDIAL INK VOID THRONE',
+      'ch10_sub': 'Shattered Manga Dimension, All-Enemy Gauntlet & True Final Trial',
+      'ch10_boss': 'AKUMA-SHIN (Primordial Ink God)',
+      'ch10_tip':
+          'Pierce Akuma-Shin’s Primordial Seal from behind and unleash Celestial Ougi when Stunned!',
 
       // HUD
       'hud_ougi_ready': 'READY! [U]',
@@ -443,11 +468,11 @@ class AppLocalizations {
 
       // Victory Overlay
       'victory_chapter': 'CHAPTER CLEARED!!',
-      'victory_all': 'ALL 5 CHAPTERS CONQUERED!!',
+      'victory_all': 'ALL 10 CHAPTERS CONQUERED!!',
       'victory_sub_next':
           'THE SHADOW WARLORD HAS FALLEN! PREPARE FOR THE NEXT STAGE!',
       'victory_sub_all':
-          'YOU DEFEATED MUZAN-KAI AND RESTORED THE SACRED INK SCROLL!',
+          'YOU DEFEATED AKUMA-SHIN AND RESTORED THE SACRED INK SCROLL!',
       'final_score_label': 'FINAL SCORE: ',
       'btn_next_chapter': 'NEXT CHAPTER',
       'btn_play_again': 'PLAY AGAIN (CH. 1)',
@@ -462,11 +487,11 @@ class AppLocalizations {
       'tap_to_continue': 'TOCA PARA CONTINUAR',
 
       // Main Menu
-      'edition_badge': 'EDICIÓN CARTOON 2D • 5 CAPÍTULOS',
-      'hero_card_sub': '5 NIVELES PROGRESIVOS • 5 JEFES SEÑORES DE LA GUERRA',
+      'edition_badge': 'EDICIÓN CARTOON 2D • 10 CAPÍTULOS',
+      'hero_card_sub': '10 NIVELES PROGRESIVOS • 10 JEFES SEÑORES DE LA GUERRA',
       'btn_start_adventure': 'INICIAR AVENTURA',
       'btn_multiplayer': 'MODO MULTIJUGADOR (WIFI LOCAL)',
-      'btn_select_chapter': 'SELECCIONAR CAPÍTULO (1 - 5)',
+      'btn_select_chapter': 'SELECCIONAR CAPÍTULO (1 - 10)',
       'btn_story_intro': 'HISTORIA (INTRO)',
       'btn_how_to_play': 'CÓMO JUGAR',
       'btn_settings': 'AJUSTES / IDIOMA',
@@ -544,16 +569,16 @@ class AppLocalizations {
       'story_p3_caption':
           '¡Desenvainando su Katana Celestial, Kaito avanza a través de cinco peligrosos niveles para hacer retroceder la oscuridad y derrotar a cada Jefe en su dominio!',
 
-      // Story Epilogue (Outro after defeating Final Boss Emperor Muzan-Kai)
+      // Story Epilogue (Outro after defeating Final Boss Akuma-Shin at Level 10)
       'epilogue_finish': 'RECLAMAR VICTORIA',
       'epilogue_p1_chapter': 'EPÍLOGO • VIÑETA I',
-      'epilogue_p1_title': 'LA CAÍDA DEL ECLIPSE ROJO',
+      'epilogue_p1_title': 'LA CAÍDA DEL DIOS DE LA TINTA PRIMORDIAL',
       'epilogue_p1_caption':
-          '¡Con un corte celestial deslumbrante, el Emperador Muzan-Kai cae derrotado! El sello oscuro se hace añicos en millones de chispas de tinta luminosa, disolviendo el trono de las sombras.',
+          '¡Con un corte celestial deslumbrante, Akuma-Shin y el Eclipse caen derrotados! El sello oscuro se hace añicos en millones de chispas de tinta luminosa, disolviendo el trono del vacío.',
       'epilogue_p2_chapter': 'EPÍLOGO • VIÑETA II',
-      'epilogue_p2_title': 'RENACER DE LOS CINCO REINOS',
+      'epilogue_p2_title': 'RENACER DE LOS DIEZ REINOS',
       'epilogue_p2_caption':
-          'Mientras una lluvia de tinta dorada celestial baña Neo-Tokio, las tierras se restauran: los cerezos florecen de nuevo, los torii brillan con luz sagrada y la paz regresa a cada rincón.',
+          'Mientras una lluvia de tinta dorada celestial baña los diez reinos, las tierras se restauran: los cerezos florecen de nuevo, los torii brillan con luz sagrada y la paz regresa.',
       'epilogue_p3_chapter': 'EPÍLOGO • VIÑETA III',
       'epilogue_p3_title': 'LA LEYENDA DE KAITO',
       'epilogue_p3_caption':
@@ -562,7 +587,7 @@ class AppLocalizations {
       // Chapter Select
       'select_chapter_title': 'SELECCIONAR CAPÍTULO',
       'select_chapter_sub':
-          '¡AVANZA POR 5 ETAPAS PROGRESIVAS Y DERROTA A LOS 5 JEFES!',
+          '¡AVANZA POR 10 ETAPAS PROGRESIVAS Y DERROTA A LOS 10 JEFES!',
       'boss_prefix': 'JEFE: ',
       'btn_play_chapter': 'JUGAR',
       'tip_label': 'CONSEJO',
@@ -592,10 +617,35 @@ class AppLocalizations {
       'ch4_tip':
           '¡La Frost Armor de Yuki Oni absorbe daño frontal. Haz Dash detrás de él antes de su golpe congelante!',
       'ch5_title': 'CAPÍTULO 5: SANTUARIO DEL ECLIPSE SANGRIENTO',
-      'ch5_sub': 'Portales Dimensionales, Pilares Sangrientos y Gran Prueba Final',
+      'ch5_sub': 'Portales Dimensionales, Pilares Sangrientos y Gran Prueba',
       'ch5_boss': 'MUZAN-KAI (Señor del Eclipse)',
       'ch5_tip':
           '¡La Void Barrier de Muzan contraataca de frente. Haz Backstab y desata tu Ougi cuando esté aturdido!',
+      'ch6_title': 'CAPÍTULO 6: FORTALEZA MECÁNICA KARAKURI',
+      'ch6_sub': 'Engranajes Móviles, Sierras de Fundición y Autómatas Karakuri',
+      'ch6_boss': 'GENJI-KARAKURI (El Shogun Mecánico)',
+      'ch6_tip':
+          '¡Genji-Karakuri bloquea ataques frontales en Aegis Overdrive. Haz Dash detrás de su escudo de bronce!',
+      'ch7_title': 'CAPÍTULO 7: BOSQUE DE ESPÍRITUS KITSUNE',
+      'ch7_sub': 'Magos Kitsune de Fuego Zorro, Portales de Ilusión y Torii',
+      'ch7_boss': 'INARI-KYUBI (Archimaga de Nueve Colas)',
+      'ch7_tip':
+          '¡Esquiva la lluvia de Fuego Zorro de Inari-Kyubi y atácala al terminar su teletransporte!',
+      'ch8_title': 'CAPÍTULO 8: NAUFRAGIO ABISAL DEL KRAKEN',
+      'ch8_sub': 'Galeones Hundidos, Géiseres Abisales y Vientos de Maelstrom',
+      'ch8_boss': 'WADATSUMI (Señor Leviatán del Abismo)',
+      'ch8_tip':
+          '¡Sube a las plataformas altas cuando Wadatsumi desate su Tsunami Abisal!',
+      'ch9_title': 'CAPÍTULO 9: PAGODA CELESTE DEL TRUENO',
+      'ch9_sub': 'Cumbres de Nubes, Tambores Taiko de Raijin y Vientos Eléctricos',
+      'ch9_boss': 'RAIJIN-TEI (El Emperador del Trueno)',
+      'ch9_tip':
+          '¡La barrera de tambores de Raijin-Tei bloquea de frente. Haz Backstab para romper su guardia!',
+      'ch10_title': 'CAPÍTULO 10: TRONO DEL VACÍO DE TINTA PRIMORDIAL',
+      'ch10_sub': 'Dimensión Manga Fragmentada, Todos los Enemigos y Juicio Final',
+      'ch10_boss': 'AKUMA-SHIN (Dios de la Tinta Primordial)',
+      'ch10_tip':
+          '¡Rompe el Sello Primordial de Akuma-Shin por la espalda y desata tu Ougi Celestial al aturdirlo!',
 
       // HUD
       'hud_ougi_ready': '¡LISTO! [U]',
@@ -622,11 +672,11 @@ class AppLocalizations {
 
       // Victory Overlay
       'victory_chapter': '¡¡CAPÍTULO SUPERADO!!',
-      'victory_all': '¡¡LOS 5 CAPÍTULOS CONQUISTADOS!!',
+      'victory_all': '¡¡LOS 10 CAPÍTULOS CONQUISTADOS!!',
       'victory_sub_next':
           '¡EL SEÑOR DE LA GUERRA HA CAÍDO! ¡PREPÁRATE PARA LA SIGUIENTE ETAPA!',
       'victory_sub_all':
-          '¡DERROTASTE A MUZAN-KAI Y RECUPERASTE EL PERGAMINO SAGRADO!',
+          '¡DERROTASTE A AKUMA-SHIN Y RECUPERASTE EL PERGAMINO SAGRADO!',
       'final_score_label': 'PUNTUACIÓN FINAL: ',
       'btn_next_chapter': 'SIGUIENTE CAPÍTULO',
       'btn_play_again': 'JUGAR DE NUEVO (CAP. 1)',
@@ -641,11 +691,11 @@ class AppLocalizations {
       'tap_to_continue': 'タップしてスタート',
 
       // Main Menu
-      'edition_badge': '2Dカートゥーン版 • 全5章',
-      'hero_card_sub': '全5ステージ • 5大武将ボス',
+      'edition_badge': '2Dカートゥーン版 • 全10章',
+      'hero_card_sub': '全10ステージ • 10大武将ボス',
       'btn_start_adventure': '冒険を始める',
       'btn_multiplayer': 'マルチプレイ (ローカルWIFI)',
-      'btn_select_chapter': '章を選択 (1 - 5)',
+      'btn_select_chapter': '章を選択 (1 - 10)',
       'btn_story_intro': 'ストーリー紹介',
       'btn_how_to_play': '操作方法・遊び方',
       'btn_settings': '設定 / 言語 (SETTINGS)',
@@ -740,7 +790,7 @@ class AppLocalizations {
 
       // Chapter Select
       'select_chapter_title': '章セレクト',
-      'select_chapter_sub': '5つのステージを突破し、5人の闇武将を打ち倒せ！',
+      'select_chapter_sub': '10のステージを突破し、10人の闇武将を打ち倒せ！',
       'boss_prefix': 'ボス：',
       'btn_play_chapter': '出陣',
       'tip_label': '攻略のヒント',
@@ -766,9 +816,29 @@ class AppLocalizations {
       'ch4_boss': 'ユキ鬼 (氷河の巨鬼)',
       'ch4_tip': '雪鬼の氷結鎧は正面無効。ダッシュで背後を取り破壊せよ！',
       'ch5_title': '第5章：紅き日食の聖殿',
-      'ch5_sub': '次元転移ポータル・血蝕の火柱と最終試練',
+      'ch5_sub': '次元転移ポータル・血蝕の火柱と試練',
       'ch5_boss': 'ムザン＝カイ (紅き日食の覇王)',
       'ch5_tip': '無惨魁の虚空障壁は正面反撃！背後攻撃でスタンさせ奥義を叩き込め！',
+      'ch6_title': '第6章：絡繰の機巧要塞',
+      'ch6_sub': '歯車リフト・回転ノコギリ溶鉱炉と絡繰兵団',
+      'ch6_boss': 'ゲンジ＝カラクリ (機巧将軍)',
+      'ch6_tip': '機巧将軍の正面盾はダッシュで背後に回り込んで崩せ！',
+      'ch7_title': '第7章：妖狐の幻影森',
+      'ch7_sub': '狐火術師・幻影転移ポータルと千本鳥居',
+      'ch7_boss': 'イナリ＝キュウビ (九尾の大妖狐)',
+      'ch7_tip': '九尾の狐火連弾をかわし、転移後の隙を突いて斬り込め！',
+      'ch8_title': '第8章：深淵の難破船海域',
+      'ch8_sub': '沈没ガレオン船・海流間欠泉と大渦の暴風',
+      'ch8_boss': 'ワダツミ (深淵の海竜王)',
+      'ch8_tip': 'ワダツミの大津波スラムは上段の足場へ跳んで回避せよ！',
+      'ch9_title': '第9章：雷帝の天空五重塔',
+      'ch9_sub': '浮雲の足場・雷神太鼓チェーンと嵐の滑空レール',
+      'ch9_boss': 'ライジン＝テイ (雷鳴の帝王)',
+      'ch9_tip': '雷帝の雷鼓障壁は正面無効！背後に回り込んで破壊せよ！',
+      'ch10_title': '第10章：原初墨神の虚空玉座',
+      'ch10_sub': '砕け散る漫画次元・全敵総力戦と真の最終決戦',
+      'ch10_boss': 'アクマ＝シン (原初の墨神)',
+      'ch10_tip': '原初の封印を背後から突き破り、スタン中に天墨奥義を叩き込め！',
 
       // HUD
       'hud_ougi_ready': '奥義発動可! [U]',
@@ -795,9 +865,9 @@ class AppLocalizations {
 
       // Victory Overlay
       'victory_chapter': '章クリア！！',
-      'victory_all': '全5章完全制覇！！',
+      'victory_all': '全10章完全制覇！！',
       'victory_sub_next': '闇武将を討ち取った！次のステージへ進め！',
-      'victory_sub_all': 'ムザン＝カイを打ち倒し、聖なる巻物を取り戻した！',
+      'victory_sub_all': 'アクマ＝シンを打ち倒し、聖なる巻物を取り戻した！',
       'final_score_label': '最終スコア：',
       'btn_next_chapter': '次の章へ',
       'btn_play_again': '最初から遊ぶ (第1章)',

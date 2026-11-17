@@ -17,6 +17,10 @@ class GenExpansion {
     await _generateIntroAndMenuIllustrations();
     await _generateInteractivePropsAndPlatforms();
     await _generateOniArcherEnemy();
+    await generateBosses3To5();
+  }
+
+  static Future<void> generateBosses3To5() async {
     await _generateBoss3HebiHime();
     await _generateBoss4YukiOni();
     await _generateBoss5MuzanKai();
@@ -1324,6 +1328,92 @@ class GenExpansion {
     );
   }
 
+  static void _drawSlashArc(
+    Canvas canvas, {
+    required Offset center,
+    required double radius,
+    required double startAngle,
+    required double sweepAngle,
+    required Color color,
+  }) {
+    final rect = Rect.fromCircle(center: center, radius: radius);
+    canvas.drawArc(
+      rect,
+      startAngle,
+      sweepAngle,
+      false,
+      Paint()
+        ..color = GenUtils.ink
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 14.0
+        ..strokeCap = StrokeCap.round,
+    );
+    canvas.drawArc(
+      rect,
+      startAngle,
+      sweepAngle,
+      false,
+      Paint()
+        ..color = color
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 8.0
+        ..strokeCap = StrokeCap.round,
+    );
+    canvas.drawArc(
+      rect,
+      startAngle + sweepAngle * 0.15,
+      sweepAngle * 0.7,
+      false,
+      Paint()
+        ..color = Colors.white
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 3.2
+        ..strokeCap = StrokeCap.round,
+    );
+  }
+
+  static void _drawStunSparksAndStars(
+    Canvas canvas, {
+    required double animProgress,
+    required double starY,
+    required double starRadiusX,
+    double bodyCenterY = -92,
+  }) {
+    for (int sp = 0; sp < 3; sp++) {
+      final sa = animProgress * 2 * pi + sp * (2 * pi / 3);
+      final sx = cos(sa) * 28.0;
+      final sy = bodyCenterY + sin(sa * 2) * 22.0;
+      final spark = Path()
+        ..moveTo(sx - 8, sy - 6)
+        ..lineTo(sx + 2, sy - 1)
+        ..lineTo(sx - 3, sy + 4)
+        ..lineTo(sx + 8, sy + 9);
+      canvas.drawPath(spark, GenUtils.stroke(GenUtils.cyan, 2.8));
+    }
+
+    final orbitRect = Rect.fromCenter(
+      center: Offset(0, starY),
+      width: starRadiusX * 2.1,
+      height: 18,
+    );
+    canvas.drawOval(
+      orbitRect,
+      GenUtils.stroke(GenUtils.yellow.withValues(alpha: 0.65), 2.4),
+    );
+    for (int s = 0; s < 4; s++) {
+      final a = animProgress * 2 * pi + (s * pi / 2);
+      GenUtils.drawCartoonStar(
+        canvas,
+        Offset(cos(a) * starRadiusX, starY + sin(a) * 9),
+        s.isEven ? 10.5 : 8.0,
+        4.8,
+        5,
+        s.isEven ? GenUtils.yellow : GenUtils.cyan,
+        rotation: a,
+      );
+    }
+  }
+
   // =========================================================================
   // BOSS 3: HEBI-HIME (THE OROCHI VENOM EMPRESS) — High-Detail 2D Cartoon
   // =========================================================================
@@ -1337,12 +1427,47 @@ class GenExpansion {
       double animProgress = 0.0,
       int mode = 0, // 0=idle, 1=dash, 2=cast, 3=stun
     }) {
+      final bool isDash = mode == 1;
+      final bool isCast = mode == 2;
+      final bool isStun = mode == 3;
+
+      double bodyDx = 0.0;
+      double bodyDy = 0.0;
+      double torsoTilt = 0.0;
+      double scaleY = 1.0;
+
+      if (isDash) {
+        bodyDx = sin(animProgress * pi) * 16.0;
+        bodyDy = 4.0 * sin(animProgress * pi);
+        torsoTilt = 0.24;
+      } else if (isCast) {
+        bodyDy = -8.0 - sin(animProgress * pi) * 6.0;
+        torsoTilt = -0.06 * sin(animProgress * pi);
+      } else if (isStun) {
+        bodyDx = sin(animProgress * 2 * pi) * 5.5;
+        bodyDy = 2.0 + cos(animProgress * 4 * pi) * 1.5;
+        torsoTilt = sin(animProgress * 2 * pi) * 0.11;
+        scaleY = 1.0;
+      }
+
       canvas.save();
-      canvas.translate(centerBottom.dx, centerBottom.dy);
+      canvas.translate(centerBottom.dx + bodyDx, centerBottom.dy + bodyDy);
+      canvas.scale(1.0, scaleY);
+
+      if (isDash) {
+        for (int l = 0; l < 4; l++) {
+          final ly = -28.0 - l * 28.0;
+          canvas.drawLine(
+            Offset(-82 - (l % 2) * 14.0, ly),
+            Offset(-32, ly),
+            GenUtils.stroke(emerald.withValues(alpha: 0.78), 3.2),
+          );
+        }
+      }
 
       // 1. Toxic Emerald Venom Aura & Floating Miasma Orbs
       final auraPaint = Paint()
-        ..color = emerald.withValues(alpha: mode == 2 ? 0.45 : 0.25)
+        ..color = emerald.withValues(alpha: (isDash || isCast) ? 0.45 : 0.25)
         ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 12);
       canvas.drawOval(
         Rect.fromCenter(center: const Offset(0, -82), width: 130, height: 150),
@@ -1352,9 +1477,15 @@ class GenExpansion {
       // 2. Twin Rearing Spectral Orochi Cobras behind Empress Shoulders
       for (final side in [-1.0, 1.0]) {
         canvas.save();
-        final cobraBob = sin(animProgress * 2 * pi + side) * 4.0;
-        canvas.translate(side * 38.0 + sway * 0.4, -95.0 + cobraBob);
+        final cobraBob = sin(animProgress * 2 * pi + side) * (isCast ? 9.0 : 4.5);
+        final cobraDrop = isStun ? 16.0 : 0.0;
+        canvas.translate(
+          side * (isCast ? 44.0 : 38.0) + sway * 0.4,
+          -95.0 + cobraBob + cobraDrop,
+        );
         canvas.scale(side, 1.0);
+        if (isDash) canvas.rotate(0.18);
+        if (isStun) canvas.rotate(0.32);
 
         // Flared King Cobra Hood
         final hoodPath = Path()
@@ -1395,7 +1526,6 @@ class GenExpansion {
           highlightColor: emerald,
           outlineWidth: 3.2,
         );
-        // Glowing Viper Eye
         GenUtils.drawCelCircle(
           canvas,
           const Offset(12, -26),
@@ -1403,7 +1533,6 @@ class GenExpansion {
           GenUtils.yellow,
           outlineWidth: 1.8,
         );
-        // Twin White Venom Fangs & Forked Tongue
         canvas.drawLine(
           const Offset(18, -20),
           const Offset(20, -12),
@@ -1423,11 +1552,11 @@ class GenExpansion {
       }
 
       // 3. Coiled Armored Naga-Serpent Lower Body & Whipping Rattle Tail
-      // Back Tail Coil + Rattlesnake Blade Tip
+      final coilSway = isDash ? sin(animProgress * 2 * pi) * 14.0 : sway;
       final backTail = Path()
-        ..moveTo(-28 + sway, -18)
-        ..quadraticBezierTo(-68 + sway, -28, -62 + sway * 1.2, -62)
-        ..quadraticBezierTo(-56 + sway, -42, -20 + sway, -32)
+        ..moveTo(-28 + coilSway, -18)
+        ..quadraticBezierTo(-68 + coilSway, -28, -62 + coilSway * 1.2, -62)
+        ..quadraticBezierTo(-56 + coilSway, -42, -20 + coilSway, -32)
         ..close();
       GenUtils.drawCelPath(
         canvas,
@@ -1436,21 +1565,21 @@ class GenExpansion {
         highlightColor: emerald,
         outlineWidth: 3.8,
       );
-      // Golden Tail Blade Rattle Tip
       GenUtils.drawCartoonStar(
         canvas,
-        Offset(-62 + sway * 1.2, -66),
+        Offset(-62 + coilSway * 1.2, -66),
         14,
         6,
         4,
         GenUtils.gold,
+        rotation: animProgress * 2 * pi,
         outlineWidth: 2.8,
       );
 
       // Primary Heavy Serpent Coils (2 tiered loops)
       GenUtils.drawCelRRect(
         canvas,
-        Rect.fromLTWH(-48 + sway * 0.7, -26, 96, 24),
+        Rect.fromLTWH(-48 + coilSway * 0.7, -26, 96, 24),
         12,
         darkEmerald,
         topHighlight: emerald,
@@ -1458,24 +1587,29 @@ class GenExpansion {
       );
       GenUtils.drawCelRRect(
         canvas,
-        Rect.fromLTWH(-38 - sway * 0.5, -46, 76, 24),
+        Rect.fromLTWH(-38 - coilSway * 0.5, -46, 76, 24),
         12,
         darkEmerald,
         topHighlight: emerald,
         outlineWidth: 4.0,
       );
 
-      // Golden Ventral Serpent Belly Scales & Diamond Back Markings
       for (double sx = -26; sx <= 26; sx += 13) {
         GenUtils.drawCelRRect(
           canvas,
-          Rect.fromLTWH(sx - 5 + sway * 0.4, -22, 10, 14),
+          Rect.fromLTWH(sx - 5 + coilSway * 0.4, -22, 10, 14),
           3,
           GenUtils.goldDark,
           topHighlight: GenUtils.yellow,
           outlineWidth: 2.2,
         );
       }
+
+      // Upper body pivot
+      canvas.save();
+      canvas.translate(0, -48);
+      canvas.rotate(torsoTilt);
+      canvas.translate(0, 48);
 
       // 4. Scale-Armored Kunoichi Empress Torso & Obi Sash
       final torsoPath = Path()
@@ -1492,7 +1626,6 @@ class GenExpansion {
         outlineWidth: 4.0,
       );
 
-      // Gold & Emerald Overlapping Scale Cuirass on Chest
       GenUtils.drawCelRRect(
         canvas,
         const Rect.fromLTWH(-18, -98, 36, 36),
@@ -1509,7 +1642,6 @@ class GenExpansion {
         );
       }
 
-      // Royal Crimson Obi Belt & Ouroboros Gem Clasp
       GenUtils.drawCelRRect(
         canvas,
         const Rect.fromLTWH(-25, -58, 50, 14),
@@ -1527,7 +1659,6 @@ class GenExpansion {
         outlineWidth: 2.8,
       );
 
-      // Spiked Viper Shoulder Pauldrons
       for (final side in [-1.0, 1.0]) {
         canvas.save();
         canvas.scale(side, 1.0);
@@ -1547,7 +1678,7 @@ class GenExpansion {
         canvas.restore();
       }
 
-      // 5. Kunoichi Empress Face, Glowing Emerald Viper Eyes & Horned Kasa Hat (matching Portrait!)
+      // 5. Kunoichi Empress Face, Glowing Emerald Viper Eyes & Horned Kasa Hat
       GenUtils.drawCelRRect(
         canvas,
         const Rect.fromLTWH(-19, -138, 38, 34),
@@ -1557,7 +1688,6 @@ class GenExpansion {
         outlineWidth: 3.6,
       );
 
-      // Glowing Neon-Emerald Viper Eyes
       for (final ex in [-7.0, 8.0]) {
         final eyePath = Path()
           ..moveTo(ex - 6, -123)
@@ -1579,7 +1709,6 @@ class GenExpansion {
         );
       }
 
-      // Woven Bamboo Kasa Hat with Golden Serpent Horn Crest
       final kasaPath = Path()
         ..moveTo(-54, -128)
         ..quadraticBezierTo(0, -164, 54, -128)
@@ -1592,7 +1721,6 @@ class GenExpansion {
         highlightColor: GenUtils.wood,
         outlineWidth: 4.0,
       );
-      // Golden Horned Serpent Crest on front of Kasa Hat
       final crownPath = Path()
         ..moveTo(-16, -136)
         ..quadraticBezierTo(-28, -158, -18, -172)
@@ -1616,18 +1744,26 @@ class GenExpansion {
         outlineWidth: 2.2,
       );
 
-      // 6. Dual Curved Viper Kusarigama Sickles Dripping Venom
-      final double rightBladeAngle = mode == 1
-          ? 0.25
-          : (mode == 2 ? -1.2 + sin(animProgress * 2 * pi) * 0.25 : -0.35);
-      final double leftBladeAngle = mode == 1 ? -0.4 : (mode == 2 ? -1.9 : -2.4);
+      // 6. Dual Curved Viper Kusarigama Sickles Dripping Venom (dynamic swing!)
+      double rightBladeAngle = -0.35 + sin(animProgress * 2 * pi) * 0.08;
+      double leftBladeAngle = -2.4 - sin(animProgress * 2 * pi) * 0.08;
+      if (isDash) {
+        // Slashing dash sweep!
+        rightBladeAngle = -1.45 + animProgress * 2.35;
+        leftBladeAngle = -2.35 + animProgress * 1.85;
+      } else if (isCast) {
+        rightBladeAngle = -1.25 + sin(animProgress * 2 * pi) * 0.30;
+        leftBladeAngle = -1.90 - sin(animProgress * 2 * pi) * 0.30;
+      } else if (isStun) {
+        rightBladeAngle = 1.05 + sin(animProgress * 2 * pi) * 0.14;
+        leftBladeAngle = 2.08 - sin(animProgress * 2 * pi) * 0.14;
+      }
 
       for (final isRight in [false, true]) {
         canvas.save();
         canvas.translate(isRight ? 24 : -24, -84);
         canvas.rotate(isRight ? rightBladeAngle : leftBladeAngle);
 
-        // Armored Forearm Bracer
         GenUtils.drawCelRRect(
           canvas,
           const Rect.fromLTWH(-6, -6, 20, 12),
@@ -1637,7 +1773,6 @@ class GenExpansion {
           outlineWidth: 3.0,
         );
 
-        // Curved Crescent Serpent Sickle Blade
         final sickle = Path()
           ..moveTo(12, -5)
           ..quadraticBezierTo(52, -26, 74, 6)
@@ -1651,7 +1786,6 @@ class GenExpansion {
           highlightColor: GenUtils.yellow,
           outlineWidth: 3.5,
         );
-        // Venom edge glow
         canvas.drawCircle(
           const Offset(68, 8),
           4.5,
@@ -1660,34 +1794,42 @@ class GenExpansion {
         canvas.restore();
       }
 
+      if (isDash && animProgress >= 0.20) {
+        _drawSlashArc(
+          canvas,
+          center: const Offset(20, -76),
+          radius: 62,
+          startAngle: -1.1 + animProgress * 1.2,
+          sweepAngle: 1.45,
+          color: emerald,
+        );
+      }
+
       // Cast Mode: Spinning Venom Mandala Sigil
-      if (mode == 2) {
+      if (isCast) {
         GenUtils.drawCartoonStar(
           canvas,
           const Offset(0, -90),
-          38,
-          18,
+          42,
+          20,
           8,
-          emerald.withValues(alpha: 0.55),
+          emerald.withValues(alpha: 0.62),
           rotation: animProgress * 2 * pi,
           outlineWidth: 2.8,
         );
       }
 
-      // Stun Mode: Circling Cartoon Stars
-      if (mode == 3) {
-        for (int s = 0; s < 3; s++) {
-          final a = animProgress * 2 * pi + (s * 2 * pi / 3);
-          GenUtils.drawCartoonStar(
-            canvas,
-            Offset(cos(a) * 36, -172 + sin(a) * 8),
-            9,
-            4.5,
-            5,
-            GenUtils.yellow,
-            rotation: a,
-          );
-        }
+      canvas.restore(); // end torso tilt
+
+      // Stun Mode: Circling Cartoon Stars & Guard-Break Sparks
+      if (isStun) {
+        _drawStunSparksAndStars(
+          canvas,
+          animProgress: animProgress,
+          starY: -172,
+          starRadiusX: 36,
+          bodyCenterY: -82,
+        );
       }
 
       canvas.restore();
@@ -1705,14 +1847,18 @@ class GenExpansion {
         frameHeight: 180,
         frameCount: entry.value[0],
         drawFrame: (canvas, i, size) {
-          final t = i / entry.value[0];
-          final phase = t * 2 * pi;
+          final count = entry.value[0];
+          final mode = entry.value[1];
+          final t = mode == 1 || mode == 2
+              ? (i / (count - 1))
+              : (i / count);
+          final phase = (i / count) * 2 * pi;
           drawHebi(
             canvas,
             Offset(size.width * 0.46, size.height - 8),
             sway: sin(phase) * 6.0,
             animProgress: t,
-            mode: entry.value[1],
+            mode: mode,
           );
         },
       );
@@ -1732,19 +1878,122 @@ class GenExpansion {
       double animProgress = 0.0,
       int mode = 0, // 0=idle, 1=charge, 2=slam, 3=stun
     }) {
+      final bool isCharge = mode == 1;
+      final bool isSlam = mode == 2;
+      final bool isStun = mode == 3;
+
+      double bodyDx = 0.0;
+      double bodyDy = bob;
+      double torsoTilt = 0.0;
+      double scaleY = 1.0;
+
+      if (isCharge) {
+        bodyDx = sin(animProgress * pi) * 14.0;
+        bodyDy = -3.0 + sin(animProgress * 2 * pi).abs() * 4.5;
+        torsoTilt = 0.22;
+      } else if (isSlam) {
+        if (animProgress < 0.35) {
+          final wt = animProgress / 0.35;
+          bodyDx = -10.0 * wt;
+          bodyDy = -12.0 * wt;
+          torsoTilt = -0.18 * wt;
+        } else {
+          final st = ((animProgress - 0.35) / 0.65).clamp(0.0, 1.0);
+          bodyDx = -10.0 + 26.0 * sin(st * pi * 0.7);
+          bodyDy = 8.0 * sin(st * pi);
+          torsoTilt = -0.18 + 0.42 * sin(st * pi * 0.75);
+        }
+      } else if (isStun) {
+        bodyDx = sin(animProgress * 2 * pi) * 5.5;
+        bodyDy = 2.5 + cos(animProgress * 4 * pi) * 1.5;
+        torsoTilt = sin(animProgress * 2 * pi) * 0.11;
+        scaleY = 1.0;
+      }
+
       canvas.save();
-      canvas.translate(centerBottom.dx, centerBottom.dy + bob);
+      canvas.translate(centerBottom.dx + bodyDx, centerBottom.dy + bodyDy);
+      canvas.scale(1.0, scaleY);
+
+      if (isCharge || (isSlam && animProgress >= 0.35)) {
+        for (int l = 0; l < 4; l++) {
+          final ly = -36.0 - l * 32.0;
+          canvas.drawLine(
+            Offset(-92 - (l % 2) * 16.0, ly),
+            Offset(-40, ly),
+            GenUtils.stroke(iceBlue.withValues(alpha: 0.78), 3.4),
+          );
+        }
+      }
 
       // 1. Swirling Cryo Blizzard Aura
       final auraPaint = Paint()
-        ..color = iceBlue.withValues(alpha: 0.32)
+        ..color = iceBlue.withValues(alpha: (isCharge || isSlam) ? 0.46 : 0.32)
         ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 14);
       canvas.drawOval(
         Rect.fromCenter(center: const Offset(0, -96), width: 150, height: 175),
         auraPaint,
       );
 
-      // 2. Jagged Crystalline Back-Glacier Spires jutting behind shoulders
+      // 2. Colossal Frost-Armored Samurai Greaves & Spiked Sabatons (animated stride / lunge / kneel)
+      for (final side in [-1.0, 1.0]) {
+        double lx = side * 24.0;
+        double ly = 0.0;
+        double legRot = 0.0;
+        if (isCharge) {
+          final s = sin(animProgress * 2 * pi + (side < 0 ? 0 : pi));
+          lx += s * 13.0;
+          ly = s < 0 ? s * 6.0 : 0.0;
+          legRot = -s * 0.25;
+        } else if (isSlam && animProgress >= 0.35) {
+          lx += side * 10.0;
+          legRot = side * -0.18;
+        } else if (isStun) {
+          if (side < 0) {
+            lx -= 4.0;
+            ly = 2.0;
+            legRot = 0.14;
+          } else {
+            lx += 4.0;
+            legRot = -0.08;
+          }
+        }
+        canvas.save();
+        canvas.translate(lx, -52 + ly);
+        canvas.rotate(legRot);
+        GenUtils.drawCelRRect(
+          canvas,
+          const Rect.fromLTWH(-15, 0, 30, 46),
+          8,
+          GenUtils.darkNavy,
+          topHighlight: darkIce,
+          outlineWidth: 4.0,
+        );
+        GenUtils.drawCelCircle(
+          canvas,
+          const Offset(0, 16),
+          9,
+          iceBlue,
+          highlightColor: Colors.white,
+          outlineWidth: 3.0,
+        );
+        GenUtils.drawCelRRect(
+          canvas,
+          const Rect.fromLTWH(-17, 40, 34, 12),
+          4,
+          iceBlue,
+          topHighlight: Colors.white,
+          outlineWidth: 3.5,
+        );
+        canvas.restore();
+      }
+
+      // Upper body pivot
+      canvas.save();
+      canvas.translate(0, -56);
+      canvas.rotate(torsoTilt);
+      canvas.translate(0, 56);
+
+      // 3. Jagged Crystalline Back-Glacier Spires jutting behind shoulders
       for (int sp = -2; sp <= 2; sp++) {
         final angle = sp * 0.28;
         canvas.save();
@@ -1765,7 +2014,7 @@ class GenExpansion {
         canvas.restore();
       }
 
-      // 3. Wild Flowing White Kabuki / Yeti Mane behind Helmet
+      // 4. Wild Flowing White Kabuki / Yeti Mane behind Helmet
       final manePath = Path()
         ..moveTo(-48, -148)
         ..lineTo(-68, -110)
@@ -1782,37 +2031,6 @@ class GenExpansion {
         outlineWidth: 3.8,
       );
 
-      // 4. Colossal Frost-Armored Samurai Greaves & Spiked Sabatons
-      for (final side in [-1.0, 1.0]) {
-        final lx = side * 24.0;
-        GenUtils.drawCelRRect(
-          canvas,
-          Rect.fromLTWH(lx - 15, -52, 30, 46),
-          8,
-          GenUtils.darkNavy,
-          topHighlight: darkIce,
-          outlineWidth: 4.0,
-        );
-        // Ice-Skull Knee Guard
-        GenUtils.drawCelCircle(
-          canvas,
-          Offset(lx, -36),
-          9,
-          iceBlue,
-          highlightColor: Colors.white,
-          outlineWidth: 3.0,
-        );
-        // Clawed Frost Sabaton Foot
-        GenUtils.drawCelRRect(
-          canvas,
-          Rect.fromLTWH(lx - 17, -12, 34, 12),
-          4,
-          iceBlue,
-          topHighlight: Colors.white,
-          outlineWidth: 3.5,
-        );
-      }
-
       // 5. Hulking Glacial Ō-Yoroi Samurai Cuirass & Kusazuri Tasset Skirt
       GenUtils.drawCelRRect(
         canvas,
@@ -1823,7 +2041,6 @@ class GenExpansion {
         outlineWidth: 4.5,
       );
 
-      // Layered Frost Armor Plates & Gold Lacing
       for (double y = -118; y <= -78; y += 18) {
         GenUtils.drawCelRRect(
           canvas,
@@ -1835,7 +2052,6 @@ class GenExpansion {
         );
       }
 
-      // 3 Hanging Kusazuri Tasset Plates at Waist
       for (int k = -1; k <= 1; k++) {
         GenUtils.drawCelRRect(
           canvas,
@@ -1898,7 +2114,6 @@ class GenExpansion {
         outlineWidth: 4.2,
       );
 
-      // Giant Jagged Glowing Cyan Ice Horns (matching Portrait!)
       for (final side in [-1.0, 1.0]) {
         final horn = Path()
           ..moveTo(side * 18, -164)
@@ -1916,7 +2131,6 @@ class GenExpansion {
         );
       }
 
-      // Snarling Dark-Iron Demon Menpo Jaw Mask & Curved Ivory Tusks
       GenUtils.drawCelRRect(
         canvas,
         const Rect.fromLTWH(-24, -148, 48, 20),
@@ -1939,7 +2153,6 @@ class GenExpansion {
         );
       }
 
-      // Fierce Slanted Glowing Cyan Oni Eyes
       for (final ex in [-10.0, 10.0]) {
         final eye = Path()
           ..moveTo(ex - 6, -158)
@@ -1956,21 +2169,21 @@ class GenExpansion {
         );
       }
 
-      // 8. Colossal Spiked Frost-Iron Kanabo War Club
-      double clubAngle = -0.55;
-      if (mode == 1) {
-        clubAngle = -1.45 - animProgress * 0.25;
-      } else if (mode == 2) {
-        clubAngle = 0.72;
-      } else if (mode == 3) {
-        clubAngle = 0.85;
+      // 8. Colossal Spiked Frost-Iron Kanabo War Club (dynamic 150° smash arc!)
+      double clubAngle = -0.55 + sin(animProgress * 2 * pi) * 0.06;
+      if (isCharge) {
+        clubAngle = -1.35 - sin(animProgress * pi) * 0.35;
+      } else if (isSlam) {
+        // Overhead windup (-1.75) -> full downward glacier smash (+0.85)!
+        clubAngle = -1.75 + animProgress * 2.60;
+      } else if (isStun) {
+        clubAngle = 1.05 + sin(animProgress * 2 * pi) * 0.14;
       }
 
       canvas.save();
       canvas.translate(38, -98);
       canvas.rotate(clubAngle);
 
-      // Heavy Chained Gauntlet Fist
       GenUtils.drawCelRRect(
         canvas,
         const Rect.fromLTWH(-10, -10, 26, 20),
@@ -1980,7 +2193,6 @@ class GenExpansion {
         outlineWidth: 3.6,
       );
 
-      // Spiked Octagonal Ice-Kanabo Club Body
       final clubBody = Path()
         ..moveTo(14, -9)
         ..lineTo(96, -18)
@@ -1996,7 +2208,6 @@ class GenExpansion {
         outlineWidth: 4.0,
       );
 
-      // White-Ice Studs along Kanabo Club
       for (double cx = 32; cx <= 88; cx += 18) {
         for (final side in [-1.0, 1.0]) {
           final stud = Path()
@@ -2014,20 +2225,46 @@ class GenExpansion {
       }
       canvas.restore();
 
-      // Stun Mode Stars
-      if (mode == 3) {
-        for (int s = 0; s < 3; s++) {
-          final a = animProgress * 2 * pi + (s * 2 * pi / 3);
-          GenUtils.drawCartoonStar(
-            canvas,
-            Offset(cos(a) * 44, -196 + sin(a) * 10),
-            10,
-            5,
-            5,
-            GenUtils.yellow,
-            rotation: a,
-          );
+      // Slam Slash Arc & Ice Spikes
+      if (isSlam && animProgress >= 0.30 && animProgress <= 0.88) {
+        _drawSlashArc(
+          canvas,
+          center: const Offset(28, -88),
+          radius: 82,
+          startAngle: -1.40 + (animProgress - 0.30) * 1.5,
+          sweepAngle: 1.60,
+          color: iceBlue,
+        );
+        if (animProgress >= 0.50) {
+          for (int sp = 0; sp < 3; sp++) {
+            final sx = 46.0 + sp * 16.0;
+            final spike = Path()
+              ..moveTo(sx - 8, 0)
+              ..lineTo(sx, -26 - (2 - sp) * 6.0)
+              ..lineTo(sx + 8, 0)
+              ..close();
+            GenUtils.drawCelPath(
+              canvas,
+              spike,
+              iceBlue,
+              highlightColor: Colors.white,
+              outlineWidth: 2.8,
+            );
+          }
         }
+      }
+
+      canvas.restore(); // end torso tilt
+
+      // Stun Mode Stars & Guard-Break Sparks
+      if (isStun) {
+        _drawStunSparksAndStars(
+          canvas,
+          animProgress: animProgress,
+          starY: -196,
+          starRadiusX: 44,
+          bodyCenterY: -96,
+        );
       }
 
       canvas.restore();
@@ -2045,14 +2282,16 @@ class GenExpansion {
         frameHeight: 220,
         frameCount: entry.value[0],
         drawFrame: (canvas, i, size) {
-          final t = i / entry.value[0];
-          final phase = t * 2 * pi;
+          final count = entry.value[0];
+          final mode = entry.value[1];
+          final t = mode == 1 || mode == 2 ? (i / (count - 1)) : (i / count);
+          final phase = (i / count) * 2 * pi;
           drawYuki(
             canvas,
             Offset(size.width * 0.44, size.height - 8),
-            bob: sin(phase) * 4.0,
+            bob: mode == 0 ? sin(phase) * 4.0 : 0.0,
             animProgress: t,
-            mode: entry.value[1],
+            mode: mode,
           );
         },
       );
@@ -2072,14 +2311,61 @@ class GenExpansion {
       double animProgress = 0.0,
       int mode = 0, // 0=idle, 1=slash, 2=cast, 3=guard, 4=stun
     }) {
+      final bool isSlash = mode == 1;
+      final bool isCast = mode == 2;
+      final bool isGuard = mode == 3;
+      final bool isStun = mode == 4;
+
+      double bodyDx = 0.0;
+      double bodyDy = bob;
+      double torsoTilt = 0.0;
+      double scaleY = 1.0;
+
+      if (isSlash) {
+        if (animProgress < 0.30) {
+          final wt = animProgress / 0.30;
+          bodyDx = -10.0 * wt;
+          bodyDy = -6.0 * wt;
+          torsoTilt = -0.18 * wt;
+        } else {
+          final st = ((animProgress - 0.30) / 0.70).clamp(0.0, 1.0);
+          bodyDx = -10.0 + 26.0 * sin(st * pi * 0.65);
+          bodyDy = 6.0 * sin(st * pi);
+          torsoTilt = -0.18 + 0.42 * sin(st * pi * 0.75);
+        }
+      } else if (isCast) {
+        bodyDy = -10.0 - sin(animProgress * pi) * 8.0;
+      } else if (isGuard) {
+        bodyDx = -3.0;
+        bodyDy = 3.0;
+        torsoTilt = -0.06;
+      } else if (isStun) {
+        bodyDx = sin(animProgress * 2 * pi) * 5.5;
+        bodyDy = 2.5 + cos(animProgress * 4 * pi) * 1.5;
+        torsoTilt = sin(animProgress * 2 * pi) * 0.11;
+        scaleY = 1.0;
+      }
+
       canvas.save();
-      canvas.translate(centerBottom.dx, centerBottom.dy + bob);
+      canvas.translate(centerBottom.dx + bodyDx, centerBottom.dy + bodyDy);
+      canvas.scale(1.0, scaleY);
+
+      if (isSlash && animProgress >= 0.25) {
+        for (int l = 0; l < 4; l++) {
+          final ly = -35.0 - l * 32.0;
+          canvas.drawLine(
+            Offset(-90 - (l % 2) * 16.0, ly),
+            Offset(-38, ly),
+            GenUtils.stroke(GenUtils.red.withValues(alpha: 0.78), 3.4),
+          );
+        }
+      }
 
       // 1. Rotating Celestial Blood-Eclipse Halo & Golden Sunburst behind Overlord
       GenUtils.drawCartoonStar(
         canvas,
         const Offset(0, -118),
-        84,
+        84 + (isCast ? sin(animProgress * pi) * 10.0 : 0.0),
         52,
         12,
         GenUtils.gold.withValues(alpha: 0.8),
@@ -2095,13 +2381,80 @@ class GenExpansion {
         outlineWidth: 4.0,
       );
 
-      // 2. Six Articulated Obsidian & Crimson Archfiend Dragon Wings (3 pairs)
+      // 2. Flowing Tattered Blood-Emperor Cape & Armored Hakama Greaves
+      final cape = Path()
+        ..moveTo(-34, -126)
+        ..lineTo(34, -126)
+        ..lineTo(52, -10)
+        ..lineTo(24, -24)
+        ..lineTo(0, -8)
+        ..lineTo(-24, -24)
+        ..lineTo(-52, -10)
+        ..close();
+      GenUtils.drawCelPath(
+        canvas,
+        cape,
+        GenUtils.darkRed,
+        highlightColor: GenUtils.red,
+        outlineWidth: 4.0,
+      );
+
+      // Imperial Obsidian & Gold Samurai Hakama Legs (animated lunge / kneel)
+      for (final side in [-1.0, 1.0]) {
+        double lx = side * 18.0;
+        double ly = 0.0;
+        double legRot = 0.0;
+        if (isSlash && animProgress >= 0.30) {
+          lx += side * 10.0;
+          legRot = side * -0.18;
+        } else if (isStun) {
+          if (side < 0) {
+            lx -= 4.0;
+            ly = 2.0;
+            legRot = 0.14;
+          } else {
+            lx += 4.0;
+            legRot = -0.08;
+          }
+        }
+        canvas.save();
+        canvas.translate(lx, -52 + ly);
+        canvas.rotate(legRot);
+        GenUtils.drawCelRRect(
+          canvas,
+          const Rect.fromLTWH(-13, 0, 26, 48),
+          6,
+          GenUtils.ink,
+          topHighlight: GenUtils.darkPurple,
+          outlineWidth: 3.8,
+        );
+        GenUtils.drawCelRRect(
+          canvas,
+          const Rect.fromLTWH(-14, 42, 28, 10),
+          4,
+          GenUtils.gold,
+          topHighlight: GenUtils.yellow,
+          outlineWidth: 3.2,
+        );
+        canvas.restore();
+      }
+
+      // Upper body pivot
+      canvas.save();
+      canvas.translate(0, -56);
+      canvas.rotate(torsoTilt);
+      canvas.translate(0, 56);
+
+      // 3. Six Articulated Obsidian & Crimson Archfiend Dragon Wings (3 pairs)
       for (final side in [-1.0, 1.0]) {
         for (int w = 0; w < 3; w++) {
           canvas.save();
           canvas.translate(side * 22.0, -124.0 + w * 20.0);
           canvas.scale(side, 1.0);
-          canvas.rotate((w - 1) * 0.25 + sin(animProgress * 2 * pi + w) * 0.08);
+          final wingFlap = isCast
+              ? sin(animProgress * 2 * pi + w) * 0.25
+              : (isStun ? 0.32 : sin(animProgress * 2 * pi + w) * 0.10);
+          canvas.rotate((w - 1) * 0.25 + wingFlap);
 
           final wing = Path()
             ..moveTo(0, 0)
@@ -2120,45 +2473,6 @@ class GenExpansion {
         }
       }
 
-      // 3. Flowing Tattered Blood-Emperor Cape & Armored Hakama Greaves
-      final cape = Path()
-        ..moveTo(-34, -126)
-        ..lineTo(34, -126)
-        ..lineTo(52, -10)
-        ..lineTo(24, -24)
-        ..lineTo(0, -8)
-        ..lineTo(-24, -24)
-        ..lineTo(-52, -10)
-        ..close();
-      GenUtils.drawCelPath(
-        canvas,
-        cape,
-        GenUtils.darkRed,
-        highlightColor: GenUtils.red,
-        outlineWidth: 4.0,
-      );
-
-      // Imperial Obsidian & Gold Samurai Hakama Legs
-      for (final side in [-1.0, 1.0]) {
-        final lx = side * 18.0;
-        GenUtils.drawCelRRect(
-          canvas,
-          Rect.fromLTWH(lx - 13, -52, 26, 48),
-          6,
-          GenUtils.ink,
-          topHighlight: GenUtils.darkPurple,
-          outlineWidth: 3.8,
-        );
-        GenUtils.drawCelRRect(
-          canvas,
-          Rect.fromLTWH(lx - 14, -10, 28, 10),
-          4,
-          GenUtils.gold,
-          topHighlight: GenUtils.yellow,
-          outlineWidth: 3.2,
-        );
-      }
-
       // 4. Ornate Black-and-Gold Shogun Overlord Cuirass & Eclipse Chest Eye
       GenUtils.drawCelRRect(
         canvas,
@@ -2168,7 +2482,6 @@ class GenExpansion {
         topHighlight: GenUtils.darkPurple,
         outlineWidth: 4.2,
       );
-      // Gold Dragon Rib Trim
       for (double y = -116; y <= -76; y += 13) {
         canvas.drawLine(
           Offset(-24, y),
@@ -2176,7 +2489,6 @@ class GenExpansion {
           GenUtils.stroke(GenUtils.gold, 3.0),
         );
       }
-      // All-Seeing Crimson Eclipse Eye on Chestplate
       GenUtils.drawCelCircle(
         canvas,
         const Offset(0, -94),
@@ -2213,7 +2525,7 @@ class GenExpansion {
         canvas.restore();
       }
 
-      // 6. Obsidian Samurai Kabuto Mask, Menpo Tusks & Blazing Eclipse V-Horns (matching Portrait!)
+      // 6. Obsidian Samurai Kabuto Mask, Menpo Tusks & Blazing Eclipse V-Horns
       GenUtils.drawCelRRect(
         canvas,
         const Rect.fromLTWH(-26, -172, 52, 46),
@@ -2223,7 +2535,6 @@ class GenExpansion {
         outlineWidth: 4.0,
       );
 
-      // Samurai Kabuto Side Flaps (Fukigaeshi)
       for (final side in [-1.0, 1.0]) {
         GenUtils.drawCelRRect(
           canvas,
@@ -2235,7 +2546,6 @@ class GenExpansion {
         );
       }
 
-      // Snarling Obsidian Menpo Mask & Golden Fangs
       GenUtils.drawCelRRect(
         canvas,
         const Rect.fromLTWH(-20, -146, 40, 18),
@@ -2259,7 +2569,6 @@ class GenExpansion {
         );
       }
 
-      // Slanted Blazing Crimson-Gold Eyes
       for (final ex in [-9.0, 9.0]) {
         final eye = Path()
           ..moveTo(ex - 6, -156)
@@ -2276,7 +2585,6 @@ class GenExpansion {
         );
       }
 
-      // Towering Flaming Crimson-Gold Eclipse Kuwagata Horns
       final crown = Path()
         ..moveTo(0, -164)
         ..lineTo(-42, -206)
@@ -2293,20 +2601,28 @@ class GenExpansion {
         outlineWidth: 3.8,
       );
 
-      // 7. Dual Cursed Blood-Moon Odachi Katanas (Left & Right Blades!)
-      final double rAngle = mode == 1
-          ? (-1.2 + animProgress * 2.1)
-          : (mode == 2 ? -1.35 : (mode == 3 ? -0.9 : -0.35));
-      final double lAngle = mode == 1
-          ? (-2.2 + animProgress * 1.4)
-          : (mode == 2 ? -1.85 : (mode == 3 ? -2.2 : -2.65));
+      // 7. Dual Cursed Blood-Moon Odachi Katanas (dynamic sweep across frames!)
+      double rAngle = -0.35 + sin(animProgress * 2 * pi) * 0.06;
+      double lAngle = -2.65 - sin(animProgress * 2 * pi) * 0.06;
+      if (isSlash) {
+        rAngle = -1.70 + animProgress * 2.55;
+        lAngle = -2.55 + animProgress * 1.95;
+      } else if (isCast) {
+        rAngle = -1.35 + sin(animProgress * 2 * pi) * 0.25;
+        lAngle = -1.80 - sin(animProgress * 2 * pi) * 0.25;
+      } else if (isGuard) {
+        rAngle = -0.95;
+        lAngle = -2.20;
+      } else if (isStun) {
+        rAngle = 1.05 + sin(animProgress * 2 * pi) * 0.14;
+        lAngle = 2.08 - sin(animProgress * 2 * pi) * 0.14;
+      }
 
       for (final isRight in [false, true]) {
         canvas.save();
         canvas.translate(isRight ? 30 : -30, -96);
         canvas.rotate(isRight ? rAngle : lAngle);
 
-        // Hilt & Golden Guard
         GenUtils.drawCelRRect(
           canvas,
           const Rect.fromLTWH(-4, -5, 24, 10),
@@ -2316,7 +2632,6 @@ class GenExpansion {
           outlineWidth: 3.0,
         );
 
-        // Cursed Obsidian-and-Blood-Red Odachi Katana Blade
         final odachi = Path()
           ..moveTo(18, -7)
           ..lineTo(96, -5)
@@ -2339,8 +2654,19 @@ class GenExpansion {
         canvas.restore();
       }
 
+      if (isSlash && animProgress >= 0.25 && animProgress <= 0.88) {
+        _drawSlashArc(
+          canvas,
+          center: const Offset(24, -84),
+          radius: 78,
+          startAngle: -1.35 + (animProgress - 0.25) * 1.5,
+          sweepAngle: 1.60,
+          color: GenUtils.red,
+        );
+      }
+
       // Guard Mode: Blood-Eclipse Hex Barrier Shield
-      if (mode == 3) {
+      if (isGuard) {
         final shieldRect =
             Rect.fromCenter(center: const Offset(0, -96), width: 110, height: 140);
         canvas.drawOval(
@@ -2350,20 +2676,17 @@ class GenExpansion {
         canvas.drawOval(shieldRect, GenUtils.stroke(GenUtils.gold, 3.8));
       }
 
-      // Stun Mode: Circling Stars
-      if (mode == 4) {
-        for (int s = 0; s < 3; s++) {
-          final a = animProgress * 2 * pi + (s * 2 * pi / 3);
-          GenUtils.drawCartoonStar(
-            canvas,
-            Offset(cos(a) * 44, -204 + sin(a) * 10),
-            10,
-            5,
-            5,
-            GenUtils.yellow,
-            rotation: a,
-          );
-        }
+      canvas.restore(); // end torso tilt
+
+      // Stun Mode: Circling Stars & Guard-Break Sparks
+      if (isStun) {
+        _drawStunSparksAndStars(
+          canvas,
+          animProgress: animProgress,
+          starY: -204,
+          starRadiusX: 44,
+          bodyCenterY: -96,
+        );
       }
 
       canvas.restore();
@@ -2382,14 +2705,16 @@ class GenExpansion {
         frameHeight: 220,
         frameCount: entry.value[0],
         drawFrame: (canvas, i, size) {
-          final t = i / entry.value[0];
-          final phase = t * 2 * pi;
+          final count = entry.value[0];
+          final mode = entry.value[1];
+          final t = mode == 1 || mode == 2 ? (i / (count - 1)) : (i / count);
+          final phase = (i / count) * 2 * pi;
           drawMuzan(
             canvas,
             Offset(size.width * 0.45, size.height - 8),
-            bob: sin(phase) * 4.0,
+            bob: mode == 0 ? sin(phase) * 4.0 : 0.0,
             animProgress: t,
-            mode: entry.value[1],
+            mode: mode,
           );
         },
       );

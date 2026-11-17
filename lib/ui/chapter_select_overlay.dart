@@ -56,21 +56,61 @@ class _ChapterSelectOverlayState extends State<ChapterSelectOverlay> {
       accentColor: ComicTheme.comicYellow,
       bgAsset: CartoonAssets.bgLevel5,
       bossPortrait: CartoonAssets.portraitMuzanKai,
-      hazards: ['Void Portals', 'Astral Waves', 'Final Trial'],
+      hazards: ['Void Portals', 'Astral Waves', 'Blood Pillars'],
+    ),
+    _ChapterInfo(
+      level: 6,
+      difficulty: '★★★★★★',
+      accentColor: Color(0xFFFF8F00),
+      bgAsset: CartoonAssets.bgLevel6,
+      bossPortrait: CartoonAssets.portraitGenjiKarakuri,
+      hazards: ['Gear Foundry', 'Karakuri Saws', 'Steam Rails'],
+    ),
+    _ChapterInfo(
+      level: 7,
+      difficulty: '★★★★★★★',
+      accentColor: Color(0xFFE040FB),
+      bgAsset: CartoonAssets.bgLevel7,
+      bossPortrait: CartoonAssets.portraitInariKyubi,
+      hazards: ['Foxfire Mages', 'Spirit Portals', 'Illusion Bridges'],
+    ),
+    _ChapterInfo(
+      level: 8,
+      difficulty: '★★★★★★★★',
+      accentColor: Color(0xFF00E5FF),
+      bgAsset: CartoonAssets.bgLevel8,
+      bossPortrait: CartoonAssets.portraitWadatsumi,
+      hazards: ['Tidal Geysers', 'Maelstrom Gale', 'Sunken Decks'],
+    ),
+    _ChapterInfo(
+      level: 9,
+      difficulty: '★★★★★★★★★',
+      accentColor: Color(0xFFFFD600),
+      bgAsset: CartoonAssets.bgLevel9,
+      bossPortrait: CartoonAssets.portraitRaijinTei,
+      hazards: ['Thunder Drums', 'Cloud Spires', 'Tempest Winds'],
+    ),
+    _ChapterInfo(
+      level: 10,
+      difficulty: '★★★★★★★★★★',
+      accentColor: Color(0xFFFF1744),
+      bgAsset: CartoonAssets.bgLevel10,
+      bossPortrait: CartoonAssets.portraitAkumaShin,
+      hazards: ['Void Dimension', 'All 6 Enemies', 'True Final Boss'],
     ),
   ];
 
   @override
   void initState() {
     super.initState();
-    _selectedLevel = widget.game.currentLevelIndex.clamp(1, 5);
+    _selectedLevel = widget.game.currentLevelIndex.clamp(1, 10);
   }
 
   void _selectPrev() {
     AudioService.buttonHaptic();
     AudioService.playSfx(AudioService.sfxClick);
     setState(() {
-      _selectedLevel = _selectedLevel > 1 ? _selectedLevel - 1 : 5;
+      _selectedLevel = _selectedLevel > 1 ? _selectedLevel - 1 : 10;
     });
   }
 
@@ -78,7 +118,7 @@ class _ChapterSelectOverlayState extends State<ChapterSelectOverlay> {
     AudioService.buttonHaptic();
     AudioService.playSfx(AudioService.sfxClick);
     setState(() {
-      _selectedLevel = _selectedLevel < 5 ? _selectedLevel + 1 : 1;
+      _selectedLevel = _selectedLevel < 10 ? _selectedLevel + 1 : 1;
     });
   }
 
@@ -278,14 +318,14 @@ class _ChapterSelectOverlayState extends State<ChapterSelectOverlay> {
           ),
           const SizedBox(width: 6),
 
-          // 5 Stage Tabs
+          // 10 Stage Tabs
           Expanded(
             child: Row(
               children: _chapters.map((ch) {
                 final isSelected = ch.level == _selectedLevel;
                 return Expanded(
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 3),
+                    padding: const EdgeInsets.symmetric(horizontal: 2),
                     child: GestureDetector(
                       onTap: () {
                         AudioService.buttonHaptic();
@@ -295,19 +335,19 @@ class _ChapterSelectOverlayState extends State<ChapterSelectOverlay> {
                         });
                       },
                       child: Container(
-                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        padding: const EdgeInsets.symmetric(vertical: 7),
                         decoration: ComicTheme.panelDecoration(
                           backgroundColor: isSelected
                               ? ch.accentColor
                               : ComicTheme.paperWhite.withValues(alpha: 0.85),
-                          borderWidth: isSelected ? 3.0 : 2.0,
+                          borderWidth: isSelected ? 2.8 : 1.8,
                           shadowOffset: isSelected ? 3 : 1,
                         ),
                         child: Center(
                           child: Text(
-                            'STAGE ${ch.level}',
+                            'CH.${ch.level}',
                             style: ComicTheme.titleText(
-                              size: 14,
+                              size: 12.5,
                               color: ComicTheme.inkBlack,
                             ),
                           ),
@@ -391,7 +431,7 @@ class _ChapterSelectOverlayState extends State<ChapterSelectOverlay> {
                           shadowOffset: 2,
                         ),
                         child: Text(
-                          'STAGE ${ch.level} / 5',
+                          'STAGE ${ch.level} / 10',
                           style: ComicTheme.titleText(
                             size: 13,
                             color: ComicTheme.inkBlack,

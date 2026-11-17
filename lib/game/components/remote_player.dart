@@ -36,6 +36,7 @@ class RemotePlayer extends PositionComponent
   double _celebrationTime = 0.0;
   double _attackAnimLockTimer = 0.0;
   double _lastSlashFxCooldown = 0.0;
+  double _lastOugiFxCooldown = 0.0;
 
   Map<PlayerAction, SpriteAnimationTicker>? _tickers;
   String? _cachedTagName;
@@ -129,6 +130,14 @@ class RemotePlayer extends PositionComponent
         stepTime: 0.05,
         loop: false,
       ).createTicker(),
+      PlayerAction.ougi: CartoonAssets.animation(
+        imgs,
+        'characters/kaito_ougi.png',
+        frames: 8,
+        textureSize: Vector2(160, 144),
+        stepTime: 0.08,
+        loop: false,
+      ).createTicker(),
       PlayerAction.hurt: CartoonAssets.animation(
         imgs,
         'characters/kaito_hurt.png',
@@ -199,7 +208,8 @@ class RemotePlayer extends PositionComponent
       if (a.name == actionName) {
         final isIncomingAttack = a == PlayerAction.attack1 ||
             a == PlayerAction.attack2 ||
-            a == PlayerAction.attack3;
+            a == PlayerAction.attack3 ||
+            a == PlayerAction.ougi;
         final isPassiveMovement = a == PlayerAction.idle ||
             a == PlayerAction.running ||
             a == PlayerAction.jumping ||
@@ -213,7 +223,10 @@ class RemotePlayer extends PositionComponent
         if (action != a && !isDying) {
           action = a;
           _tickers?[a]?.reset();
-          if (isIncomingAttack) {
+          if (a == PlayerAction.ougi) {
+            _attackAnimLockTimer = 0.68;
+            _spawnRemoteOugiVisuals();
+          } else if (isIncomingAttack) {
             _attackAnimLockTimer = 0.28;
             final comboIdx = a == PlayerAction.attack1
                 ? 0
@@ -264,6 +277,49 @@ class RemotePlayer extends PositionComponent
     ));
   }
 
+  void _spawnRemoteOugiVisuals() {
+    if (_lastOugiFxCooldown > 0) return;
+    _lastOugiFxCooldown = 0.62;
+
+    AudioService.playSfx(AudioService.sfxOugiRelease, volume: 0.85);
+    game.add(OugiCelestialFlurryEffect(
+      position: Vector2(position.x, position.y - size.y * 0.5),
+      facingDirection: facingDirection,
+    ));
+    game.add(MangaTextEffect(
+      position: Vector2(position.x, position.y - size.y - 32),
+      text: 'OUGI: CELESTIAL BLADE FLURRY!!',
+      fillColor: ComicTheme.comicYellow,
+      initialScale: 0.55,
+      targetScale: 1.5,
+      maxLifetime: 1.1,
+    ));
+    game.add(MangaDustEffect(position: Vector2(position.x - 38, position.y)));
+    game.add(MangaDustEffect(position: Vector2(position.x + 38, position.y)));
+
+    final arcColors = [
+      ComicTheme.energyCyan,
+      ComicTheme.comicYellow,
+      ComicTheme.actionRed,
+      ComicTheme.energyCyan,
+      ComicTheme.comicYellow,
+      ComicTheme.actionRed,
+    ];
+    for (int i = 0; i < 6; i++) {
+      final xOffset = (i - 2.5) * 48.0;
+      final yOffset = (i.isEven ? -22.0 : 8.0);
+      game.add(SlashArcEffect(
+        position: Vector2(
+          position.x + xOffset,
+          position.y - size.y * 0.5 + yOffset,
+        ),
+        slashColor: arcColors[i],
+        slashFlipped: i.isOdd,
+        radius: 64,
+      ));
+    }
+  }
+
   /// Immediately plays attack/dash/ougi animation and spawns comic VFX when remote player acts
   void triggerRemoteAction({
     required String actionType,
@@ -275,6 +331,9 @@ class RemotePlayer extends PositionComponent
     if (isDying || isCelebrating) return;
     if (x != null && y != null && x.isFinite && y.isFinite) {
       targetPosition.setValues(x, y);
+      if (actionType == 'ougi' || position.distanceTo(targetPosition) < 140) {
+        position.setValues(x, y);
+      }
     }
     if (facing != null) {
       facingDirection = facing < 0 ? -1 : 1;
@@ -322,39 +381,10 @@ class RemotePlayer extends PositionComponent
         direction: Vector2(facingDirection.toDouble(), 0),
       ));
     } else if (actionType == 'ougi') {
-      action = PlayerAction.attack3;
+      action = PlayerAction.ougi;
       _tickers?[action]?.reset();
-      _attackAnimLockTimer = 0.50;
-      AudioService.playSfx(AudioService.sfxOugiRelease, volume: 0.85);
-      game.add(MangaTextEffect(
-        position: Vector2(position.x, position.y - size.y - 32),
-        text: 'OUGI: CELESTIAL BLADE FLURRY!!',
-        fillColor: ComicTheme.comicYellow,
-        initialScale: 0.55,
-        targetScale: 1.5,
-        maxLifetime: 1.1,
-      ));
-      final arcColors = [
-        ComicTheme.energyCyan,
-        ComicTheme.comicYellow,
-        ComicTheme.actionRed,
-        ComicTheme.energyCyan,
-        ComicTheme.comicYellow,
-        ComicTheme.actionRed,
-      ];
-      for (int i = 0; i < 6; i++) {
-        final xOffset = (i - 2.5) * 48.0;
-        final yOffset = (i.isEven ? -22.0 : 8.0);
-        game.add(SlashArcEffect(
-          position: Vector2(
-            position.x + xOffset,
-            position.y - size.y * 0.5 + yOffset,
-          ),
-          slashColor: arcColors[i],
-          slashFlipped: i.isOdd,
-          radius: 64,
-        ));
-      }
+      _attackAnimLockTimer = 0.68;
+      _spawnRemoteOugiVisuals();
     }
   }
 
@@ -456,6 +486,9 @@ class RemotePlayer extends PositionComponent
     if (_lastSlashFxCooldown > 0) {
       _lastSlashFxCooldown -= dt;
     }
+    if (_lastOugiFxCooldown > 0) {
+      _lastOugiFxCooldown -= dt;
+    }
     if (isCelebrating) {
       _celebrationTime += dt;
     }
@@ -480,12 +513,13 @@ class RemotePlayer extends PositionComponent
     }
     final sprite = ticker.getSprite();
 
+    final isOugi = action == PlayerAction.ougi;
     final isWideSheet = action == PlayerAction.attack1 ||
         action == PlayerAction.attack2 ||
         action == PlayerAction.attack3 ||
         action == PlayerAction.death;
-    final renderW = isWideSheet ? 82.0 : 72.0;
-    const renderH = 72.0;
+    final renderW = isOugi ? 96.0 : (isWideSheet ? 82.0 : 72.0);
+    final renderH = isOugi ? 86.0 : 72.0;
     final celebrationBounce =
         isCelebrating ? math.sin(_celebrationTime * 9.0).abs() * 14.0 : 0.0;
 
@@ -497,20 +531,37 @@ class RemotePlayer extends PositionComponent
     }
 
     if (!isDying) {
-      // Natural dark ground shadow under Kaito's feet (never tinted by skin color!)
-      final shadowPaint = Paint()
-        ..color = isCelebrating
-            ? const Color(0xFFFFD600).withValues(alpha: 0.50)
-            : Colors.black.withValues(alpha: 0.38)
-        ..style = PaintingStyle.fill;
-      canvas.drawOval(
-        Rect.fromCenter(
-          center: Offset(0, -3 + celebrationBounce),
-          width: isCelebrating ? 60 : 46,
-          height: 11,
-        ),
-        shadowPaint,
-      );
+      if (isOugi) {
+        final auraPaint = Paint()
+          ..color = ComicTheme.energyCyan.withValues(alpha: 0.42)
+          ..style = PaintingStyle.fill;
+        canvas.drawOval(
+          Rect.fromCenter(center: const Offset(0, -4), width: 78, height: 18),
+          auraPaint,
+        );
+        canvas.drawOval(
+          Rect.fromCenter(center: const Offset(0, -4), width: 78, height: 18),
+          Paint()
+            ..color = ComicTheme.comicYellow
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 2.5,
+        );
+      } else {
+        // Natural dark ground shadow under Kaito's feet (never tinted by skin color!)
+        final shadowPaint = Paint()
+          ..color = isCelebrating
+              ? const Color(0xFFFFD600).withValues(alpha: 0.50)
+              : Colors.black.withValues(alpha: 0.38)
+          ..style = PaintingStyle.fill;
+        canvas.drawOval(
+          Rect.fromCenter(
+            center: Offset(0, -3 + celebrationBounce),
+            width: isCelebrating ? 60 : 46,
+            height: 11,
+          ),
+          shadowPaint,
+        );
+      }
     }
 
     Paint? overridePaint;

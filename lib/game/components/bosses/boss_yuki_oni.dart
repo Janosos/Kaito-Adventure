@@ -126,7 +126,12 @@ class BossYukiOni extends BossBase {
 
     if (isStunned) {
       state = YukiState.recovering;
-      _stunTicker.update(dt);
+      resolveAndUpdateBossTicker(
+        dt,
+        desiredTicker: _stunTicker,
+        idleTicker: _idleTicker,
+        stunTicker: _stunTicker,
+      );
       return;
     }
 
@@ -266,7 +271,12 @@ class BossYukiOni extends BossBase {
         break;
     }
 
-    _activeTicker.update(dt);
+    resolveAndUpdateBossTicker(
+      dt,
+      desiredTicker: _activeTicker,
+      idleTicker: _idleTicker,
+      stunTicker: _stunTicker,
+    );
   }
 
   void _decideAction() {
@@ -330,29 +340,12 @@ class BossYukiOni extends BossBase {
 
   @override
   void render(Canvas canvas) {
-    if (isDefeated) return;
-    final sprite = _activeTicker.getSprite();
-    const renderW = 152.0;
-    const renderH = 140.0;
-
-    canvas.save();
-    canvas.translate(size.x / 2, size.y + 6);
-    if (facing < 0) {
-      canvas.scale(-1, 1);
-    }
-
-    final overridePaint = hitFlashTimer > 0
-        ? (Paint()
-          ..colorFilter =
-              const ColorFilter.mode(Colors.white, BlendMode.srcATop))
-        : null;
-
-    sprite.render(
+    renderBossAnimated(
       canvas,
-      position: Vector2(-renderW * 0.45, -renderH),
-      size: Vector2(renderW, renderH),
-      overridePaint: overridePaint,
+      desiredTicker: _activeTicker,
+      idleTicker: _idleTicker,
+      renderW: 152.0,
+      renderH: 140.0,
     );
-    canvas.restore();
   }
 }

@@ -3,6 +3,10 @@ import 'package:flame/game.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:manga_platformer/game/components/enemies/enemy_grunt.dart';
+import 'package:manga_platformer/game/components/enemies/enemy_samurai_shield.dart';
+import 'package:manga_platformer/game/components/enemies/enemy_kitsune_mage.dart';
+import 'package:manga_platformer/game/components/enemies/enemy_karakuri_automaton.dart';
+import 'package:manga_platformer/game/components/manga_effects.dart';
 import 'package:manga_platformer/game/components/player.dart';
 import 'package:manga_platformer/game/manga_game.dart';
 import 'package:manga_platformer/game/services/audio_service.dart';
@@ -166,9 +170,10 @@ void main() {
   });
 
   test(
-      'All 5 distinct progressive levels load, Kunai has 5s cooldown, Slash deals damage + knockback, and Boss spawns at final stage',
+      'All 10 distinct progressive levels load, Kunai has 5s cooldown, Ougi plays PlayerAction.ougi + OugiCelestialFlurryEffect, and all 10 Bosses spawn',
       () async {
     final game = MangaGame();
+    expect(MangaGame.totalLevels, equals(10));
     game.onGameResize(Vector2(960, 540));
     await game.onLoad();
     // ignore: invalid_use_of_internal_member
@@ -180,7 +185,7 @@ void main() {
 
     double previousLevelWidth = 0;
 
-    for (int lvl = 1; lvl <= 5; lvl++) {
+    for (int lvl = 1; lvl <= 10; lvl++) {
       await game.loadLevel(lvl);
       // Pump world lifecycle so level & children mount inside game.world
       game.update(0);
@@ -206,23 +211,42 @@ void main() {
       );
       expect(MangaPlayer.maxKunaiCooldown, equals(5.0));
 
-      final grunts = game.queryWorld<EnemyGrunt>().toList();
-      expect(grunts, isNotEmpty);
+      if (lvl <= 5) {
+        final grunts = game.queryWorld<EnemyGrunt>().toList();
+        expect(grunts, isNotEmpty);
 
-      // Move player right next to the first grunt and perform Slash
-      final firstGrunt = grunts.first;
-      final initialHp = firstGrunt.hp;
-      expect(initialHp, greaterThanOrEqualTo(80.0));
-      final initialX = firstGrunt.position.x;
+        // Move player right next to the first grunt and perform Slash
+        final firstGrunt = grunts.first;
+        final initialHp = firstGrunt.hp;
+        expect(initialHp, greaterThanOrEqualTo(80.0));
+        final initialX = firstGrunt.position.x;
 
-      game.player.position =
-          Vector2(firstGrunt.position.x - 28, firstGrunt.position.y);
-      game.player.facingDirection = 1;
-      game.player.attackCooldown = 0;
-      game.player.performAttack();
+        game.player.position =
+            Vector2(firstGrunt.position.x - 28, firstGrunt.position.y);
+        game.player.facingDirection = 1;
+        game.player.attackCooldown = 0;
+        game.player.performAttack();
 
-      expect(firstGrunt.hp, lessThan(initialHp));
-      expect(firstGrunt.position.x, greaterThan(initialX));
+        expect(firstGrunt.hp, lessThan(initialHp));
+        expect(firstGrunt.position.x, greaterThan(initialX));
+      } else if (lvl == 6) {
+        expect(game.queryWorld<EnemyKarakuriAutomaton>(), isNotEmpty);
+        expect(game.queryWorld<EnemySamuraiShield>(), isNotEmpty);
+      } else if (lvl == 7) {
+        expect(game.queryWorld<EnemyKitsuneMage>(), isNotEmpty);
+        expect(game.queryWorld<EnemySamuraiShield>(), isNotEmpty);
+      } else if (lvl == 10) {
+        expect(game.queryWorld<EnemySamuraiShield>(), isNotEmpty);
+        expect(game.queryWorld<EnemyKitsuneMage>(), isNotEmpty);
+        expect(game.queryWorld<EnemyKarakuriAutomaton>(), isNotEmpty);
+        // Verify overhauled Ultimate (Ougi) uses dedicated PlayerAction.ougi and spawns OugiCelestialFlurryEffect
+        game.player.spirit = 100.0;
+        game.player.performUltimate();
+        game.update(0.01);
+        await game.ready();
+        expect(game.player.action, equals(PlayerAction.ougi));
+        expect(game.queryWorld<OugiCelestialFlurryEffect>(), isNotEmpty);
+      }
 
       // Now advance player to this level's final stage Boss Arena trigger
       game.player.position = Vector2(game.currentBossGateX + 20, 460);
@@ -235,7 +259,18 @@ void main() {
 
       expect(game.isBossArenaLocked, isTrue);
       expect(game.activeBoss, isNotNull);
-      final expectedBossHp = [760.0, 1040.0, 1160.0, 1320.0, 1600.0][lvl - 1];
+      final expectedBossHp = [
+        760.0,
+        1040.0,
+        1160.0,
+        1320.0,
+        1600.0,
+        1700.0,
+        1850.0,
+        2000.0,
+        2150.0,
+        2400.0,
+      ][lvl - 1];
       expect(game.activeBoss!.maxHp, equals(expectedBossHp));
     }
 
@@ -753,6 +788,22 @@ void main() {
       remoteOugi: 0.0,
     );
     expect(remote.action, PlayerAction.attack2);
+
+    // Verify Multiplayer Ougi triggers PlayerAction.ougi + OugiCelestialFlurryEffect on both local and remote players
+    remote.triggerRemoteAction(
+      actionType: 'ougi',
+      x: remote.position.x,
+      y: remote.position.y,
+      facing: -1,
+    );
+    expect(remote.action, PlayerAction.ougi);
+
+    game.player.spirit = 100.0;
+    game.player.position = Vector2(remote.position.x - 60, remote.position.y);
+    game.player.facingDirection = 1;
+    game.player.performUltimate();
+    expect(game.player.action, PlayerAction.ougi);
+    expect(remote.hp, 195.0); // 260 - 65 PvP Ougi damage
 
     // Elimination locks remote HP at 0 even if stale positive HP packets arrive afterward
     remote.markEliminated();
