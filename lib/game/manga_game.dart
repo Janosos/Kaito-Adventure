@@ -465,7 +465,10 @@ class MangaGame extends FlameGame
       }
 
       // Reset local player state for PvP match
-      player.resetForMatch(maxHealth: LanMultiplayerService.kPvpMaxHpInt);
+      player.resetForMatch(
+        maxHealth: net.configuredMaxHpInt,
+        lives: net.configuredLives,
+      );
 
       // Create and add PvP Arena (Supports up to 5 players)
       final arena = PvPArenaLevel();
@@ -482,6 +485,11 @@ class MangaGame extends FlameGame
       _multiplayerSub?.cancel();
       _multiplayerSub = net.onMatchData.listen((data) {
         try {
+          final packetSession = data['sessionId'] as int?;
+          if (packetSession != null &&
+              packetSession != net.matchSessionIdNotifier.value) {
+            return;
+          }
           final type = data['type'] as String?;
           if (type == 'state') {
             final pid = data['id'] as String?;
@@ -494,8 +502,19 @@ class MangaGame extends FlameGame
                 facing: (data['f'] as num?)?.toInt() ?? 1,
                 actionName: (data['act'] as String?) ?? PlayerAction.idle.name,
                 remoteHp: (data['hp'] as num?)?.toDouble() ??
-                    LanMultiplayerService.kPvpMaxHp,
+                    net.configuredMaxHp,
                 remoteOugi: (data['ougi'] as num?)?.toDouble() ?? 0.0,
+              );
+            }
+          } else if (type == 'player_action') {
+            final pid = data['id'] as String?;
+            if (pid != null && pid != net.myPlayerId) {
+              pvpArena?.remotePlayers[pid]?.triggerRemoteAction(
+                actionType: (data['actType'] as String?) ?? 'slash',
+                comboIndex: (data['combo'] as num?)?.toInt() ?? 0,
+                x: (data['x'] as num?)?.toDouble(),
+                y: (data['y'] as num?)?.toDouble(),
+                facing: (data['f'] as num?)?.toInt(),
               );
             }
           } else if (type == 'spawn_kunai') {
@@ -522,6 +541,38 @@ class MangaGame extends FlameGame
               final kbX = (data['kbX'] as num?)?.toDouble() ?? 0.0;
               final kbY = (data['kbY'] as num?)?.toDouble() ?? 0.0;
               player.takeMultiplayerDamage(dmg, knockbackX: kbX, knockbackY: kbY);
+            }
+          } else if (type == 'ring_out_blast') {
+            final pid = data['id'] as String?;
+            if (pid != null && pid != net.myPlayerId) {
+              final blastX = (data['x'] as num?)?.toDouble() ?? 600.0;
+              final colorIdx = (data['color'] as num?)?.toInt() ?? 0;
+              final blastColor = kMultiplayerColors[
+                      colorIdx.clamp(0, kMultiplayerColors.length - 1)]
+                  .primary;
+              pvpArena?.spawnRingOutBlast(blastX, blastColor);
+            }
+          } else if (type == 'player_stock_lost') {
+            final pid = data['id'] as String?;
+            if (pid != null && pid != net.myPlayerId) {
+              final remote = pvpArena?.remotePlayers[pid];
+              if (remote != null) {
+                final newLives =
+                    (data['lives'] as num?)?.toInt() ?? (remote.lives - 1);
+                final fullHp =
+                    (data['hp'] as num?)?.toDouble() ?? net.configuredMaxHp;
+                final total = math.max(2, net.roomPlayers.length);
+                final spawn = PvPArenaLevel.getSpawnPosition(
+                  remote.slot,
+                  total,
+                  stageIndex: pvpArena?.stageIndex ?? 0,
+                );
+                remote.resetForRespawn(
+                  fullHp: fullHp,
+                  remainingLives: newLives,
+                  spawnPos: Vector2(spawn.x, spawn.y - 75.0),
+                );
+              }
             }
           } else if (type == 'player_eliminated') {
             final pid = data['id'] as String?;
@@ -890,34 +941,40 @@ class MangaGame extends FlameGame
       );
 
       if (isMultiplayer) {
-        _stateSyncAccumulator += clampedDt;
-        final currentAction = player.action.name;
-        final movedSignificantly = _lastSentX.isNaN ||
-            (player.position.x - _lastSentX).abs() > 0.5 ||
-            (player.position.y - _lastSentY).abs() > 0.5;
-        final localDead = player.isDying || player.hp <= 0;
-        final reportedHp = localDead ? 0 : player.hp;
-        final urgentChange = currentAction != _lastSentAction ||
-            player.facingDirection != _lastSentFacing ||
-            reportedHp != _lastSentHp;
-        final syncInterval = movedSignificantly ? 0.033 : 0.20;
-        if (urgentChange || _stateSyncAccumulator >= syncInterval) {
-          _stateSyncAccumulator = 0.0;
-          _lastSentX = player.position.x;
-          _lastSentY = player.position.y;
-          _lastSentFacing = player.facingDirection;
-          _lastSentAction = currentAction;
-          _lastSentHp = reportedHp;
-          LanMultiplayerService.instance.sendPlayerState(
-            x: player.position.x,
-            y: player.position.y,
-            vx: player.velocity.x,
-            vy: player.velocity.y,
-            facing: player.facingDirection,
-            action: currentAction,
-            hp: reportedHp.toDouble(),
-            ougi: localDead ? 0.0 : player.spirit,
-          );
+        final net = LanMultiplayerService.instance;
+        final matchActive = net.inMatchNotifier.value &&
+            net.victoryCelebrationNotifier.value == null &&
+            net.resultsPodiumNotifier.value == null;
+        if (matchActive) {
+          _stateSyncAccumulator += clampedDt;
+          final currentAction = player.action.name;
+          final movedSignificantly = _lastSentX.isNaN ||
+              (player.position.x - _lastSentX).abs() > 0.5 ||
+              (player.position.y - _lastSentY).abs() > 0.5;
+          final localDead = player.isDying || player.hp <= 0;
+          final reportedHp = localDead ? 0 : player.hp;
+          final urgentChange = currentAction != _lastSentAction ||
+              player.facingDirection != _lastSentFacing ||
+              reportedHp != _lastSentHp;
+          final syncInterval = movedSignificantly ? 0.033 : 0.20;
+          if (urgentChange || _stateSyncAccumulator >= syncInterval) {
+            _stateSyncAccumulator = 0.0;
+            _lastSentX = player.position.x;
+            _lastSentY = player.position.y;
+            _lastSentFacing = player.facingDirection;
+            _lastSentAction = currentAction;
+            _lastSentHp = reportedHp;
+            net.sendPlayerState(
+              x: player.position.x,
+              y: player.position.y,
+              vx: player.velocity.x,
+              vy: player.velocity.y,
+              facing: player.facingDirection,
+              action: currentAction,
+              hp: reportedHp.toDouble(),
+              ougi: localDead ? 0.0 : player.spirit,
+            );
+          }
         }
 
         const double targetCamX = 600.0;

@@ -17,6 +17,134 @@ class MultiplayerColor {
     required this.primary,
     required this.accent,
   });
+
+  /// Creates a selective ColorFilter matrix that recolors ONLY Kaito's red
+  /// scarf, headband, cuffs, boots, and hilt while preserving black ink outlines,
+  /// dark suit shadows, and white belt/eyes (eigenvector [1,1,1] = 1).
+  static ColorFilter? createSkinColorFilter(Color targetColor, {int? colorIndex}) {
+    if (colorIndex == 0 || targetColor.toARGB32() == 0xFFFF2A2A) {
+      return null;
+    }
+    double cr = targetColor.r;
+    double cg = targetColor.g;
+    double cb = targetColor.b;
+    // Ensure Kuro Stealth (#263238) renders as a distinct charcoal-steel accent
+    if (colorIndex == 7 || (cr < 0.20 && cg < 0.25 && cb < 0.28)) {
+      cr = 0.28;
+      cg = 0.36;
+      cb = 0.46;
+    }
+    return ColorFilter.matrix(<double>[
+      cr, 1.0 - cr, 0.0, 0.0, 0.0,
+      cg, 1.0 - cg, 0.0, 0.0, 0.0,
+      cb, 0.0, 1.0 - cb, 0.0, 0.0,
+      0.0, 0.0, 0.0, 1.0, 0.0,
+    ]);
+  }
+}
+
+class PvPArenaStageInfo {
+  final int index;
+  final String name;
+  final String subtitle;
+  final String flameBgAsset;
+  final String widgetBgAsset;
+  final Color themeColor;
+
+  const PvPArenaStageInfo({
+    required this.index,
+    required this.name,
+    required this.subtitle,
+    required this.flameBgAsset,
+    required this.widgetBgAsset,
+    required this.themeColor,
+  });
+}
+
+const List<PvPArenaStageInfo> kPvpStages = [
+  PvPArenaStageInfo(
+    index: 0,
+    name: 'DOJO DEL ECLIPSE',
+    subtitle: '1 Plataforma Base (Clásica)',
+    flameBgAsset: 'illustrations/bg_level5_sanctum.png',
+    widgetBgAsset: 'assets/images/illustrations/bg_level5_sanctum.png',
+    themeColor: Color(0xFFFF2A2A),
+  ),
+  PvPArenaStageInfo(
+    index: 1,
+    name: 'AZOTEAS NEO-TOKYO',
+    subtitle: '4 Plataformas (Tri-Plataforma Aérea)',
+    flameBgAsset: 'illustrations/bg_level1_rooftops.jpg',
+    widgetBgAsset: 'assets/images/illustrations/bg_level1_rooftops.jpg',
+    themeColor: Color(0xFF00E5FF),
+  ),
+  PvPArenaStageInfo(
+    index: 2,
+    name: 'FORTALEZA CARMESÍ',
+    subtitle: '5 Plataformas (Islas Flotantes)',
+    flameBgAsset: 'illustrations/bg_level2_citadel.jpg',
+    widgetBgAsset: 'assets/images/illustrations/bg_level2_citadel.jpg',
+    themeColor: Color(0xFFFF6D00),
+  ),
+];
+
+class MultiplayerMatchConfig {
+  final int stageIndex; // 0, 1, 2
+  final int timeLimitSeconds; // 0 = Sin límite, 90, 120, 180, 300
+  final int maxHp; // 150, 300, 500, 750
+  final int lives; // 1, 2, 3, 5
+
+  const MultiplayerMatchConfig({
+    this.stageIndex = 0,
+    this.timeLimitSeconds = 180,
+    this.maxHp = 300,
+    this.lives = 3,
+  });
+
+  static const List<int> kTimeOptions = [0, 90, 120, 180, 300];
+  static const List<int> kHpOptions = [150, 300, 500, 750];
+  static const List<int> kLivesOptions = [1, 2, 3, 5];
+
+  PvPArenaStageInfo get stage =>
+      kPvpStages[stageIndex.clamp(0, kPvpStages.length - 1)];
+
+  String get formattedTimeLimit {
+    if (timeLimitSeconds <= 0) return '∞';
+    final m = timeLimitSeconds ~/ 60;
+    final s = (timeLimitSeconds % 60).toString().padLeft(2, '0');
+    return '$m:$s';
+  }
+
+  MultiplayerMatchConfig copyWith({
+    int? stageIndex,
+    int? timeLimitSeconds,
+    int? maxHp,
+    int? lives,
+  }) {
+    return MultiplayerMatchConfig(
+      stageIndex: stageIndex ?? this.stageIndex,
+      timeLimitSeconds: timeLimitSeconds ?? this.timeLimitSeconds,
+      maxHp: maxHp ?? this.maxHp,
+      lives: lives ?? this.lives,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'stage': stageIndex,
+        'time': timeLimitSeconds,
+        'maxHp': maxHp,
+        'lives': lives,
+      };
+
+  factory MultiplayerMatchConfig.fromJson(Map<String, dynamic>? map) {
+    if (map == null) return const MultiplayerMatchConfig();
+    return MultiplayerMatchConfig(
+      stageIndex: (map['stage'] as int? ?? 0).clamp(0, kPvpStages.length - 1),
+      timeLimitSeconds: map['time'] as int? ?? 180,
+      maxHp: (map['maxHp'] as int? ?? 300).clamp(50, 2000),
+      lives: (map['lives'] as int? ?? 3).clamp(1, 10),
+    );
+  }
 }
 
 const List<MultiplayerColor> kMultiplayerColors = [
@@ -90,6 +218,9 @@ class MultiplayerPlayer {
   bool isHost;
   bool isAlive;
   double hp;
+  double maxHp;
+  int lives;
+  int maxLives;
   double ougi;
   int placement;
   bool votedRematch;
@@ -102,6 +233,9 @@ class MultiplayerPlayer {
     this.isHost = false,
     this.isAlive = true,
     this.hp = LanMultiplayerService.kPvpMaxHp,
+    this.maxHp = LanMultiplayerService.kPvpMaxHp,
+    this.lives = 3,
+    this.maxLives = 3,
     this.ougi = 0.0,
     this.placement = 0,
     this.votedRematch = false,
@@ -119,24 +253,34 @@ class MultiplayerPlayer {
         'isHost': isHost,
         'isAlive': isAlive,
         'hp': hp,
+        'maxHp': maxHp,
+        'lives': lives,
+        'maxLives': maxLives,
         'ougi': ougi,
         'placement': placement,
         'votedRematch': votedRematch,
       };
 
-  factory MultiplayerPlayer.fromJson(Map<String, dynamic> map) =>
-      MultiplayerPlayer(
-        id: map['id'] as String,
-        nickname: map['name'] as String? ?? 'Shinobi',
-        colorIndex: map['color'] as int? ?? 0,
-        slot: map['slot'] as int? ?? 0,
-        isHost: map['isHost'] as bool? ?? false,
-        isAlive: map['isAlive'] as bool? ?? true,
-        hp: (map['hp'] as num?)?.toDouble() ?? LanMultiplayerService.kPvpMaxHp,
-        ougi: (map['ougi'] as num?)?.toDouble() ?? 0.0,
-        placement: map['placement'] as int? ?? 0,
-        votedRematch: map['votedRematch'] as bool? ?? false,
-      );
+  factory MultiplayerPlayer.fromJson(Map<String, dynamic> map) {
+    final parsedMaxHp =
+        (map['maxHp'] as num?)?.toDouble() ?? LanMultiplayerService.kPvpMaxHp;
+    final parsedMaxLives = map['maxLives'] as int? ?? 3;
+    return MultiplayerPlayer(
+      id: map['id'] as String,
+      nickname: map['name'] as String? ?? 'Shinobi',
+      colorIndex: map['color'] as int? ?? 0,
+      slot: map['slot'] as int? ?? 0,
+      isHost: map['isHost'] as bool? ?? false,
+      isAlive: map['isAlive'] as bool? ?? true,
+      hp: (map['hp'] as num?)?.toDouble() ?? parsedMaxHp,
+      maxHp: parsedMaxHp,
+      lives: map['lives'] as int? ?? parsedMaxLives,
+      maxLives: parsedMaxLives,
+      ougi: (map['ougi'] as num?)?.toDouble() ?? 0.0,
+      placement: map['placement'] as int? ?? 0,
+      votedRematch: map['votedRematch'] as bool? ?? false,
+    );
+  }
 }
 
 enum MatchRole { none, host, client }
@@ -199,6 +343,18 @@ class LanMultiplayerService {
   final Map<String, MultiplayerPlayer> roomPlayers = {};
   final ValueNotifier<List<MultiplayerPlayer>> roomPlayersNotifier =
       ValueNotifier<List<MultiplayerPlayer>>([]);
+
+  // Match Configuration (Stage, Timer, HP Bar, Lives)
+  final ValueNotifier<MultiplayerMatchConfig> matchConfigNotifier =
+      ValueNotifier<MultiplayerMatchConfig>(const MultiplayerMatchConfig());
+  MultiplayerMatchConfig get matchConfig => matchConfigNotifier.value;
+  double get configuredMaxHp => matchConfig.maxHp.toDouble();
+  int get configuredMaxHpInt => matchConfig.maxHp;
+  int get configuredLives => matchConfig.lives;
+
+  // Remaining match time (seconds) synced for HUD
+  final ValueNotifier<int?> remainingSecondsNotifier =
+      ValueNotifier<int?>(null);
 
   // Rematch & Results State
   final ValueNotifier<int?> rematchCountdownNotifier =
@@ -280,7 +436,9 @@ class LanMultiplayerService {
       return false;
     }
 
+    final savedConfig = matchConfigNotifier.value;
     await disconnect();
+    matchConfigNotifier.value = savedConfig;
     await refreshLocalIp();
 
     currentRoomName = roomName?.trim().isNotEmpty == true
@@ -302,6 +460,10 @@ class LanMultiplayerService {
         colorIndex: myColorIndex,
         slot: 0,
         isHost: true,
+        hp: configuredMaxHp,
+        maxHp: configuredMaxHp,
+        lives: configuredLives,
+        maxLives: configuredLives,
       );
       _updateRoomPlayersNotifier();
 
@@ -416,6 +578,10 @@ class LanMultiplayerService {
               colorIndex: clientColor,
               slot: slot,
               isHost: false,
+              hp: configuredMaxHp,
+              maxHp: configuredMaxHp,
+              lives: configuredLives,
+              maxLives: configuredLives,
             );
 
             _clientSockets[assignedId!] = socket;
@@ -428,12 +594,14 @@ class LanMultiplayerService {
               'yourId': assignedId,
               'slot': slot,
               'roomName': currentRoomName,
+              'config': matchConfig.toJson(),
               'players': roomPlayers.values.map((p) => p.toJson()).toList(),
             }));
 
             // 2. Broadcast updated lobby list to ALL clients
             _broadcastToClients({
               'type': 'lobby_update',
+              'config': matchConfig.toJson(),
               'players': roomPlayers.values.map((p) => p.toJson()).toList(),
             });
           } else {
@@ -481,8 +649,45 @@ class LanMultiplayerService {
   void debugInjectClientPacket(String senderId, Map<String, dynamic> map) =>
       _handleClientPacket(senderId, map);
 
+  void updateMatchConfig({
+    int? stageIndex,
+    int? timeLimitSeconds,
+    int? maxHp,
+    int? lives,
+  }) {
+    matchConfigNotifier.value = matchConfig.copyWith(
+      stageIndex: stageIndex,
+      timeLimitSeconds: timeLimitSeconds,
+      maxHp: maxHp,
+      lives: lives,
+    );
+    final hpVal = configuredMaxHp;
+    final livesVal = configuredLives;
+    for (final p in roomPlayers.values) {
+      p.hp = hpVal;
+      p.maxHp = hpVal;
+      p.lives = livesVal;
+      p.maxLives = livesVal;
+    }
+    _updateRoomPlayersNotifier();
+    if (role == MatchRole.host && isConnected) {
+      _broadcastToClients({
+        'type': 'config_update',
+        'config': matchConfig.toJson(),
+        'players': roomPlayers.values.map((p) => p.toJson()).toList(),
+      });
+    }
+  }
+
   void _handleClientPacket(String? senderId, Map<String, dynamic> map) {
     final type = map['type'] as String?;
+    final packetSession = map['sessionId'] as int?;
+    if (packetSession != null &&
+        packetSession != matchSessionIdNotifier.value &&
+        type != 'rematch_vote') {
+      // Discard stale packet from a previous match session
+      return;
+    }
 
     if (type == 'state') {
       final pid = senderId ?? map['id'] as String?;
@@ -491,11 +696,11 @@ class LanMultiplayerService {
         if (!rp.isAlive) {
           rp.hp = 0.0;
         } else {
-          final incomingHp = (map['hp'] as num?)?.toDouble() ??
-              LanMultiplayerService.kPvpMaxHp;
-          // No health regeneration in multiplayer: HP only moves downward.
+          final incomingHp =
+              (map['hp'] as num?)?.toDouble() ?? configuredMaxHp;
+          // No health regeneration in multiplayer: HP only moves downward on the same life.
           if (incomingHp.isFinite && incomingHp < rp.hp) {
-            rp.hp = incomingHp.clamp(0.0, LanMultiplayerService.kPvpMaxHp);
+            rp.hp = incomingHp.clamp(0.0, rp.maxHp);
           }
         }
         rp.ougi = (map['ougi'] as num?)?.toDouble() ?? 0.0;
@@ -504,10 +709,27 @@ class LanMultiplayerService {
       _broadcastToClients(map, excludeClientId: senderId);
       // Emit locally for Host's game world
       _matchDataController.add(map);
+    } else if (type == 'player_action') {
+      _broadcastToClients(map, excludeClientId: senderId);
+      _matchDataController.add(map);
     } else if (type == 'spawn_kunai') {
       _broadcastToClients(map, excludeClientId: senderId);
       _matchDataController.add(map);
     } else if (type == 'hit') {
+      _broadcastToClients(map, excludeClientId: senderId);
+      _matchDataController.add(map);
+    } else if (type == 'ring_out_blast') {
+      _broadcastToClients(map, excludeClientId: senderId);
+      _matchDataController.add(map);
+    } else if (type == 'player_stock_lost') {
+      final pid = senderId ?? map['id'] as String?;
+      if (pid != null && roomPlayers.containsKey(pid)) {
+        final rp = roomPlayers[pid]!;
+        final newLives = map['lives'] as int? ?? (rp.lives - 1);
+        rp.lives = newLives.clamp(0, rp.maxLives);
+        rp.hp = rp.maxHp;
+        _updateRoomPlayersNotifier();
+      }
       _broadcastToClients(map, excludeClientId: senderId);
       _matchDataController.add(map);
     } else if (type == 'player_eliminated') {
@@ -515,6 +737,7 @@ class LanMultiplayerService {
       if (pid != null && roomPlayers.containsKey(pid)) {
         final deadPlayer = roomPlayers[pid]!;
         deadPlayer.hp = 0.0;
+        deadPlayer.lives = 0;
         if (deadPlayer.isAlive) {
           deadPlayer.isAlive = false;
           final aliveCount = roomPlayers.values.where((p) => p.isAlive).length;
@@ -522,6 +745,7 @@ class LanMultiplayerService {
 
           final elimPacket = {
             'type': 'player_eliminated',
+            'sessionId': matchSessionIdNotifier.value,
             'id': pid,
             'nickname': deadPlayer.nickname,
             'placement': deadPlayer.placement,
@@ -558,11 +782,19 @@ class LanMultiplayerService {
     rematchCountdownNotifier.value = null;
     victoryCelebrationNotifier.value = null;
     resultsPodiumNotifier.value = null;
+    remainingSecondsNotifier.value =
+        matchConfig.timeLimitSeconds > 0 ? matchConfig.timeLimitSeconds : null;
+
+    final maxHpVal = configuredMaxHp;
+    final livesVal = configuredLives;
 
     // Reset combat state for all room players
     for (final p in roomPlayers.values) {
       p.isAlive = true;
-      p.hp = kPvpMaxHp;
+      p.hp = maxHpVal;
+      p.maxHp = maxHpVal;
+      p.lives = livesVal;
+      p.maxLives = livesVal;
       p.ougi = 0.0;
       p.placement = 0;
       p.votedRematch = false;
@@ -573,11 +805,66 @@ class LanMultiplayerService {
     final startPacket = {
       'type': 'match_start',
       'sessionId': nextSessionId,
+      'config': matchConfig.toJson(),
       'players': roomPlayers.values.map((p) => p.toJson()).toList(),
     };
     _broadcastToClients(startPacket);
     matchSessionIdNotifier.value = nextSessionId;
     inMatchNotifier.value = true;
+  }
+
+  /// Host resolves match when battle timer reaches 00:00
+  void hostTriggerTimeUp() {
+    if (role != MatchRole.host || !inMatchNotifier.value || _matchEnded) return;
+    _matchEnded = true;
+
+    // Rank alive players by remaining lives descending, then HP descending
+    final alive = roomPlayers.values.where((p) => p.isAlive).toList()
+      ..sort((a, b) {
+        final lifeCmp = b.lives.compareTo(a.lives);
+        if (lifeCmp != 0) return lifeCmp;
+        return b.hp.compareTo(a.hp);
+      });
+
+    for (int i = 0; i < alive.length; i++) {
+      alive[i].placement = i + 1;
+      if (i > 0) {
+        alive[i].isAlive = false;
+      }
+    }
+
+    final podium = roomPlayers.values.toList()
+      ..sort((a, b) {
+        final pa = a.placement <= 0 ? 999 : a.placement;
+        final pb = b.placement <= 0 ? 999 : b.placement;
+        return pa.compareTo(pb);
+      });
+    if (podium.isNotEmpty && podium.first.placement != 1) {
+      podium.first.placement = 1;
+    }
+    final winner = podium.firstOrNull;
+    _updateRoomPlayersNotifier();
+
+    final victoryPacket = {
+      'type': 'match_victory',
+      'winner': winner?.toJson(),
+    };
+    _broadcastToClients(victoryPacket);
+    victoryCelebrationNotifier.value = winner;
+
+    final resultsPacket = {
+      'type': 'match_results',
+      'podium': podium.map((p) => p.toJson()).toList(),
+    };
+
+    _victoryDelayTimer?.cancel();
+    _victoryDelayTimer = Timer(kVictoryCelebrationDuration, () {
+      _victoryDelayTimer = null;
+      if (role != MatchRole.host || !inMatchNotifier.value) return;
+      victoryCelebrationNotifier.value = null;
+      _broadcastToClients(resultsPacket);
+      resultsPodiumNotifier.value = podium;
+    });
   }
 
   void _checkMatchEndCondition() {
@@ -816,6 +1103,10 @@ class LanMultiplayerService {
               myPlayerId = map['yourId'] as String;
               mySlot = map['slot'] as int? ?? 1;
               currentRoomName = map['roomName'] as String? ?? 'Dojo';
+              if (map['config'] != null) {
+                matchConfigNotifier.value = MultiplayerMatchConfig.fromJson(
+                    map['config'] as Map<String, dynamic>);
+              }
               final pList = (map['players'] as List<dynamic>)
                   .map((e) =>
                       MultiplayerPlayer.fromJson(e as Map<String, dynamic>))
@@ -825,17 +1116,27 @@ class LanMultiplayerService {
                 roomPlayers[p.id] = p;
               }
               _updateRoomPlayersNotifier();
-            } else if (type == 'lobby_update') {
-              final pList = (map['players'] as List<dynamic>)
-                  .map((e) =>
-                      MultiplayerPlayer.fromJson(e as Map<String, dynamic>))
-                  .toList();
-              roomPlayers.clear();
-              for (final p in pList) {
-                roomPlayers[p.id] = p;
+            } else if (type == 'lobby_update' || type == 'config_update') {
+              if (map['config'] != null) {
+                matchConfigNotifier.value = MultiplayerMatchConfig.fromJson(
+                    map['config'] as Map<String, dynamic>);
               }
-              _updateRoomPlayersNotifier();
+              if (map['players'] != null) {
+                final pList = (map['players'] as List<dynamic>)
+                    .map((e) =>
+                        MultiplayerPlayer.fromJson(e as Map<String, dynamic>))
+                    .toList();
+                roomPlayers.clear();
+                for (final p in pList) {
+                  roomPlayers[p.id] = p;
+                }
+                _updateRoomPlayersNotifier();
+              }
             } else if (type == 'match_start') {
+              if (map['config'] != null) {
+                matchConfigNotifier.value = MultiplayerMatchConfig.fromJson(
+                    map['config'] as Map<String, dynamic>);
+              }
               final pList = (map['players'] as List<dynamic>)
                   .map((e) =>
                       MultiplayerPlayer.fromJson(e as Map<String, dynamic>))
@@ -848,6 +1149,9 @@ class LanMultiplayerService {
               victoryCelebrationNotifier.value = null;
               resultsPodiumNotifier.value = null;
               rematchCountdownNotifier.value = null;
+              remainingSecondsNotifier.value = matchConfig.timeLimitSeconds > 0
+                  ? matchConfig.timeLimitSeconds
+                  : null;
               final incomingSession = map['sessionId'] as int?;
               if (incomingSession != null &&
                   incomingSession > matchSessionIdNotifier.value) {
@@ -861,11 +1165,22 @@ class LanMultiplayerService {
               final wMap = map['winner'] as Map<String, dynamic>?;
               victoryCelebrationNotifier.value =
                   wMap != null ? MultiplayerPlayer.fromJson(wMap) : null;
+            } else if (type == 'player_stock_lost') {
+              final pid = map['id'] as String?;
+              if (pid != null && roomPlayers.containsKey(pid)) {
+                final rp = roomPlayers[pid]!;
+                rp.lives =
+                    (map['lives'] as int? ?? (rp.lives - 1)).clamp(0, rp.maxLives);
+                rp.hp = rp.maxHp;
+                _updateRoomPlayersNotifier();
+              }
+              _matchDataController.add(map);
             } else if (type == 'player_eliminated') {
               final pid = map['id'] as String?;
               if (pid != null && roomPlayers.containsKey(pid)) {
                 roomPlayers[pid]!.isAlive = false;
                 roomPlayers[pid]!.hp = 0.0;
+                roomPlayers[pid]!.lives = 0;
                 roomPlayers[pid]!.placement = map['placement'] as int? ?? 0;
                 _updateRoomPlayersNotifier();
               }
@@ -891,7 +1206,11 @@ class LanMultiplayerService {
             } else if (type == 'rematch_countdown') {
               rematchCountdownNotifier.value = map['seconds'] as int?;
             } else {
-              _matchDataController.add(map);
+              final packetSession = map['sessionId'] as int?;
+              if (packetSession == null ||
+                  packetSession == matchSessionIdNotifier.value) {
+                _matchDataController.add(map);
+              }
             }
           } catch (_) {}
         },
@@ -932,8 +1251,20 @@ class LanMultiplayerService {
     required double hp,
     required double ougi,
   }) {
+    if (role == MatchRole.host) {
+      final me = roomPlayers[myPlayerId];
+      if (me != null) {
+        if (!me.isAlive) {
+          me.hp = 0.0;
+        } else if (hp.isFinite && hp < me.hp) {
+          me.hp = hp.clamp(0.0, me.maxHp);
+        }
+        me.ougi = ougi;
+      }
+    }
     sendRaw({
       'type': 'state',
+      'sessionId': matchSessionIdNotifier.value,
       'id': myPlayerId,
       'x': x,
       'y': y,
@@ -946,6 +1277,25 @@ class LanMultiplayerService {
     });
   }
 
+  void sendPlayerAction({
+    required String actionType,
+    int comboIndex = 0,
+    required double x,
+    required double y,
+    required int facing,
+  }) {
+    sendRaw({
+      'type': 'player_action',
+      'sessionId': matchSessionIdNotifier.value,
+      'id': myPlayerId,
+      'actType': actionType,
+      'combo': comboIndex,
+      'x': x,
+      'y': y,
+      'f': facing,
+    });
+  }
+
   void sendSpawnKunai({
     required double x,
     required double y,
@@ -954,6 +1304,7 @@ class LanMultiplayerService {
   }) {
     sendRaw({
       'type': 'spawn_kunai',
+      'sessionId': matchSessionIdNotifier.value,
       'throwerId': myPlayerId,
       'x': x,
       'y': y,
@@ -971,6 +1322,7 @@ class LanMultiplayerService {
   }) {
     sendRaw({
       'type': 'hit',
+      'sessionId': matchSessionIdNotifier.value,
       'targetId': targetId,
       'attackerId': myPlayerId,
       'dmg': damage,
@@ -980,11 +1332,52 @@ class LanMultiplayerService {
     });
   }
 
+  void sendRingOutBlast({
+    required double x,
+    required int colorIndex,
+  }) {
+    final packet = {
+      'type': 'ring_out_blast',
+      'sessionId': matchSessionIdNotifier.value,
+      'id': myPlayerId,
+      'x': x,
+      'color': colorIndex,
+    };
+    if (role == MatchRole.host) {
+      _broadcastToClients(packet);
+    } else {
+      sendRaw(packet);
+    }
+  }
+
+  void sendLocalPlayerStockLost(int remainingLives) {
+    final me = roomPlayers[myPlayerId];
+    if (me != null) {
+      me.lives = remainingLives;
+      me.hp = configuredMaxHp;
+      _updateRoomPlayersNotifier();
+    }
+    final packet = {
+      'type': 'player_stock_lost',
+      'sessionId': matchSessionIdNotifier.value,
+      'id': myPlayerId,
+      'lives': remainingLives,
+      'hp': configuredMaxHp,
+    };
+    if (role == MatchRole.host) {
+      _broadcastToClients(packet);
+      _matchDataController.add(packet);
+    } else {
+      sendRaw(packet);
+    }
+  }
+
   void sendLocalPlayerEliminated() {
     if (role == MatchRole.host) {
       final hostPlayer = roomPlayers[myPlayerId];
       if (hostPlayer != null) {
         hostPlayer.hp = 0.0;
+        hostPlayer.lives = 0;
       }
       if (hostPlayer != null && hostPlayer.isAlive) {
         hostPlayer.isAlive = false;
@@ -993,6 +1386,7 @@ class LanMultiplayerService {
 
         final elimPacket = {
           'type': 'player_eliminated',
+          'sessionId': matchSessionIdNotifier.value,
           'id': myPlayerId,
           'nickname': myNickname,
           'placement': hostPlayer.placement,
@@ -1003,8 +1397,16 @@ class LanMultiplayerService {
         _checkMatchEndCondition();
       }
     } else {
+      final me = roomPlayers[myPlayerId];
+      if (me != null) {
+        me.hp = 0.0;
+        me.lives = 0;
+        me.isAlive = false;
+        _updateRoomPlayersNotifier();
+      }
       sendRaw({
         'type': 'player_eliminated',
+        'sessionId': matchSessionIdNotifier.value,
         'id': myPlayerId,
         'nickname': myNickname,
       });
@@ -1086,6 +1488,8 @@ class LanMultiplayerService {
     rematchCountdownNotifier.value = null;
     victoryCelebrationNotifier.value = null;
     resultsPodiumNotifier.value = null;
+    remainingSecondsNotifier.value = null;
+    matchConfigNotifier.value = const MultiplayerMatchConfig();
     roomPlayers.clear();
     _updateRoomPlayersNotifier();
   }

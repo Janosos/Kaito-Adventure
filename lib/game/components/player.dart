@@ -35,6 +35,9 @@ class MangaPlayer extends PositionComponent
   // Stats
   int maxHp = 5;
   late int hp;
+  int pvpLives = 3;
+  int pvpMaxLives = 3;
+  double respawnShieldTimer = 0.0;
   double spirit = 0.0; // 0 to 100
   int comboCount = 0;
   double comboTimer = 0.0;
@@ -274,6 +277,15 @@ class MangaPlayer extends PositionComponent
       size: Vector2(80, size.y),
       direction: Vector2(facingDirection.toDouble(), 0),
     ));
+
+    if (game.isMultiplayer) {
+      LanMultiplayerService.instance.sendPlayerAction(
+        actionType: 'dash',
+        x: position.x,
+        y: position.y,
+        facing: facingDirection,
+      );
+    }
   }
 
   void performAttack() {
@@ -321,6 +333,16 @@ class MangaPlayer extends PositionComponent
       targetScale: 1.1 + comboIndex * 0.3,
     ));
 
+    if (game.isMultiplayer) {
+      LanMultiplayerService.instance.sendPlayerAction(
+        actionType: 'slash',
+        comboIndex: comboIndex,
+        x: position.x,
+        y: position.y,
+        facing: facingDirection,
+      );
+    }
+
     _checkMeleeHit();
   }
 
@@ -354,6 +376,12 @@ class MangaPlayer extends PositionComponent
     ));
 
     if (game.isMultiplayer) {
+      LanMultiplayerService.instance.sendPlayerAction(
+        actionType: 'kunai',
+        x: position.x,
+        y: position.y,
+        facing: facingDirection,
+      );
       LanMultiplayerService.instance.sendSpawnKunai(
         x: kunaiPos.x,
         y: kunaiPos.y,
@@ -373,6 +401,15 @@ class MangaPlayer extends PositionComponent
 
     AudioService.playSfx(AudioService.sfxOugiRelease);
     AudioService.heavyHaptic();
+
+    if (game.isMultiplayer) {
+      LanMultiplayerService.instance.sendPlayerAction(
+        actionType: 'ougi',
+        x: position.x,
+        y: position.y,
+        facing: facingDirection,
+      );
+    }
 
     // In-game dynamic Ougi sequence: No full-screen modal blocking the view!
     // Spawns radiating anime celestial slash arcs, shockwave dust, and stylish manga onomatopoeia
@@ -578,9 +615,14 @@ class MangaPlayer extends PositionComponent
     game.addScore(50 * comboCount);
   }
 
-  void resetForMatch({required int maxHealth}) {
+  void resetForMatch({required int maxHealth, int? lives}) {
+    final configuredLives =
+        lives ?? LanMultiplayerService.instance.configuredLives;
     maxHp = maxHealth;
     hp = maxHealth;
+    pvpLives = configuredLives;
+    pvpMaxLives = configuredLives;
+    respawnShieldTimer = 0.0;
     spirit = 0.0;
     comboCount = 0;
     comboTimer = 0.0;
@@ -608,6 +650,50 @@ class MangaPlayer extends PositionComponent
     action = PlayerAction.idle;
   }
 
+  /// Decrements 1 PvP life (stock). If lives remain, respawns Kaito at full HP;
+  /// if 0 lives remain, triggers permanent elimination. Returns true if eliminated.
+  bool consumeMultiplayerLifeOrEliminate({bool isRingOut = false}) {
+    pvpLives = (pvpLives - 1).clamp(0, pvpMaxLives);
+    if (pvpLives > 0) {
+      hp = maxHp;
+      isDying = false;
+      isDashing = false;
+      hurtAnimTimer = 0.0;
+      respawnShieldTimer = 1.0;
+      final respawnPos =
+          game.pvpArena?.getSafeRespawnPoint() ?? Vector2(600, 300);
+      position.setFrom(respawnPos);
+      velocity.setValues(0, -60);
+      isOnGround = false;
+      _standingPlatform = null;
+      action = PlayerAction.jumping;
+      _tickers[PlayerAction.jumping]?.reset();
+
+      AudioService.playSfx(AudioService.sfxJump);
+      game.add(MangaDustEffect(position: position.clone()));
+      game.add(MangaTextEffect(
+        position: Vector2(position.x, position.y - size.y - 16),
+        text: '¡$pvpLives ${pvpLives == 1 ? "VIDA RESTANTE" : "VIDAS RESTANTES"}!',
+        fillColor: ComicTheme.energyCyan,
+        targetScale: 1.5,
+      ));
+      LanMultiplayerService.instance.sendLocalPlayerStockLost(pvpLives);
+      return false;
+    } else {
+      pvpLives = 0;
+      hp = 0;
+      if (isRingOut) {
+        isDying = true;
+        velocity.setZero();
+      } else {
+        _startDeathSequence();
+      }
+      LanMultiplayerService.instance.sendLocalPlayerEliminated();
+      game.onLocalPlayerEliminated();
+      return true;
+    }
+  }
+
   void performVictoryCelebration() {
     if (isDying || isCelebrating) return;
     isCelebrating = true;
@@ -631,6 +717,7 @@ class MangaPlayer extends PositionComponent
     if (isDying ||
         isCelebrating ||
         isDashing ||
+        respawnShieldTimer > 0 ||
         hp <= 0 ||
         LanMultiplayerService.instance.victoryCelebrationNotifier.value != null) {
       return;
@@ -638,10 +725,7 @@ class MangaPlayer extends PositionComponent
 
     hp = (hp - amount.toInt()).clamp(0, maxHp);
     if (hp <= 0) {
-      hp = 0;
-      _startDeathSequence();
-      LanMultiplayerService.instance.sendLocalPlayerEliminated();
-      game.onLocalPlayerEliminated();
+      consumeMultiplayerLifeOrEliminate(isRingOut: false);
       return;
     }
 
@@ -778,6 +862,7 @@ class MangaPlayer extends PositionComponent
     }
 
     if (invulnerableTimer > 0) invulnerableTimer -= dt;
+    if (respawnShieldTimer > 0) respawnShieldTimer -= dt;
     if (hurtAnimTimer > 0) hurtAnimTimer -= dt;
     if (attackCooldown > 0) attackCooldown -= dt;
     if (attackAnimTimer > 0) attackAnimTimer -= dt;
@@ -980,22 +1065,28 @@ class MangaPlayer extends PositionComponent
 
     Paint? overridePaint;
     if (game.isMultiplayer) {
-      final myColor = LanMultiplayerService.instance.myColor;
-      // Manga aura ring at Kaito's feet in multiplayer mode
-      final auraPaint = Paint()
-        ..color = myColor.withValues(alpha: 0.35)
-        ..style = PaintingStyle.fill;
-      canvas.drawOval(
-        Rect.fromCenter(center: const Offset(0, -3), width: 50, height: 12),
-        auraPaint,
-      );
-
-      // Clean sprite tinting that strictly respects transparent PNG edges
-      overridePaint = Paint()
-        ..colorFilter = ColorFilter.mode(
-          myColor.withValues(alpha: 0.50),
-          BlendMode.srcATop,
+      final net = LanMultiplayerService.instance;
+      final myColor = net.myColor;
+      if (!isDying) {
+        // Natural dark ground shadow under Kaito's feet (never tinted by skin color!)
+        final shadowPaint = Paint()
+          ..color = Colors.black.withValues(alpha: 0.38)
+          ..style = PaintingStyle.fill;
+        canvas.drawOval(
+          Rect.fromCenter(center: const Offset(0, -3), width: 46, height: 11),
+          shadowPaint,
         );
+      }
+
+      // Selective skin matrix that recolors only Kaito's red scarf, headband,
+      // gauntlets, and boots while keeping black outlines, dark suit, and white belt intact!
+      final skinFilter = MultiplayerColor.createSkinColorFilter(
+        myColor,
+        colorIndex: net.myColorIndex,
+      );
+      if (skinFilter != null) {
+        overridePaint = Paint()..colorFilter = skinFilter;
+      }
     }
 
     sprite.render(

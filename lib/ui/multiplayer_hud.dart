@@ -95,25 +95,101 @@ class _MultiplayerHudState extends State<MultiplayerHud> {
     );
   }
 
+  Widget _buildLivesRow(int lives, int maxLives, {bool alignEnd = false}) {
+    final safeMax = maxLives.clamp(1, 10);
+    final safeLives = lives.clamp(0, safeMax);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      mainAxisAlignment:
+          alignEnd ? MainAxisAlignment.end : MainAxisAlignment.start,
+      children: [
+        for (int i = 0; i < safeMax; i++)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 1.0),
+            child: Icon(
+              i < safeLives ? Icons.favorite : Icons.favorite_border,
+              size: 13,
+              color: i < safeLives ? ComicTheme.actionRed : Colors.white30,
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildCenterTimerOrVsBadge(LanMultiplayerService net) {
+    final remSec = net.remainingSecondsNotifier.value;
+    final hasTimer = remSec != null;
+    final m = hasTimer ? (remSec ~/ 60) : 0;
+    final s = hasTimer ? (remSec % 60).toString().padLeft(2, '0') : '00';
+    final isLowTime = hasTimer && remSec <= 15;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(
+              horizontal: 12,
+              vertical: 4,
+            ),
+            decoration: ComicTheme.panelDecoration(
+              backgroundColor:
+                  isLowTime ? ComicTheme.comicYellow : ComicTheme.actionRed,
+              borderWidth: 3.0,
+              shadowOffset: 3,
+            ),
+            child: Text(
+              hasTimer ? '$m:$s' : 'VS',
+              style: ComicTheme.titleText(
+                size: 15,
+                color: isLowTime ? ComicTheme.inkBlack : Colors.white,
+              ),
+            ),
+          ),
+          if (hasTimer)
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Text(
+                'TIEMPO',
+                style: ComicTheme.titleText(
+                  size: 9,
+                  color: Colors.white70,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildDuelLayout(LanMultiplayerService net, dynamic player) {
+    final maxHpDouble = net.configuredMaxHp;
+    final maxHpInt = net.configuredMaxHpInt;
+    final maxLives = net.configuredLives;
+
     final remotePlayer = game.pvpArena?.remotePlayers.values.firstOrNull;
-    final remoteEntryAlive = remotePlayer == null
-        ? true
-        : (net.roomPlayers[remotePlayer.id]?.isAlive ?? true);
+    final remoteEntry =
+        remotePlayer == null ? null : net.roomPlayers[remotePlayer.id];
+    final remoteEntryAlive = remoteEntry?.isAlive ?? true;
     final remoteDead =
         remotePlayer != null && (remotePlayer.isDying || !remoteEntryAlive);
-    final remoteHp = remoteDead
-        ? 0.0
-        : (remotePlayer?.hp ?? LanMultiplayerService.kPvpMaxHp);
+    final remoteHp =
+        remoteDead ? 0.0 : (remotePlayer?.hp ?? maxHpDouble);
+    final remoteLives = remoteDead
+        ? 0
+        : (remotePlayer?.lives ?? remoteEntry?.lives ?? maxLives);
     final remoteOugi = remoteDead ? 0.0 : (remotePlayer?.ougi ?? 0.0);
     final remoteName = remotePlayer?.nickname ?? 'Rival';
     final remoteColor = remotePlayer?.playerColor ?? const Color(0xFF00E5FF);
 
-    final localEntryAlive = net.roomPlayers[net.myPlayerId]?.isAlive ?? true;
+    final localEntry = net.roomPlayers[net.myPlayerId];
+    final localEntryAlive = localEntry?.isAlive ?? true;
     final localDead = (player.isDying as bool) ||
         (game.pvpArena?.localPlayerEliminated ?? false) ||
         !localEntryAlive;
     final localHp = localDead ? 0 : (player.hp as int);
+    final localLives = localDead ? 0 : (player.pvpLives as int);
 
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -139,8 +215,10 @@ class _MultiplayerHudState extends State<MultiplayerHud> {
                       ),
                     ),
                   ),
+                  _buildLivesRow(localLives, maxLives),
+                  const SizedBox(width: 8),
                   Text(
-                    '${localHp.clamp(0, LanMultiplayerService.kPvpMaxHpInt)} / ${LanMultiplayerService.kPvpMaxHpInt}',
+                    '${localHp.clamp(0, maxHpInt)} / $maxHpInt',
                     style: ComicTheme.titleText(
                       size: 13,
                       color: ComicTheme.comicYellow,
@@ -150,8 +228,7 @@ class _MultiplayerHudState extends State<MultiplayerHud> {
               ),
               const SizedBox(height: 4),
               _buildHealthBar(
-                ratio: (localHp / LanMultiplayerService.kPvpMaxHp)
-                    .clamp(0.0, 1.0),
+                ratio: (localHp / maxHpDouble).clamp(0.0, 1.0),
                 isReversed: false,
               ),
               const SizedBox(height: 3),
@@ -165,28 +242,8 @@ class _MultiplayerHudState extends State<MultiplayerHud> {
           ),
         ),
 
-        // 2. Center VS Badge
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14),
-          child: Container(
-            padding: const EdgeInsets.symmetric(
-              horizontal: 12,
-              vertical: 5,
-            ),
-            decoration: ComicTheme.panelDecoration(
-              backgroundColor: ComicTheme.actionRed,
-              borderWidth: 3.0,
-              shadowOffset: 3,
-            ),
-            child: Text(
-              'VS',
-              style: ComicTheme.titleText(
-                size: 16,
-                color: Colors.white,
-              ),
-            ),
-          ),
-        ),
+        // 2. Center Timer / VS Badge
+        _buildCenterTimerOrVsBadge(net),
 
         // 3. Remote Opponent (Right)
         Expanded(
@@ -199,12 +256,14 @@ class _MultiplayerHudState extends State<MultiplayerHud> {
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
                   Text(
-                    '${remoteHp.clamp(0, LanMultiplayerService.kPvpMaxHp).toInt()} / ${LanMultiplayerService.kPvpMaxHpInt}',
+                    '${remoteHp.clamp(0, maxHpDouble).toInt()} / $maxHpInt',
                     style: ComicTheme.titleText(
                       size: 13,
                       color: ComicTheme.comicYellow,
                     ),
                   ),
+                  const SizedBox(width: 8),
+                  _buildLivesRow(remoteLives, maxLives, alignEnd: true),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
@@ -226,8 +285,7 @@ class _MultiplayerHudState extends State<MultiplayerHud> {
               ),
               const SizedBox(height: 4),
               _buildHealthBar(
-                ratio: (remoteHp / LanMultiplayerService.kPvpMaxHp)
-                    .clamp(0.0, 1.0),
+                ratio: (remoteHp / maxHpDouble).clamp(0.0, 1.0),
                 isReversed: true,
               ),
               const SizedBox(height: 3),
@@ -244,8 +302,13 @@ class _MultiplayerHudState extends State<MultiplayerHud> {
 
   Widget _buildBattleRoyaleLayout(LanMultiplayerService net, dynamic player,
       List<MultiplayerPlayer> players) {
+    final remSec = net.remainingSecondsNotifier.value;
     return Row(
       children: [
+        if (remSec != null) ...[
+          _buildCenterTimerOrVsBadge(net),
+          const SizedBox(width: 6),
+        ],
         for (int i = 0; i < players.length; i++) ...[
           if (i > 0) const SizedBox(width: 8),
           Expanded(
@@ -253,6 +316,9 @@ class _MultiplayerHudState extends State<MultiplayerHud> {
               p: players[i],
               isLocal: players[i].id == net.myPlayerId,
               localHp: player.hp.toDouble(),
+              localLives: player.pvpLives as int,
+              maxHp: net.configuredMaxHp,
+              maxLives: net.configuredLives,
             ),
           ),
         ],
@@ -264,6 +330,9 @@ class _MultiplayerHudState extends State<MultiplayerHud> {
     required MultiplayerPlayer p,
     required bool isLocal,
     required double localHp,
+    required int localLives,
+    required double maxHp,
+    required int maxLives,
   }) {
     final remote = game.pvpArena?.remotePlayers[p.id];
     final dead = !p.isAlive ||
@@ -272,8 +341,9 @@ class _MultiplayerHudState extends State<MultiplayerHud> {
                 (game.pvpArena?.localPlayerEliminated ?? false))
             : (remote?.isDying ?? false));
     final currentHp = dead ? 0.0 : (isLocal ? localHp : (remote?.hp ?? p.hp));
-    final ratio =
-        (currentHp / LanMultiplayerService.kPvpMaxHp).clamp(0.0, 1.0);
+    final currentLives =
+        dead ? 0 : (isLocal ? localLives : (remote?.lives ?? p.lives));
+    final ratio = (currentHp / maxHp).clamp(0.0, 1.0);
     final isAlive = !dead && currentHp > 0;
 
     return Container(
@@ -311,6 +381,8 @@ class _MultiplayerHudState extends State<MultiplayerHud> {
                   ),
                 ),
               ),
+              _buildLivesRow(currentLives, maxLives, alignEnd: true),
+              const SizedBox(width: 4),
               Text(
                 isAlive ? '${currentHp.toInt()}' : 'K.O.',
                 style: TextStyle(

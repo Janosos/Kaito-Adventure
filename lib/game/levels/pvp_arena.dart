@@ -3,7 +3,6 @@ import 'package:flame/components.dart';
 import 'package:flutter/material.dart';
 import '../components/manga_effects.dart';
 import '../components/platform.dart';
-import '../components/player.dart';
 import '../components/remote_player.dart';
 import '../manga_game.dart';
 import '../services/audio_service.dart';
@@ -13,7 +12,7 @@ class PvPArenaLevel extends Component with HasGameReference<MangaGame> {
   static const double arenaWidth = 1200.0;
   static const double arenaHeight = 600.0;
 
-  // Floating platform coordinates
+  // Base platform coordinates
   static const double platformX = 240.0;
   static const double platformY = 440.0;
   static const double platformWidth = 720.0;
@@ -23,22 +22,31 @@ class PvPArenaLevel extends Component with HasGameReference<MangaGame> {
 
   final Map<String, RemotePlayer> remotePlayers = {};
   bool localPlayerEliminated = false;
+  late final int stageIndex;
+  double? _remainingTime;
+  bool _timeUpTriggered = false;
 
   PvPArenaLevel() {
     final net = LanMultiplayerService.instance;
+    stageIndex = net.matchConfig.stageIndex.clamp(0, kPvpStages.length - 1);
     final players = net.roomPlayers.values.toList();
     final total = max(2, players.length);
+    final maxHp = net.configuredMaxHp;
+    final maxLives = net.configuredLives;
 
     for (final p in players) {
       if (p.id != net.myPlayerId) {
-        final spawnX = getSpawnX(p.slot, total);
+        final spawnPos = getSpawnPosition(p.slot, total, stageIndex: stageIndex);
         final facing = p.slot < (total / 2) ? 1 : -1;
         final remote = RemotePlayer(
           id: p.id,
-          position: Vector2(spawnX, platformY),
+          position: spawnPos,
           nickname: p.nickname,
           playerColor: p.color,
+          colorIndex: p.colorIndex,
           slot: p.slot,
+          initialHp: maxHp,
+          initialLives: maxLives,
         )..facingDirection = facing;
         remotePlayers[p.id] = remote;
       }
@@ -52,41 +60,131 @@ class PvPArenaLevel extends Component with HasGameReference<MangaGame> {
     return platformX + 80.0 + (slot.clamp(0, totalPlayers - 1)) * step;
   }
 
+  static Vector2 getSpawnPosition(
+    int slot,
+    int totalPlayers, {
+    int stageIndex = 0,
+  }) {
+    if (stageIndex == 2) {
+      // Twin Islands + Center Bridge + High Ledges (avoid central pit at x=530..670)
+      const islandSpawns = < List<double> >[
+        [310.0, 448.0],
+        [890.0, 448.0],
+        [600.0, 342.0],
+        [305.0, 240.0],
+        [895.0, 240.0],
+      ];
+      final pair = islandSpawns[slot.clamp(0, islandSpawns.length - 1)];
+      return Vector2(pair[0], pair[1]);
+    }
+    final baseY = stageIndex == 1 ? 450.0 : platformY;
+    return Vector2(getSpawnX(slot, totalPlayers), baseY);
+  }
+
+  Vector2 getSafeRespawnPoint() {
+    final net = LanMultiplayerService.instance;
+    final total = max(2, net.roomPlayers.length);
+    final groundPos =
+        getSpawnPosition(net.mySlot, total, stageIndex: stageIndex);
+    return Vector2(groundPos.x, groundPos.y - 75.0);
+  }
+
+  void spawnRingOutBlast(double x, Color blastColor) {
+    final clampedX = x.clamp(90.0, arenaWidth - 90.0);
+    game.world.add(SmashRingOutBlastEffect(
+      position: Vector2(clampedX, 540.0),
+      playerColor: blastColor,
+      arenaCenterX: arenaWidth * 0.5,
+    ));
+    game.camera.viewfinder.position += Vector2(0, -14);
+  }
+
   @override
   Future<void> onLoad() async {
     await super.onLoad();
 
-    // 1. Illustrated Panoramic Arena Background
+    final net = LanMultiplayerService.instance;
+    final stageInfo = kPvpStages[stageIndex];
+
+    // 1. Illustrated Panoramic Arena Background (Per Selected Stage)
     add(SpriteComponent(
-      sprite: await game.loadSprite('illustrations/bg_level5_sanctum.png'),
+      sprite: await game.loadSprite(stageInfo.flameBgAsset),
       size: Vector2(arenaWidth, arenaHeight),
       position: Vector2.zero(),
       priority: 10,
     ));
 
-    // 2. Central Floating Stone Platform (Safe Zone)
-    add(ComicPlatform(
-      position: Vector2(platformX, platformY),
-      size: Vector2(platformWidth, platformHeight),
-    ));
+    // 2. Stage-Specific Floating Platforms Layout
+    if (stageIndex == 0) {
+      // Stage 0 (Original Base): Single Central Floating Stone Platform
+      add(ComicPlatform(
+        position: Vector2(platformX, platformY),
+        size: Vector2(platformWidth, platformHeight),
+      ));
+    } else if (stageIndex == 1) {
+      // Stage 1 (Azoteas Neo-Tokyo): Tri-Platform Battlefield Layout
+      add(ComicPlatform(
+        position: Vector2(220, 450),
+        size: Vector2(760, 52),
+      ));
+      add(ComicPlatform(
+        position: Vector2(265, 336),
+        size: Vector2(195, 24),
+      ));
+      add(ComicPlatform(
+        position: Vector2(740, 336),
+        size: Vector2(195, 24),
+      ));
+      add(ComicPlatform(
+        position: Vector2(490, 226),
+        size: Vector2(220, 24),
+      ));
+    } else {
+      // Stage 2 (Fortaleza Carmesí): Twin Floating Islands + High Ledges
+      add(ComicPlatform(
+        position: Vector2(170, 448),
+        size: Vector2(360, 50),
+      ));
+      add(ComicPlatform(
+        position: Vector2(670, 448),
+        size: Vector2(360, 50),
+      ));
+      add(ComicPlatform(
+        position: Vector2(480, 342),
+        size: Vector2(240, 24),
+      ));
+      add(ComicPlatform(
+        position: Vector2(220, 240),
+        size: Vector2(170, 24),
+      ));
+      add(ComicPlatform(
+        position: Vector2(810, 240),
+        size: Vector2(170, 24),
+      ));
+    }
 
-    // 3. Setup Local Player on platform based on assigned slot
-    final net = LanMultiplayerService.instance;
+    // 3. Setup Local Player on platform based on assigned slot & full match stats
     final total = max(2, net.roomPlayers.length);
-    final localSpawnX = getSpawnX(net.mySlot, total);
+    final localSpawn =
+        getSpawnPosition(net.mySlot, total, stageIndex: stageIndex);
     final localFacing = net.mySlot < (total / 2) ? 1 : -1;
 
-    game.player.position = Vector2(localSpawnX, platformY);
-    game.player.velocity = Vector2.zero();
+    game.player.resetForMatch(
+      maxHealth: net.configuredMaxHpInt,
+      lives: net.configuredLives,
+    );
+    game.player.position = localSpawn.clone();
     game.player.facingDirection = localFacing;
-    game.player.hp = LanMultiplayerService.kPvpMaxHpInt;
-    game.player.maxHp = LanMultiplayerService.kPvpMaxHpInt;
-    game.player.spirit = 0.0;
     game.player.isOnGround = true;
-    game.player.isDying = false;
-    game.player.action = PlayerAction.idle;
-    game.player.touchMoveInput = 0.0;
-    game.player.keyboardMoveInput = 0.0;
+
+    final timeLimit = net.matchConfig.timeLimitSeconds;
+    if (timeLimit > 0) {
+      _remainingTime = timeLimit.toDouble();
+      net.remainingSecondsNotifier.value = timeLimit;
+    } else {
+      _remainingTime = null;
+      net.remainingSecondsNotifier.value = null;
+    }
 
     // 4. Add all Remote Opponents directly into game.world for identical camera & render pipeline
     for (final remote in remotePlayers.values) {
@@ -112,8 +210,37 @@ class PvPArenaLevel extends Component with HasGameReference<MangaGame> {
   @override
   void update(double dt) {
     super.update(dt);
-    if (localPlayerEliminated ||
-        LanMultiplayerService.instance.victoryCelebrationNotifier.value != null) {
+    final net = LanMultiplayerService.instance;
+    if (net.victoryCelebrationNotifier.value != null ||
+        net.resultsPodiumNotifier.value != null) {
+      return;
+    }
+
+    // Update Battle Countdown Timer if enabled
+    if (_remainingTime != null && !_timeUpTriggered) {
+      _remainingTime = (_remainingTime! - dt).clamp(0.0, 99999.0);
+      final ceilSec = _remainingTime!.ceil();
+      if (net.remainingSecondsNotifier.value != ceilSec) {
+        net.remainingSecondsNotifier.value = ceilSec;
+      }
+      if (_remainingTime! <= 0) {
+        _timeUpTriggered = true;
+        game.add(MangaTextEffect(
+          position: Vector2(arenaWidth / 2, 250),
+          text: '¡TIEMPO AGOTADO!',
+          fillColor: Colors.amberAccent,
+          targetScale: 2.3,
+          maxLifetime: 2.0,
+        ));
+        AudioService.playSfx(AudioService.sfxBossRoar);
+        if (net.role == MatchRole.host) {
+          net.hostTriggerTimeUp();
+        }
+        return;
+      }
+    }
+
+    if (localPlayerEliminated) {
       return;
     }
 
@@ -121,24 +248,28 @@ class PvPArenaLevel extends Component with HasGameReference<MangaGame> {
 
     // Fall to Void / Ring Out detection for Local Player
     if (player.position.y > voidDeathY) {
-      localPlayerEliminated = true;
-      player.hp = 0;
-      player.isDying = true;
-      player.velocity.setZero();
+      final blastX = player.position.x.clamp(90.0, arenaWidth - 90.0);
+      spawnRingOutBlast(blastX, net.myColor);
+      net.sendRingOutBlast(x: blastX, colorIndex: net.myColorIndex);
+
       AudioService.playSfx(AudioService.sfxPlayerDeath);
+      AudioService.heavyHaptic();
 
       game.add(MangaTextEffect(
         position: Vector2(
-          player.position.x.clamp(platformX, platformX + platformWidth),
-          380,
+          blastX.clamp(220.0, arenaWidth - 220.0),
+          360,
         ),
         text: 'RING OUT!!',
         fillColor: Colors.redAccent,
         targetScale: 2.4,
       ));
 
-      LanMultiplayerService.instance.sendLocalPlayerEliminated();
-      game.onLocalPlayerEliminated();
+      final eliminated =
+          player.consumeMultiplayerLifeOrEliminate(isRingOut: true);
+      if (eliminated) {
+        localPlayerEliminated = true;
+      }
     }
   }
 

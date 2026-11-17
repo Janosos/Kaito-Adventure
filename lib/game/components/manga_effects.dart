@@ -292,3 +292,157 @@ class SpeedLineStreakComponent extends PositionComponent {
     }
   }
 }
+
+/// Smash Bros-style Directional Blast Zone K.O. Pillar when a fighter falls into the void
+class SmashRingOutBlastEffect extends PositionComponent {
+  final Color playerColor;
+  final double maxLifetime;
+  final double tiltAngle;
+  double _timer = 0.0;
+  final List<_BlastSpark> _sparks = [];
+
+  SmashRingOutBlastEffect({
+    required Vector2 position,
+    required this.playerColor,
+    this.maxLifetime = 0.82,
+    double arenaCenterX = 600.0,
+  })  : tiltAngle = ((arenaCenterX - position.x) * 0.00055).clamp(-0.28, 0.28),
+        super(position: position, anchor: Anchor.bottomCenter) {
+    priority = 980;
+    final rand = Random();
+    for (int i = 0; i < 20; i++) {
+      final spread = (rand.nextDouble() - 0.5) * 1.1;
+      final speed = 260.0 + rand.nextDouble() * 420.0;
+      _sparks.add(_BlastSpark(
+        vx: sin(spread) * speed * 0.55,
+        vy: -cos(spread).abs() * speed,
+        radius: 4.0 + rand.nextDouble() * 6.5,
+        isGold: i.isEven,
+      ));
+    }
+  }
+
+  @override
+  void update(double dt) {
+    super.update(dt);
+    _timer += dt;
+    if (_timer >= maxLifetime) {
+      removeFromParent();
+    }
+  }
+
+  @override
+  void render(Canvas canvas) {
+    final t = (_timer / maxLifetime).clamp(0.0, 1.0);
+    final fade = (1.0 - Curves.easeInCubic.transform(t)).clamp(0.0, 1.0);
+    final surge = Curves.easeOutExpo.transform((t * 2.2).clamp(0.0, 1.0));
+    final beamHeight = 420.0 * surge;
+    final baseHalfW = 28.0 * (1.0 - t * 0.45);
+    final topHalfW = (92.0 + 48.0 * surge) * (1.0 - t * 0.55);
+
+    canvas.save();
+    canvas.rotate(tiltAngle);
+
+    // 1. Outer Manga Plasma Cone
+    final beamPath = Path()
+      ..moveTo(-baseHalfW, 18)
+      ..lineTo(-topHalfW, -beamHeight)
+      ..lineTo(topHalfW, -beamHeight)
+      ..lineTo(baseHalfW, 18)
+      ..close();
+
+    final borderPaint = Paint()
+      ..color = ComicTheme.inkBlack.withValues(alpha: fade)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 5.0
+      ..strokeJoin = StrokeJoin.round;
+
+    final outerPaint = Paint()
+      ..color = playerColor.withValues(alpha: (fade * 0.85).clamp(0.0, 1.0))
+      ..style = PaintingStyle.fill;
+
+    canvas.drawPath(beamPath, outerPaint);
+    canvas.drawPath(beamPath, borderPaint);
+
+    // 2. Inner High-Voltage Gold & White Core Beam
+    final coreHalfBase = baseHalfW * 0.52;
+    final coreHalfTop = topHalfW * 0.46;
+    final corePath = Path()
+      ..moveTo(-coreHalfBase, 18)
+      ..lineTo(-coreHalfTop, -beamHeight * 0.96)
+      ..lineTo(coreHalfTop, -beamHeight * 0.96)
+      ..lineTo(coreHalfBase, 18)
+      ..close();
+
+    final goldPaint = Paint()
+      ..color = ComicTheme.comicYellow.withValues(alpha: fade)
+      ..style = PaintingStyle.fill;
+    canvas.drawPath(corePath, goldPaint);
+
+    final whiteCorePath = Path()
+      ..moveTo(-coreHalfBase * 0.45, 18)
+      ..lineTo(-coreHalfTop * 0.35, -beamHeight * 0.88)
+      ..lineTo(coreHalfTop * 0.35, -beamHeight * 0.88)
+      ..lineTo(coreHalfBase * 0.45, 18)
+      ..close();
+    canvas.drawPath(
+      whiteCorePath,
+      Paint()..color = Colors.white.withValues(alpha: fade),
+    );
+
+    // 3. Expanding Blast Zone Shockwave Rings at Bottom Edge
+    final ringRadius = 32.0 + 135.0 * Curves.easeOutQuad.transform(t);
+    final ringRect = Rect.fromCenter(
+      center: const Offset(0, 0),
+      width: ringRadius * 2.2,
+      height: ringRadius * 0.65,
+    );
+    canvas.drawOval(
+      ringRect,
+      Paint()
+        ..color = ComicTheme.inkBlack.withValues(alpha: fade)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 7.0,
+    );
+    canvas.drawOval(
+      ringRect,
+      Paint()
+        ..color = ComicTheme.comicYellow.withValues(alpha: fade)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 3.5,
+    );
+
+    // 4. Exploding Manga Sparks & Starburst Shards
+    final sparkStroke = Paint()
+      ..color = ComicTheme.inkBlack.withValues(alpha: fade)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.2;
+
+    for (final s in _sparks) {
+      final sx = s.vx * _timer;
+      final sy = s.vy * _timer + 180.0 * _timer * _timer;
+      final r = s.radius * (1.0 - t * 0.65).clamp(0.2, 1.0);
+      final fill = Paint()
+        ..color = (s.isGold ? ComicTheme.comicYellow : playerColor)
+            .withValues(alpha: fade);
+      canvas.drawCircle(Offset(sx, sy), r, fill);
+      canvas.drawCircle(Offset(sx, sy), r, sparkStroke);
+    }
+
+    canvas.restore();
+  }
+}
+
+class _BlastSpark {
+  final double vx;
+  final double vy;
+  final double radius;
+  final bool isGold;
+
+  const _BlastSpark({
+    required this.vx,
+    required this.vy,
+    required this.radius,
+    required this.isGold,
+  });
+}

@@ -279,10 +279,14 @@ class _MultiplayerResultsOverlayState extends State<MultiplayerResultsOverlay>
                       Padding(
                         padding: const EdgeInsets.fromLTRB(8, 6, 8, 12),
                         child: ColorFiltered(
-                          colorFilter: ColorFilter.mode(
-                            winner.color.withValues(alpha: 0.48),
-                            BlendMode.srcATop,
-                          ),
+                          colorFilter: MultiplayerColor.createSkinColorFilter(
+                                winner.color,
+                                colorIndex: winner.colorIndex,
+                              ) ??
+                              const ColorFilter.mode(
+                                Colors.transparent,
+                                BlendMode.dst,
+                              ),
                           child: Image.asset(
                             CartoonAssets.kaitoVictory,
                             fit: BoxFit.contain,
@@ -426,10 +430,14 @@ class _MultiplayerResultsOverlayState extends State<MultiplayerResultsOverlay>
                     height: 56,
                     child: ClipRect(
                       child: ColorFiltered(
-                        colorFilter: ColorFilter.mode(
-                          player.color.withValues(alpha: 0.50),
-                          BlendMode.srcATop,
-                        ),
+                        colorFilter: MultiplayerColor.createSkinColorFilter(
+                              player.color,
+                              colorIndex: player.colorIndex,
+                            ) ??
+                            const ColorFilter.mode(
+                              Colors.transparent,
+                              BlendMode.dst,
+                            ),
                         child: Image.asset(
                           CartoonAssets.kaitoDeath,
                           width: 63,

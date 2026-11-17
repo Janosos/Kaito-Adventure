@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../game/cartoon_assets.dart';
 import '../game/manga_game.dart';
 import '../game/services/audio_service.dart';
 import '../game/services/lan_multiplayer_service.dart';
@@ -346,7 +347,11 @@ class _MultiplayerOverlayState extends State<MultiplayerOverlay> {
             ),
           ],
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 8),
+
+        // 1.5 Match Configuration Bar (Stage, Timer, HP Bar, Lives)
+        _buildMatchConfigPanel(net),
+        const SizedBox(height: 8),
 
         // 2. 5 Player Slots Grid
         Expanded(
@@ -357,11 +362,229 @@ class _MultiplayerOverlayState extends State<MultiplayerOverlay> {
             },
           ),
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 8),
 
         // 3. Bottom Action Bar
         _buildWaitingRoomBottomBar(net),
       ],
+    );
+  }
+
+  Widget _buildMatchConfigPanel(LanMultiplayerService net) {
+    final isHost = net.role != MatchRole.client;
+
+    return ValueListenableBuilder<MultiplayerMatchConfig>(
+      valueListenable: net.matchConfigNotifier,
+      builder: (context, cfg, _) {
+        final stage = cfg.stage;
+
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+          decoration: ComicTheme.panelDecoration(
+            backgroundColor: const Color(0xFF14141E),
+            borderWidth: 2.5,
+            shadowOffset: 3,
+          ),
+          child: Row(
+            children: [
+              // 1. Stage / Arena Selector
+              Expanded(
+                flex: 4,
+                child: GestureDetector(
+                  onTap: isHost
+                      ? () {
+                          AudioService.buttonHaptic();
+                          AudioService.playSfx(AudioService.sfxClick);
+                          final nextStage =
+                              (cfg.stageIndex + 1) % kPvpStages.length;
+                          net.updateMatchConfig(stageIndex: nextStage);
+                        }
+                      : null,
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: stage.themeColor.withValues(alpha: 0.16),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: stage.themeColor, width: 1.8),
+                    ),
+                    child: Row(
+                      children: [
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(4),
+                          child: Image.asset(
+                            stage.widgetBgAsset,
+                            width: 40,
+                            height: 26,
+                            fit: BoxFit.cover,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                'ESCENARIO: ${stage.name}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: ComicTheme.titleText(
+                                  size: 11,
+                                  color: ComicTheme.comicYellow,
+                                ),
+                              ),
+                              Text(
+                                stage.subtitle,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: Colors.white70,
+                                  fontSize: 9.5,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        if (isHost)
+                          const Icon(
+                            Icons.swap_horiz,
+                            color: ComicTheme.comicYellow,
+                            size: 16,
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+
+              // 2. Match Timer Selector
+              Expanded(
+                flex: 2,
+                child: _buildConfigChip(
+                  icon: Icons.timer_outlined,
+                  label: 'TIEMPO',
+                  value: cfg.formattedTimeLimit,
+                  accent: ComicTheme.energyCyan,
+                  enabled: isHost,
+                  onTap: () {
+                    const opts = MultiplayerMatchConfig.kTimeOptions;
+                    final idx = opts.indexOf(cfg.timeLimitSeconds);
+                    final next = opts[(idx + 1) % opts.length];
+                    net.updateMatchConfig(timeLimitSeconds: next);
+                  },
+                ),
+              ),
+              const SizedBox(width: 8),
+
+              // 3. Max HP Bar Selector
+              Expanded(
+                flex: 2,
+                child: _buildConfigChip(
+                  icon: Icons.bolt,
+                  label: 'VIDA BARRA',
+                  value: '${cfg.maxHp} HP',
+                  accent: const Color(0xFF00E676),
+                  enabled: isHost,
+                  onTap: () {
+                    const opts = MultiplayerMatchConfig.kHpOptions;
+                    final idx = opts.indexOf(cfg.maxHp);
+                    final next = opts[(idx + 1) % opts.length];
+                    net.updateMatchConfig(maxHp: next);
+                  },
+                ),
+              ),
+              const SizedBox(width: 8),
+
+              // 4. Remaining Lives / Stocks Selector
+              Expanded(
+                flex: 2,
+                child: _buildConfigChip(
+                  icon: Icons.favorite,
+                  label: 'VIDAS',
+                  value: '${cfg.lives} ${cfg.lives == 1 ? "VIDA" : "VIDAS"}',
+                  accent: ComicTheme.actionRed,
+                  enabled: isHost,
+                  onTap: () {
+                    const opts = MultiplayerMatchConfig.kLivesOptions;
+                    final idx = opts.indexOf(cfg.lives);
+                    final next = opts[(idx + 1) % opts.length];
+                    net.updateMatchConfig(lives: next);
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildConfigChip({
+    required IconData icon,
+    required String label,
+    required String value,
+    required Color accent,
+    required bool enabled,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: enabled
+          ? () {
+              AudioService.buttonHaptic();
+              AudioService.playSfx(AudioService.sfxClick);
+              onTap();
+            }
+          : null,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: accent.withValues(alpha: 0.14),
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: accent, width: 1.6),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, color: accent, size: 16),
+            const SizedBox(width: 5),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Colors.white60,
+                      fontSize: 8.5,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  Text(
+                    value,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: ComicTheme.titleText(
+                      size: 12,
+                      color: Colors.white,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (enabled)
+              const Icon(
+                Icons.unfold_more,
+                color: Colors.white54,
+                size: 14,
+              ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -507,16 +730,26 @@ class _MultiplayerOverlayState extends State<MultiplayerOverlay> {
                 height: 52,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: pColor,
-                  border: Border.all(color: Colors.black, width: 2.5),
+                  color: Colors.black54,
+                  border: Border.all(color: pColor, width: 2.5),
                 ),
-                child: Center(
-                  child: Text(
-                    'P${slot + 1}',
-                    style: const TextStyle(
-                      color: Colors.black,
-                      fontWeight: FontWeight.w900,
-                      fontSize: 16,
+                child: ClipOval(
+                  child: Padding(
+                    padding: const EdgeInsets.all(4.0),
+                    child: ColorFiltered(
+                      colorFilter: MultiplayerColor.createSkinColorFilter(
+                            pColor,
+                            colorIndex: player.colorIndex,
+                          ) ??
+                          const ColorFilter.mode(
+                            Colors.transparent,
+                            BlendMode.dst,
+                          ),
+                      child: Image.asset(
+                        CartoonAssets.kaitoVictory,
+                        fit: BoxFit.contain,
+                        filterQuality: FilterQuality.none,
+                      ),
                     ),
                   ),
                 ),
@@ -1161,7 +1394,7 @@ class _MultiplayerOverlayState extends State<MultiplayerOverlay> {
           GestureDetector(
             onTap: _handleCreateRoom,
             child: Container(
-              padding: const EdgeInsets.symmetric(vertical: 10),
+              padding: const EdgeInsets.symmetric(vertical: 8),
               decoration: ComicTheme.panelDecoration(
                 backgroundColor: ComicTheme.comicYellow,
                 borderWidth: 3,
@@ -1176,7 +1409,7 @@ class _MultiplayerOverlayState extends State<MultiplayerOverlay> {
                     Text(
                       'CREAR SALA LOCAL',
                       style: ComicTheme.titleText(
-                        size: 15,
+                        size: 14,
                         color: Colors.black,
                       ),
                     ),
@@ -1185,8 +1418,133 @@ class _MultiplayerOverlayState extends State<MultiplayerOverlay> {
               ),
             ),
           ),
+          const SizedBox(height: 6),
 
-          const Divider(color: Colors.white24, height: 20),
+          // Pre-Room Quick Stage & Rules Selector
+          ValueListenableBuilder<MultiplayerMatchConfig>(
+            valueListenable: net.matchConfigNotifier,
+            builder: (context, cfg, _) {
+              return Wrap(
+                spacing: 6,
+                runSpacing: 4,
+                alignment: WrapAlignment.center,
+                children: [
+                  GestureDetector(
+                    onTap: () {
+                      AudioService.buttonHaptic();
+                      AudioService.playSfx(AudioService.sfxClick);
+                      net.updateMatchConfig(
+                        stageIndex: (cfg.stageIndex + 1) % kPvpStages.length,
+                      );
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 7, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: Colors.white10,
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(color: ComicTheme.comicYellow),
+                      ),
+                      child: Text(
+                        '🗺️ ${cfg.stage.name}',
+                        style: const TextStyle(
+                          color: ComicTheme.comicYellow,
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+                  GestureDetector(
+                    onTap: () {
+                      AudioService.buttonHaptic();
+                      AudioService.playSfx(AudioService.sfxClick);
+                      const opts = MultiplayerMatchConfig.kTimeOptions;
+                      final idx = opts.indexOf(cfg.timeLimitSeconds);
+                      net.updateMatchConfig(
+                        timeLimitSeconds: opts[(idx + 1) % opts.length],
+                      );
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 7, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: Colors.white10,
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(color: ComicTheme.energyCyan),
+                      ),
+                      child: Text(
+                        '⏱️ ${cfg.formattedTimeLimit}',
+                        style: const TextStyle(
+                          color: ComicTheme.energyCyan,
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+                  GestureDetector(
+                    onTap: () {
+                      AudioService.buttonHaptic();
+                      AudioService.playSfx(AudioService.sfxClick);
+                      const opts = MultiplayerMatchConfig.kHpOptions;
+                      final idx = opts.indexOf(cfg.maxHp);
+                      net.updateMatchConfig(
+                        maxHp: opts[(idx + 1) % opts.length],
+                      );
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 7, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: Colors.white10,
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(color: const Color(0xFF00E676)),
+                      ),
+                      child: Text(
+                        '⚡ ${cfg.maxHp} HP',
+                        style: const TextStyle(
+                          color: Color(0xFF00E676),
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+                  GestureDetector(
+                    onTap: () {
+                      AudioService.buttonHaptic();
+                      AudioService.playSfx(AudioService.sfxClick);
+                      const opts = MultiplayerMatchConfig.kLivesOptions;
+                      final idx = opts.indexOf(cfg.lives);
+                      net.updateMatchConfig(
+                        lives: opts[(idx + 1) % opts.length],
+                      );
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 7, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: Colors.white10,
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(color: ComicTheme.actionRed),
+                      ),
+                      child: Text(
+                        '❤️ ${cfg.lives} Vidas',
+                        style: const TextStyle(
+                          color: Colors.redAccent,
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+
+          const Divider(color: Colors.white24, height: 14),
 
           // Manual IP Connection
           Text(

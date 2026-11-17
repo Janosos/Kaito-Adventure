@@ -737,7 +737,24 @@ void main() {
     );
     expect(remote.hp, 260.0);
 
-    //Elimination locks remote HP at 0 even if stale positive HP packets arrive afterward
+    // Remote attack animation lock prevents passive movement packets from cutting off swings
+    remote.isDying = false;
+    remote.hp = 260.0;
+    remote.triggerRemoteAction(actionType: 'slash', comboIndex: 1);
+    expect(remote.action, PlayerAction.attack2);
+    remote.updateFromNetwork(
+      x: remote.position.x,
+      y: remote.position.y,
+      vx: 120,
+      vy: 0,
+      facing: 1,
+      actionName: 'running',
+      remoteHp: 260.0,
+      remoteOugi: 0.0,
+    );
+    expect(remote.action, PlayerAction.attack2);
+
+    // Elimination locks remote HP at 0 even if stale positive HP packets arrive afterward
     remote.markEliminated();
     expect(remote.isDying, isTrue);
     expect(remote.hp, 0.0);
@@ -761,13 +778,58 @@ void main() {
     net.debugInjectClientPacket('p_2', {'type': 'player_eliminated'});
     expect(net.roomPlayers['p_2']!.hp, 0.0);
 
-    // Ring out sets local player HP cleanly to 0 rather than leaving partial HP
+    // First ring out with 3 lives consumes 1 life, spawns Smash blast, and respawns at full 300 HP
+    expect(game.player.pvpLives, 3);
+    game.player.position.y = 800;
+    game.pvpArena!.update(0.016);
+    expect(game.pvpArena!.localPlayerEliminated, isFalse);
+    expect(game.player.pvpLives, 2);
+    expect(game.player.hp, 300);
+
+    // Final life ring out sets local player HP cleanly to 0 and eliminates
+    game.player.pvpLives = 1;
     game.player.position.y = 800;
     game.pvpArena!.update(0.016);
     expect(game.pvpArena!.localPlayerEliminated, isTrue);
     expect(game.player.isDying, isTrue);
     expect(game.player.hp, 0);
+    expect(game.player.pvpLives, 0);
     expect(net.victoryCelebrationNotifier.value?.id, 'p_3');
+
+    // Selective skin filter preserves original index 0 and creates matrix for custom colors
+    expect(
+      MultiplayerColor.createSkinColorFilter(
+        kMultiplayerColors[0].primary,
+        colorIndex: 0,
+      ),
+      isNull,
+    );
+    expect(
+      MultiplayerColor.createSkinColorFilter(
+        kMultiplayerColors[1].primary,
+        colorIndex: 1,
+      ),
+      isNotNull,
+    );
+
+    // Match config updates stage, timer, HP bar, and lives; stale session packets are ignored on rematch
+    net.updateMatchConfig(
+      stageIndex: 2,
+      timeLimitSeconds: 120,
+      maxHp: 500,
+      lives: 5,
+    );
+    net.hostStartMatch();
+    final newSession = net.matchSessionIdNotifier.value;
+    expect(net.roomPlayers['p_host']!.hp, 500.0);
+    expect(net.roomPlayers['p_host']!.lives, 5);
+    // Stale state packet from previous session (newSession - 1) must be discarded
+    net.debugInjectClientPacket('p_3', {
+      'type': 'state',
+      'sessionId': newSession - 1,
+      'hp': 40.0,
+    });
+    expect(net.roomPlayers['p_3']!.hp, 500.0);
 
     await net.disconnect();
     game.pauseEngine();

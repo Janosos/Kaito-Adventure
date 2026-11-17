@@ -4,9 +4,11 @@ import 'package:flame/collisions.dart';
 import 'package:flame/components.dart';
 import 'package:flame/sprite.dart';
 import 'package:flutter/material.dart';
+import '../../ui/comic_theme.dart';
 import '../cartoon_assets.dart';
 import 'manga_effects.dart';
 import '../manga_game.dart';
+import '../services/audio_service.dart';
 import '../services/lan_multiplayer_service.dart';
 import 'player.dart';
 
@@ -16,8 +18,11 @@ class RemotePlayer extends PositionComponent
   final int slot;
   String nickname;
   Color playerColor;
-  double hp = LanMultiplayerService.kPvpMaxHp;
-  double maxHp = LanMultiplayerService.kPvpMaxHp;
+  int colorIndex;
+  double hp;
+  double maxHp;
+  int lives;
+  int maxLives;
   double ougi = 0.0;
 
   int facingDirection = -1;
@@ -29,6 +34,8 @@ class RemotePlayer extends PositionComponent
   bool isCelebrating = false;
   double hitFlashTimer = 0.0;
   double _celebrationTime = 0.0;
+  double _attackAnimLockTimer = 0.0;
+  double _lastSlashFxCooldown = 0.0;
 
   Map<PlayerAction, SpriteAnimationTicker>? _tickers;
   String? _cachedTagName;
@@ -39,8 +46,16 @@ class RemotePlayer extends PositionComponent
     required Vector2 position,
     required this.nickname,
     required this.playerColor,
+    this.colorIndex = 0,
     this.slot = 1,
-  }) : super(
+    double? initialHp,
+    int? initialLives,
+  })  : hp = initialHp ?? LanMultiplayerService.instance.configuredMaxHp,
+        maxHp = initialHp ?? LanMultiplayerService.instance.configuredMaxHp,
+        lives = initialLives ?? LanMultiplayerService.instance.configuredLives,
+        maxLives =
+            initialLives ?? LanMultiplayerService.instance.configuredLives,
+        super(
           position: position,
           size: Vector2(34, 52),
           anchor: Anchor.bottomCenter,
@@ -182,13 +197,191 @@ class RemotePlayer extends PositionComponent
     // Map action string to PlayerAction enum
     for (final a in PlayerAction.values) {
       if (a.name == actionName) {
+        final isIncomingAttack = a == PlayerAction.attack1 ||
+            a == PlayerAction.attack2 ||
+            a == PlayerAction.attack3;
+        final isPassiveMovement = a == PlayerAction.idle ||
+            a == PlayerAction.running ||
+            a == PlayerAction.jumping ||
+            a == PlayerAction.falling;
+
+        // Do not let passive movement state packets cut off an active attack swing mid-animation!
+        if (_attackAnimLockTimer > 0 && isPassiveMovement) {
+          break;
+        }
+
         if (action != a && !isDying) {
           action = a;
           _tickers?[a]?.reset();
+          if (isIncomingAttack) {
+            _attackAnimLockTimer = 0.28;
+            final comboIdx = a == PlayerAction.attack1
+                ? 0
+                : (a == PlayerAction.attack2 ? 1 : 2);
+            _spawnRemoteSlashVisuals(comboIdx);
+          }
         }
         break;
       }
     }
+  }
+
+  void _spawnRemoteSlashVisuals(int comboIndex) {
+    if (_lastSlashFxCooldown > 0) return;
+    _lastSlashFxCooldown = 0.16;
+
+    final idx = comboIndex.clamp(0, 2);
+    final texts = ['SLASH!', 'SHING!!', 'ZUBATTO!!!'];
+    final colors = [
+      ComicTheme.comicYellow,
+      ComicTheme.energyCyan,
+      ComicTheme.actionRed,
+    ];
+
+    AudioService.playSfx(
+      idx == 2 ? AudioService.sfxSlashHeavy : AudioService.sfxSlash,
+      volume: 0.75,
+    );
+
+    game.add(SlashArcEffect(
+      position: Vector2(
+        position.x + facingDirection * 28,
+        position.y - size.y * 0.5,
+      ),
+      slashFlipped: facingDirection < 0,
+      slashColor: colors[idx],
+      radius: 48.0 + idx * 6,
+    ));
+
+    game.add(MangaTextEffect(
+      position: Vector2(
+        position.x + facingDirection * 35,
+        position.y - size.y * 0.7,
+      ),
+      text: texts[idx],
+      fillColor: colors[idx],
+      targetScale: 1.1 + idx * 0.25,
+    ));
+  }
+
+  /// Immediately plays attack/dash/ougi animation and spawns comic VFX when remote player acts
+  void triggerRemoteAction({
+    required String actionType,
+    int comboIndex = 0,
+    double? x,
+    double? y,
+    int? facing,
+  }) {
+    if (isDying || isCelebrating) return;
+    if (x != null && y != null && x.isFinite && y.isFinite) {
+      targetPosition.setValues(x, y);
+    }
+    if (facing != null) {
+      facingDirection = facing < 0 ? -1 : 1;
+    }
+
+    if (actionType == 'slash') {
+      final idx = comboIndex.clamp(0, 2);
+      final attackActions = [
+        PlayerAction.attack1,
+        PlayerAction.attack2,
+        PlayerAction.attack3,
+      ];
+      action = attackActions[idx];
+      _tickers?[action]?.reset();
+      _attackAnimLockTimer = 0.28;
+      _spawnRemoteSlashVisuals(idx);
+    } else if (actionType == 'kunai') {
+      action = PlayerAction.attack1;
+      _tickers?[action]?.reset();
+      _attackAnimLockTimer = 0.22;
+      game.add(MangaTextEffect(
+        position: Vector2(
+          position.x + facingDirection * 24,
+          position.y - size.y * 0.75,
+        ),
+        text: 'KUNAI!!',
+        fillColor: ComicTheme.energyCyan,
+        initialScale: 0.4,
+        targetScale: 0.95,
+      ));
+    } else if (actionType == 'dash') {
+      action = PlayerAction.dashing;
+      _tickers?[action]?.reset();
+      _attackAnimLockTimer = 0.22;
+      AudioService.playSfx(AudioService.sfxDash, volume: 0.75);
+      game.add(MangaTextEffect(
+        position: Vector2(position.x, position.y - size.y * 0.5),
+        text: 'DODODO!',
+        fillColor: ComicTheme.energyCyan,
+        targetScale: 1.2,
+      ));
+      game.add(SpeedLineStreakComponent(
+        position: Vector2(position.x - 40, position.y - size.y),
+        size: Vector2(80, size.y),
+        direction: Vector2(facingDirection.toDouble(), 0),
+      ));
+    } else if (actionType == 'ougi') {
+      action = PlayerAction.attack3;
+      _tickers?[action]?.reset();
+      _attackAnimLockTimer = 0.50;
+      AudioService.playSfx(AudioService.sfxOugiRelease, volume: 0.85);
+      game.add(MangaTextEffect(
+        position: Vector2(position.x, position.y - size.y - 32),
+        text: 'OUGI: CELESTIAL BLADE FLURRY!!',
+        fillColor: ComicTheme.comicYellow,
+        initialScale: 0.55,
+        targetScale: 1.5,
+        maxLifetime: 1.1,
+      ));
+      final arcColors = [
+        ComicTheme.energyCyan,
+        ComicTheme.comicYellow,
+        ComicTheme.actionRed,
+        ComicTheme.energyCyan,
+        ComicTheme.comicYellow,
+        ComicTheme.actionRed,
+      ];
+      for (int i = 0; i < 6; i++) {
+        final xOffset = (i - 2.5) * 48.0;
+        final yOffset = (i.isEven ? -22.0 : 8.0);
+        game.add(SlashArcEffect(
+          position: Vector2(
+            position.x + xOffset,
+            position.y - size.y * 0.5 + yOffset,
+          ),
+          slashColor: arcColors[i],
+          slashFlipped: i.isOdd,
+          radius: 64,
+        ));
+      }
+    }
+  }
+
+  void resetForRespawn({
+    required double fullHp,
+    required int remainingLives,
+    Vector2? spawnPos,
+  }) {
+    isDying = false;
+    maxHp = fullHp;
+    hp = fullHp;
+    lives = remainingLives;
+    hitFlashTimer = 0.35;
+    _attackAnimLockTimer = 0.0;
+    action = PlayerAction.jumping;
+    _tickers?[action]?.reset();
+    if (spawnPos != null) {
+      position.setFrom(spawnPos);
+      targetPosition.setFrom(spawnPos);
+    }
+    game.add(MangaDustEffect(position: position.clone()));
+    game.add(MangaTextEffect(
+      position: Vector2(position.x, position.y - 64),
+      text: '¡$remainingLives ${remainingLives == 1 ? "VIDA" : "VIDAS"}!',
+      fillColor: ComicTheme.energyCyan,
+      targetScale: 1.5,
+    ));
   }
 
   void markEliminated() {
@@ -233,10 +426,16 @@ class RemotePlayer extends PositionComponent
     ));
 
     if (hp <= 0) {
-      hp = 0.0;
-      isDying = true;
-      action = PlayerAction.death;
-      _tickers?[action]?.reset();
+      if (lives > 1) {
+        lives--;
+        hp = maxHp;
+      } else {
+        lives = 0;
+        hp = 0.0;
+        isDying = true;
+        action = PlayerAction.death;
+        _tickers?[action]?.reset();
+      }
     }
 
     if (knockback != null && knockback.x.isFinite && knockback.y.isFinite) {
@@ -250,6 +449,12 @@ class RemotePlayer extends PositionComponent
 
     if (hitFlashTimer > 0) {
       hitFlashTimer -= dt;
+    }
+    if (_attackAnimLockTimer > 0) {
+      _attackAnimLockTimer -= dt;
+    }
+    if (_lastSlashFxCooldown > 0) {
+      _lastSlashFxCooldown -= dt;
     }
     if (isCelebrating) {
       _celebrationTime += dt;
@@ -292,30 +497,35 @@ class RemotePlayer extends PositionComponent
     }
 
     if (!isDying) {
-      // Manga aura ring at opponent's feet
-      final auraPaint = Paint()
+      // Natural dark ground shadow under Kaito's feet (never tinted by skin color!)
+      final shadowPaint = Paint()
         ..color = isCelebrating
-            ? const Color(0xFFFFD600).withValues(alpha: 0.55)
-            : playerColor.withValues(alpha: 0.35)
+            ? const Color(0xFFFFD600).withValues(alpha: 0.50)
+            : Colors.black.withValues(alpha: 0.38)
         ..style = PaintingStyle.fill;
       canvas.drawOval(
         Rect.fromCenter(
           center: Offset(0, -3 + celebrationBounce),
-          width: isCelebrating ? 60 : 50,
-          height: 12,
+          width: isCelebrating ? 60 : 46,
+          height: 11,
         ),
-        auraPaint,
+        shadowPaint,
       );
     }
 
-    final overridePaint = hitFlashTimer > 0
-        ? (Paint()
-          ..colorFilter = const ColorFilter.mode(Colors.white, BlendMode.srcATop))
-        : (Paint()
-          ..colorFilter = ColorFilter.mode(
-              playerColor.withValues(alpha: 0.50),
-              BlendMode.srcATop,
-            ));
+    Paint? overridePaint;
+    if (hitFlashTimer > 0) {
+      overridePaint = Paint()
+        ..colorFilter = const ColorFilter.mode(Colors.white, BlendMode.srcATop);
+    } else {
+      final skinFilter = MultiplayerColor.createSkinColorFilter(
+        playerColor,
+        colorIndex: colorIndex,
+      );
+      if (skinFilter != null) {
+        overridePaint = Paint()..colorFilter = skinFilter;
+      }
+    }
 
     sprite.render(
       canvas,
