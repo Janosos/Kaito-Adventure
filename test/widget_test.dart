@@ -441,9 +441,16 @@ void main() {
     );
     await tester.pump();
     expect(tester.takeException(), isNull);
-    expect(find.text(AppLocalizations.tr('btn_multiplayer')), findsOneWidget);
+    expect(
+      find.text(AppLocalizations.tr('btn_multiplayer_local')),
+      findsOneWidget,
+    );
+    expect(
+      find.text(AppLocalizations.tr('btn_multiplayer_online')),
+      findsOneWidget,
+    );
 
-    // 3. Multiplayer Lobby Overlay renders without overflow
+    // 3. Multiplayer Lobby Overlay renders without overflow (Local and Online modes)
     await tester.pumpWidget(
       MaterialApp(
         home: MediaQuery(
@@ -455,6 +462,25 @@ void main() {
     await tester.pump();
     expect(tester.takeException(), isNull);
     expect(find.byType(MultiplayerOverlay), findsOneWidget);
+
+    // 3b. Online mode displays "NO HAY SERVIDOR ONLINE ACTIVADO" and "REFRESCAR" when no server is running
+    final netInstance = LanMultiplayerService.instance;
+    netInstance.modeNotifier.value = MultiplayerMode.online;
+    netInstance.isCheckingOnlineServer.value = false;
+    netInstance.isOnlineServerActive.value = false;
+    await tester.pump();
+    expect(tester.takeException(), isNull);
+    expect(find.text('NO HAY SERVIDOR ONLINE ACTIVADO'), findsOneWidget);
+    expect(find.text('REFRESCAR'), findsOneWidget);
+
+    // 3c. Online mode displays active server rooms & create room panel when server is active
+    netInstance.isOnlineServerActive.value = true;
+    await tester.pump();
+    expect(tester.takeException(), isNull);
+    expect(find.text('CREAR SALA ONLINE'), findsOneWidget);
+    expect(find.text('PARTIDA RÁPIDA'), findsOneWidget);
+    netInstance.modeNotifier.value = MultiplayerMode.local;
+    await tester.pump();
 
     // 4. Multiplayer HUD renders with 100 HP health bars
     game.isMultiplayer = true;

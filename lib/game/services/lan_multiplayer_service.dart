@@ -285,6 +285,45 @@ class MultiplayerPlayer {
 
 enum MatchRole { none, host, client }
 
+enum MultiplayerMode { local, online }
+
+class OnlineRoomSummary {
+  final String roomId;
+  final String roomName;
+  final String hostName;
+  final int hostColorIndex;
+  final int playerCount;
+  final int maxPlayers;
+  final bool inMatch;
+  final MultiplayerMatchConfig config;
+
+  OnlineRoomSummary({
+    required this.roomId,
+    required this.roomName,
+    required this.hostName,
+    required this.hostColorIndex,
+    required this.playerCount,
+    this.maxPlayers = 5,
+    this.inMatch = false,
+    required this.config,
+  });
+
+  factory OnlineRoomSummary.fromJson(Map<String, dynamic> map) {
+    return OnlineRoomSummary(
+      roomId: map['roomId'] as String? ?? 'room_1',
+      roomName: map['roomName'] as String? ?? 'Dojo Online',
+      hostName: map['hostName'] as String? ?? 'Shinobi',
+      hostColorIndex: map['hostColor'] as int? ?? 0,
+      playerCount: map['playerCount'] as int? ?? 1,
+      maxPlayers: map['maxPlayers'] as int? ?? 5,
+      inMatch: map['inMatch'] as bool? ?? false,
+      config: MultiplayerMatchConfig.fromJson(
+        map['config'] as Map<String, dynamic>?,
+      ),
+    );
+  }
+}
+
 /// Unified socket interface for Native (dart:io) and Web (web_socket_channel)
 abstract class LanSocket {
   Stream<dynamic> get stream;
@@ -320,12 +359,36 @@ class LanMultiplayerService {
 
   static const int kGamePort = 7777;
   static const int kDiscoveryPort = 7778;
+  static const int kOnlineServerPort = 7779;
+  static const int kOnlineDiscoveryPort = 7780;
   static const int maxPlayers = 5;
   static const double kPvpMaxHp = 300.0;
   static const int kPvpMaxHpInt = 300;
   static const int kRematchCountdownSeconds = 10;
   static const Duration kVictoryCelebrationDuration =
       Duration(milliseconds: 3200);
+
+  // Active Multiplayer Mode: Local WiFi vs Dedicated Online PC Server
+  final ValueNotifier<MultiplayerMode> modeNotifier =
+      ValueNotifier<MultiplayerMode>(MultiplayerMode.local);
+  MultiplayerMode get mode => modeNotifier.value;
+  bool get isOnlineMode => modeNotifier.value == MultiplayerMode.online;
+
+  // Dedicated Online Server State
+  String onlineServerAddress = '127.0.0.1:7779';
+  String activeOnlineServerHost = '127.0.0.1';
+  int activeOnlineServerPort = kOnlineServerPort;
+  String onlineServerName = 'Servidor Oficial Kaito Online';
+  int onlineConnectedClients = 0;
+  String? currentOnlineRoomId;
+  LanSocket? _onlineLobbySocket;
+
+  final ValueNotifier<bool> isCheckingOnlineServer = ValueNotifier<bool>(false);
+  final ValueNotifier<bool> isOnlineServerActive = ValueNotifier<bool>(false);
+  final ValueNotifier<List<OnlineRoomSummary>> onlineRoomsNotifier =
+      ValueNotifier<List<OnlineRoomSummary>>([]);
+  final ValueNotifier<String?> onlineErrorNotifier =
+      ValueNotifier<String?>(null);
 
   // Local Player Config
   String myPlayerId = 'p_host';
@@ -438,6 +501,7 @@ class LanMultiplayerService {
 
     final savedConfig = matchConfigNotifier.value;
     await disconnect();
+    modeNotifier.value = MultiplayerMode.local;
     matchConfigNotifier.value = savedConfig;
     await refreshLocalIp();
 
@@ -671,11 +735,18 @@ class LanMultiplayerService {
     }
     _updateRoomPlayersNotifier();
     if (role == MatchRole.host && isConnected) {
-      _broadcastToClients({
-        'type': 'config_update',
-        'config': matchConfig.toJson(),
-        'players': roomPlayers.values.map((p) => p.toJson()).toList(),
-      });
+      if (isOnlineMode) {
+        sendRaw({
+          'type': 'config_update',
+          'config': matchConfig.toJson(),
+        });
+      } else {
+        _broadcastToClients({
+          'type': 'config_update',
+          'config': matchConfig.toJson(),
+          'players': roomPlayers.values.map((p) => p.toJson()).toList(),
+        });
+      }
     }
   }
 
@@ -772,6 +843,10 @@ class LanMultiplayerService {
   /// Host triggers match start (or rematch) for all connected players
   void hostStartMatch() {
     if (role != MatchRole.host || roomPlayers.length < 2) return;
+    if (isOnlineMode) {
+      sendRaw({'type': 'host_start_match'});
+      return;
+    }
 
     _rematchTimer?.cancel();
     _rematchTimer = null;
@@ -816,6 +891,13 @@ class LanMultiplayerService {
   /// Host resolves match when battle timer reaches 00:00
   void hostTriggerTimeUp() {
     if (role != MatchRole.host || !inMatchNotifier.value || _matchEnded) return;
+    if (isOnlineMode) {
+      sendRaw({
+        'type': 'time_up',
+        'sessionId': matchSessionIdNotifier.value,
+      });
+      return;
+    }
     _matchEnded = true;
 
     // Rank alive players by remaining lives descending, then HP descending
@@ -1067,6 +1149,7 @@ class LanMultiplayerService {
 
   Future<bool> connectToRoom(String ip, [int port = kGamePort]) async {
     await disconnect();
+    modeNotifier.value = MultiplayerMode.local;
     role = MatchRole.client;
 
     String cleanIp = ip.trim();
@@ -1092,131 +1175,7 @@ class LanMultiplayerService {
         'color': myColorIndex,
       }));
 
-      _clientSocket!.stream.listen(
-        (data) {
-          try {
-            final text = data is String ? data : utf8.decode(data as List<int>);
-            final map = jsonDecode(text) as Map<String, dynamic>;
-            final type = map['type'] as String?;
-
-            if (type == 'welcome') {
-              myPlayerId = map['yourId'] as String;
-              mySlot = map['slot'] as int? ?? 1;
-              currentRoomName = map['roomName'] as String? ?? 'Dojo';
-              if (map['config'] != null) {
-                matchConfigNotifier.value = MultiplayerMatchConfig.fromJson(
-                    map['config'] as Map<String, dynamic>);
-              }
-              final pList = (map['players'] as List<dynamic>)
-                  .map((e) =>
-                      MultiplayerPlayer.fromJson(e as Map<String, dynamic>))
-                  .toList();
-              roomPlayers.clear();
-              for (final p in pList) {
-                roomPlayers[p.id] = p;
-              }
-              _updateRoomPlayersNotifier();
-            } else if (type == 'lobby_update' || type == 'config_update') {
-              if (map['config'] != null) {
-                matchConfigNotifier.value = MultiplayerMatchConfig.fromJson(
-                    map['config'] as Map<String, dynamic>);
-              }
-              if (map['players'] != null) {
-                final pList = (map['players'] as List<dynamic>)
-                    .map((e) =>
-                        MultiplayerPlayer.fromJson(e as Map<String, dynamic>))
-                    .toList();
-                roomPlayers.clear();
-                for (final p in pList) {
-                  roomPlayers[p.id] = p;
-                }
-                _updateRoomPlayersNotifier();
-              }
-            } else if (type == 'match_start') {
-              if (map['config'] != null) {
-                matchConfigNotifier.value = MultiplayerMatchConfig.fromJson(
-                    map['config'] as Map<String, dynamic>);
-              }
-              final pList = (map['players'] as List<dynamic>)
-                  .map((e) =>
-                      MultiplayerPlayer.fromJson(e as Map<String, dynamic>))
-                  .toList();
-              roomPlayers.clear();
-              for (final p in pList) {
-                roomPlayers[p.id] = p;
-              }
-              _updateRoomPlayersNotifier();
-              victoryCelebrationNotifier.value = null;
-              resultsPodiumNotifier.value = null;
-              rematchCountdownNotifier.value = null;
-              remainingSecondsNotifier.value = matchConfig.timeLimitSeconds > 0
-                  ? matchConfig.timeLimitSeconds
-                  : null;
-              final incomingSession = map['sessionId'] as int?;
-              if (incomingSession != null &&
-                  incomingSession > matchSessionIdNotifier.value) {
-                matchSessionIdNotifier.value = incomingSession;
-              } else {
-                matchSessionIdNotifier.value =
-                    matchSessionIdNotifier.value + 1;
-              }
-              inMatchNotifier.value = true;
-            } else if (type == 'match_victory') {
-              final wMap = map['winner'] as Map<String, dynamic>?;
-              victoryCelebrationNotifier.value =
-                  wMap != null ? MultiplayerPlayer.fromJson(wMap) : null;
-            } else if (type == 'player_stock_lost') {
-              final pid = map['id'] as String?;
-              if (pid != null && roomPlayers.containsKey(pid)) {
-                final rp = roomPlayers[pid]!;
-                rp.lives =
-                    (map['lives'] as int? ?? (rp.lives - 1)).clamp(0, rp.maxLives);
-                rp.hp = rp.maxHp;
-                _updateRoomPlayersNotifier();
-              }
-              _matchDataController.add(map);
-            } else if (type == 'player_eliminated') {
-              final pid = map['id'] as String?;
-              if (pid != null && roomPlayers.containsKey(pid)) {
-                roomPlayers[pid]!.isAlive = false;
-                roomPlayers[pid]!.hp = 0.0;
-                roomPlayers[pid]!.lives = 0;
-                roomPlayers[pid]!.placement = map['placement'] as int? ?? 0;
-                _updateRoomPlayersNotifier();
-              }
-              _matchDataController.add(map);
-            } else if (type == 'match_results') {
-              final podium = (map['podium'] as List<dynamic>)
-                  .map((e) =>
-                      MultiplayerPlayer.fromJson(e as Map<String, dynamic>))
-                  .toList();
-              victoryCelebrationNotifier.value = null;
-              resultsPodiumNotifier.value = podium;
-            } else if (type == 'rematch_update') {
-              final pList = (map['players'] as List<dynamic>)
-                  .map((e) =>
-                      MultiplayerPlayer.fromJson(e as Map<String, dynamic>))
-                  .toList();
-              final incomingIds = pList.map((e) => e.id).toSet();
-              roomPlayers.removeWhere((k, _) => !incomingIds.contains(k));
-              for (final p in pList) {
-                roomPlayers[p.id] = p;
-              }
-              _updateRoomPlayersNotifier();
-            } else if (type == 'rematch_countdown') {
-              rematchCountdownNotifier.value = map['seconds'] as int?;
-            } else {
-              final packetSession = map['sessionId'] as int?;
-              if (packetSession == null ||
-                  packetSession == matchSessionIdNotifier.value) {
-                _matchDataController.add(map);
-              }
-            }
-          } catch (_) {}
-        },
-        onDone: () => disconnect(),
-        onError: (_) => disconnect(),
-      );
+      _attachClientStreamListener();
 
       return true;
     } catch (e) {
@@ -1227,11 +1186,517 @@ class LanMultiplayerService {
   }
 
   // =========================================================================
+  // ONLINE DEDICATED SERVER: Mode Switch, Status Check, Rooms & Join/Create
+  // =========================================================================
+  void setMultiplayerMode(MultiplayerMode nextMode) {
+    if (modeNotifier.value == nextMode) return;
+    modeNotifier.value = nextMode;
+  }
+
+  (String, int) _parseAddress(String raw, [int defaultPort = kOnlineServerPort]) {
+    String clean = raw
+        .trim()
+        .replaceFirst(RegExp(r'^ws://', caseSensitive: false), '')
+        .replaceFirst(RegExp(r'^wss://', caseSensitive: false), '')
+        .replaceFirst(RegExp(r'^http://', caseSensitive: false), '')
+        .replaceFirst(RegExp(r'^https://', caseSensitive: false), '');
+    if (clean.contains('/')) {
+      clean = clean.split('/').first.trim();
+    }
+    if (clean.isEmpty) {
+      return ('127.0.0.1', defaultPort);
+    }
+    if (clean.contains(':')) {
+      final parts = clean.split(':');
+      final h = parts[0].trim().isEmpty ? '127.0.0.1' : parts[0].trim();
+      final p = int.tryParse(parts[1].trim()) ?? defaultPort;
+      return (h, p);
+    }
+    return (clean, defaultPort);
+  }
+
+  Future<void> _closeOnlineLobbySocket() async {
+    final old = _onlineLobbySocket;
+    _onlineLobbySocket = null;
+    if (old != null) {
+      try {
+        await old.close();
+      } catch (_) {}
+    }
+  }
+
+  Future<(String, int)?> _discoverOnlineServerViaUdp() async {
+    if (kIsWeb) return null;
+    RawDatagramSocket? udp;
+    final completer = Completer<(String, int)?>();
+    try {
+      udp = await RawDatagramSocket.bind(InternetAddress.anyIPv4, 0);
+      udp.broadcastEnabled = true;
+
+      udp.listen((event) {
+        if (event == RawSocketEvent.read) {
+          final dg = udp?.receive();
+          if (dg != null && !completer.isCompleted) {
+            try {
+              final text = utf8.decode(dg.data);
+              final map = jsonDecode(text) as Map<String, dynamic>;
+              if (map['type'] == 'kaito_online_server_beacon') {
+                final ip = map['ip'] as String? ?? dg.address.address;
+                final port = map['port'] as int? ?? kOnlineServerPort;
+                completer.complete((ip, port));
+              }
+            } catch (_) {}
+          }
+        }
+      });
+
+      final discoverPayload = utf8.encode(jsonEncode({
+        'type': 'kaito_online_discover',
+      }));
+      try {
+        udp.send(
+          discoverPayload,
+          InternetAddress('127.0.0.1'),
+          kOnlineDiscoveryPort,
+        );
+      } catch (_) {}
+      try {
+        udp.send(
+          discoverPayload,
+          InternetAddress('255.255.255.255'),
+          kOnlineDiscoveryPort,
+        );
+      } catch (_) {}
+
+      return await completer.future.timeout(
+        const Duration(milliseconds: 380),
+        onTimeout: () => null,
+      );
+    } catch (_) {
+      return null;
+    } finally {
+      try {
+        udp?.close();
+      } catch (_) {}
+    }
+  }
+
+  /// Checks if the portable PC Online Server (`INICIAR_SERVIDOR_ONLINE.bat`) is active,
+  /// and subscribes to live room list updates when found.
+  Future<bool> refreshOnlineServer({String? customAddress}) async {
+    if (customAddress != null && customAddress.trim().isNotEmpty) {
+      final parsed = _parseAddress(customAddress);
+      onlineServerAddress = '${parsed.$1}:${parsed.$2}';
+    }
+
+    await _closeOnlineLobbySocket();
+    isCheckingOnlineServer.value = true;
+    onlineErrorNotifier.value = null;
+
+    final candidates = <(String, int)>[];
+    void addCandidate(String host, int port) {
+      if (host.isEmpty) return;
+      final exists = candidates.any((c) => c.$1 == host && c.$2 == port);
+      if (!exists) {
+        candidates.add((host, port));
+      }
+    }
+
+    // 1. User's configured / typed server address first
+    final configured = _parseAddress(onlineServerAddress);
+    addCandidate(configured.$1, configured.$2);
+
+    // 2. Localhost (same PC running INICIAR_SERVIDOR_ONLINE.bat)
+    addCandidate('127.0.0.1', kOnlineServerPort);
+
+    // 3. Quick UDP radar probe on port 7780 for portable servers on the network
+    final udpDiscovered = await _discoverOnlineServerViaUdp();
+    if (udpDiscovered != null) {
+      addCandidate(udpDiscovered.$1, udpDiscovered.$2);
+    }
+
+    // 4. Local IPv4 interface address
+    if (!kIsWeb &&
+        localIpAddress != null &&
+        localIpAddress!.isNotEmpty &&
+        localIpAddress != '127.0.0.1') {
+      addCandidate(localIpAddress!, kOnlineServerPort);
+    }
+
+    for (final candidate in candidates) {
+      final host = candidate.$1;
+      final port = candidate.$2;
+      final ok = await _tryConnectOnlineLobbySocket(host, port);
+      if (ok) {
+        activeOnlineServerHost = host;
+        activeOnlineServerPort = port;
+        onlineServerAddress = '$host:$port';
+        isOnlineServerActive.value = true;
+        isCheckingOnlineServer.value = false;
+        return true;
+      }
+    }
+
+    isOnlineServerActive.value = false;
+    onlineRoomsNotifier.value = [];
+    isCheckingOnlineServer.value = false;
+    return false;
+  }
+
+  Future<bool> _tryConnectOnlineLobbySocket(String host, int port) async {
+    LanSocket? socket;
+    final firstPacketCompleter = Completer<bool>();
+    try {
+      final wsUri = Uri.parse('ws://$host:$port');
+      final channel = WebSocketChannel.connect(wsUri);
+      await channel.ready.timeout(const Duration(milliseconds: 1800));
+      socket = ChannelWebSocket(channel);
+
+      socket.stream.listen(
+        (data) {
+          try {
+            final text = data is String ? data : utf8.decode(data as List<int>);
+            final map = jsonDecode(text) as Map<String, dynamic>;
+            final type = map['type'] as String?;
+            if (type == 'online_rooms_list' || type == 'kaito_online_status') {
+              _handleOnlineRoomsListPacket(map);
+              if (!firstPacketCompleter.isCompleted) {
+                firstPacketCompleter.complete(true);
+              }
+            }
+          } catch (_) {}
+        },
+        onDone: () {
+          if (_onlineLobbySocket == socket) {
+            _onlineLobbySocket = null;
+            if (!isConnected) {
+              isOnlineServerActive.value = false;
+              onlineRoomsNotifier.value = [];
+            }
+          }
+          if (!firstPacketCompleter.isCompleted) {
+            firstPacketCompleter.complete(false);
+          }
+        },
+        onError: (_) {
+          if (_onlineLobbySocket == socket) {
+            _onlineLobbySocket = null;
+            if (!isConnected) {
+              isOnlineServerActive.value = false;
+              onlineRoomsNotifier.value = [];
+            }
+          }
+          if (!firstPacketCompleter.isCompleted) {
+            firstPacketCompleter.complete(false);
+          }
+        },
+      );
+
+      socket.send(jsonEncode({'type': 'online_get_rooms'}));
+
+      final confirmed = await firstPacketCompleter.future.timeout(
+        const Duration(milliseconds: 1500),
+        onTimeout: () => false,
+      );
+
+      if (confirmed) {
+        _onlineLobbySocket = socket;
+        return true;
+      } else {
+        await socket.close();
+        return false;
+      }
+    } catch (_) {
+      try {
+        await socket?.close();
+      } catch (_) {}
+      return false;
+    }
+  }
+
+  void _handleOnlineRoomsListPacket(Map<String, dynamic> map) {
+    onlineServerName =
+        map['serverName'] as String? ?? 'Servidor Oficial Kaito Online';
+    onlineConnectedClients = map['connectedClients'] as int? ?? 0;
+    final rawRooms = map['rooms'] as List<dynamic>? ?? const [];
+    onlineRoomsNotifier.value = rawRooms
+        .whereType<Map<String, dynamic>>()
+        .map(OnlineRoomSummary.fromJson)
+        .toList();
+    isOnlineServerActive.value = true;
+  }
+
+  /// Creates a new multiplayer room on the dedicated PC Online Server
+  Future<bool> createOnlineRoom({String? roomName}) async {
+    currentRoomName = roomName?.trim().isNotEmpty == true
+        ? roomName!.trim()
+        : 'Dojo Online de $myNickname';
+
+    return _connectToOnlineServerForRoom({
+      'type': 'online_create_room',
+      'roomName': currentRoomName,
+      'name': myNickname,
+      'color': myColorIndex,
+      'config': matchConfig.toJson(),
+    });
+  }
+
+  /// Joins an existing room (or quick-joins if roomId is null/empty) on the PC Online Server
+  Future<bool> joinOnlineRoom({String? roomId}) async {
+    return _connectToOnlineServerForRoom({
+      'type': 'online_join_room',
+      'roomId': roomId ?? '',
+      'name': myNickname,
+      'color': myColorIndex,
+      'config': matchConfig.toJson(),
+    });
+  }
+
+  Future<bool> _connectToOnlineServerForRoom(
+      Map<String, dynamic> handshakePayload) async {
+    final savedConfig = matchConfigNotifier.value;
+    final savedHost = activeOnlineServerHost;
+    final savedPort = activeOnlineServerPort;
+    final savedAddress = onlineServerAddress;
+
+    await _closeOnlineLobbySocket();
+    await disconnect(keepMode: true);
+
+    modeNotifier.value = MultiplayerMode.online;
+    matchConfigNotifier.value = savedConfig;
+    activeOnlineServerHost = savedHost;
+    activeOnlineServerPort = savedPort;
+    onlineServerAddress = savedAddress;
+    onlineErrorNotifier.value = null;
+
+    final welcomeCompleter = Completer<bool>();
+
+    try {
+      final wsUri = Uri.parse('ws://$activeOnlineServerHost:$activeOnlineServerPort');
+      final channel = WebSocketChannel.connect(wsUri);
+      await channel.ready.timeout(const Duration(seconds: 4));
+
+      _clientSocket = ChannelWebSocket(channel);
+      isConnected = true;
+      role = handshakePayload['type'] == 'online_create_room'
+          ? MatchRole.host
+          : MatchRole.client;
+
+      _attachClientStreamListener(welcomeCompleter: welcomeCompleter);
+      _clientSocket!.send(jsonEncode(handshakePayload));
+
+      final ok = await welcomeCompleter.future.timeout(
+        const Duration(seconds: 4),
+        onTimeout: () => false,
+      );
+
+      if (!ok) {
+        final err = onlineErrorNotifier.value;
+        await disconnect(keepMode: true);
+        onlineErrorNotifier.value = err;
+        await refreshOnlineServer();
+        return false;
+      }
+
+      isOnlineServerActive.value = true;
+      return true;
+    } catch (e) {
+      debugPrint('[Online Server] Failed to connect to room: $e');
+      await disconnect(keepMode: true);
+      isOnlineServerActive.value = false;
+      onlineRoomsNotifier.value = [];
+      onlineErrorNotifier.value =
+          'No hay servidor online activado o se perdió la conexión.';
+      return false;
+    }
+  }
+
+  void _attachClientStreamListener({Completer<bool>? welcomeCompleter}) {
+    _clientSocket?.stream.listen(
+      (data) {
+        try {
+          final text = data is String ? data : utf8.decode(data as List<int>);
+          final map = jsonDecode(text) as Map<String, dynamic>;
+          final type = map['type'] as String?;
+
+          if (type == 'welcome') {
+            myPlayerId = map['yourId'] as String;
+            mySlot = map['slot'] as int? ?? 1;
+            currentOnlineRoomId = map['roomId'] as String?;
+            currentRoomName = map['roomName'] as String? ?? 'Dojo';
+            if (isOnlineMode) {
+              final isMeHost = map['isHost'] as bool? ?? (mySlot == 0);
+              role = isMeHost ? MatchRole.host : MatchRole.client;
+            }
+            if (map['config'] != null) {
+              matchConfigNotifier.value = MultiplayerMatchConfig.fromJson(
+                  map['config'] as Map<String, dynamic>);
+            }
+            final pList = (map['players'] as List<dynamic>)
+                .map((e) =>
+                    MultiplayerPlayer.fromJson(e as Map<String, dynamic>))
+                .toList();
+            roomPlayers.clear();
+            for (final p in pList) {
+              roomPlayers[p.id] = p;
+            }
+            _updateRoomPlayersNotifier();
+            if (welcomeCompleter != null && !welcomeCompleter.isCompleted) {
+              welcomeCompleter.complete(true);
+            }
+          } else if (type == 'error') {
+            onlineErrorNotifier.value =
+                map['msg'] as String? ?? 'No se pudo entrar a la sala.';
+            if (welcomeCompleter != null && !welcomeCompleter.isCompleted) {
+              welcomeCompleter.complete(false);
+            }
+          } else if (type == 'online_rooms_list') {
+            _handleOnlineRoomsListPacket(map);
+          } else if (type == 'lobby_update' || type == 'config_update') {
+            if (map['config'] != null) {
+              matchConfigNotifier.value = MultiplayerMatchConfig.fromJson(
+                  map['config'] as Map<String, dynamic>);
+            }
+            if (map['players'] != null) {
+              final pList = (map['players'] as List<dynamic>)
+                  .map((e) =>
+                      MultiplayerPlayer.fromJson(e as Map<String, dynamic>))
+                  .toList();
+              roomPlayers.clear();
+              for (final p in pList) {
+                roomPlayers[p.id] = p;
+              }
+              if (isOnlineMode && roomPlayers.containsKey(myPlayerId)) {
+                role = roomPlayers[myPlayerId]!.isHost
+                    ? MatchRole.host
+                    : MatchRole.client;
+              }
+              _updateRoomPlayersNotifier();
+            }
+          } else if (type == 'match_start') {
+            if (map['config'] != null) {
+              matchConfigNotifier.value = MultiplayerMatchConfig.fromJson(
+                  map['config'] as Map<String, dynamic>);
+            }
+            final pList = (map['players'] as List<dynamic>)
+                .map((e) =>
+                    MultiplayerPlayer.fromJson(e as Map<String, dynamic>))
+                .toList();
+            roomPlayers.clear();
+            for (final p in pList) {
+              roomPlayers[p.id] = p;
+            }
+            if (isOnlineMode && roomPlayers.containsKey(myPlayerId)) {
+              role = roomPlayers[myPlayerId]!.isHost
+                  ? MatchRole.host
+                  : MatchRole.client;
+            }
+            _updateRoomPlayersNotifier();
+            victoryCelebrationNotifier.value = null;
+            resultsPodiumNotifier.value = null;
+            rematchCountdownNotifier.value = null;
+            remainingSecondsNotifier.value = matchConfig.timeLimitSeconds > 0
+                ? matchConfig.timeLimitSeconds
+                : null;
+            final incomingSession = map['sessionId'] as int?;
+            if (incomingSession != null &&
+                incomingSession > matchSessionIdNotifier.value) {
+              matchSessionIdNotifier.value = incomingSession;
+            } else {
+              matchSessionIdNotifier.value =
+                  matchSessionIdNotifier.value + 1;
+            }
+            inMatchNotifier.value = true;
+          } else if (type == 'match_victory') {
+            final wMap = map['winner'] as Map<String, dynamic>?;
+            victoryCelebrationNotifier.value =
+                wMap != null ? MultiplayerPlayer.fromJson(wMap) : null;
+          } else if (type == 'player_stock_lost') {
+            final pid = map['id'] as String?;
+            if (pid != null && roomPlayers.containsKey(pid)) {
+              final rp = roomPlayers[pid]!;
+              rp.lives =
+                  (map['lives'] as int? ?? (rp.lives - 1)).clamp(0, rp.maxLives);
+              rp.hp = rp.maxHp;
+              _updateRoomPlayersNotifier();
+            }
+            _matchDataController.add(map);
+          } else if (type == 'player_eliminated') {
+            final pid = map['id'] as String?;
+            if (pid != null && roomPlayers.containsKey(pid)) {
+              roomPlayers[pid]!.isAlive = false;
+              roomPlayers[pid]!.hp = 0.0;
+              roomPlayers[pid]!.lives = 0;
+              roomPlayers[pid]!.placement = map['placement'] as int? ?? 0;
+              _updateRoomPlayersNotifier();
+            }
+            _matchDataController.add(map);
+          } else if (type == 'match_results') {
+            final podium = (map['podium'] as List<dynamic>)
+                .map((e) =>
+                    MultiplayerPlayer.fromJson(e as Map<String, dynamic>))
+                .toList();
+            victoryCelebrationNotifier.value = null;
+            resultsPodiumNotifier.value = podium;
+          } else if (type == 'rematch_update') {
+            final pList = (map['players'] as List<dynamic>)
+                .map((e) =>
+                    MultiplayerPlayer.fromJson(e as Map<String, dynamic>))
+                .toList();
+            final incomingIds = pList.map((e) => e.id).toSet();
+            roomPlayers.removeWhere((k, _) => !incomingIds.contains(k));
+            for (final p in pList) {
+              roomPlayers[p.id] = p;
+            }
+            _updateRoomPlayersNotifier();
+          } else if (type == 'rematch_countdown') {
+            rematchCountdownNotifier.value = map['seconds'] as int?;
+          } else {
+            final packetSession = map['sessionId'] as int?;
+            if (packetSession == null ||
+                packetSession == matchSessionIdNotifier.value) {
+              _matchDataController.add(map);
+            }
+          }
+        } catch (_) {}
+      },
+      onDone: () {
+        if (welcomeCompleter != null && !welcomeCompleter.isCompleted) {
+          welcomeCompleter.complete(false);
+        }
+        final wasOnline = isOnlineMode;
+        disconnect(keepMode: true).then((_) {
+          if (wasOnline) {
+            refreshOnlineServer();
+          }
+        });
+      },
+      onError: (_) {
+        if (welcomeCompleter != null && !welcomeCompleter.isCompleted) {
+          welcomeCompleter.complete(false);
+        }
+        final wasOnline = isOnlineMode;
+        disconnect(keepMode: true).then((_) {
+          if (wasOnline) {
+            refreshOnlineServer();
+          }
+        });
+      },
+    );
+  }
+
+  // =========================================================================
   // IN-GAME NETWORK SEND METHODS
   // =========================================================================
   void sendRaw(Map<String, dynamic> data) {
     if (!isConnected) return;
     final jsonStr = jsonEncode(data);
+    if (isOnlineMode) {
+      try {
+        _clientSocket?.send(jsonStr);
+      } catch (_) {}
+      return;
+    }
     if (role == MatchRole.host) {
       _broadcastToClients(data);
     } else if (role == MatchRole.client && _clientSocket != null) {
@@ -1343,11 +1808,7 @@ class LanMultiplayerService {
       'x': x,
       'color': colorIndex,
     };
-    if (role == MatchRole.host) {
-      _broadcastToClients(packet);
-    } else {
-      sendRaw(packet);
-    }
+    sendRaw(packet);
   }
 
   void sendLocalPlayerStockLost(int remainingLives) {
@@ -1364,7 +1825,7 @@ class LanMultiplayerService {
       'lives': remainingLives,
       'hp': configuredMaxHp,
     };
-    if (role == MatchRole.host) {
+    if (!isOnlineMode && role == MatchRole.host) {
       _broadcastToClients(packet);
       _matchDataController.add(packet);
     } else {
@@ -1373,7 +1834,7 @@ class LanMultiplayerService {
   }
 
   void sendLocalPlayerEliminated() {
-    if (role == MatchRole.host) {
+    if (!isOnlineMode && role == MatchRole.host) {
       final hostPlayer = roomPlayers[myPlayerId];
       if (hostPlayer != null) {
         hostPlayer.hp = 0.0;
@@ -1423,7 +1884,7 @@ class LanMultiplayerService {
   void cancelRematchVote() => setRematchVote(false);
 
   void setRematchVote(bool ready) {
-    if (role == MatchRole.host) {
+    if (!isOnlineMode && role == MatchRole.host) {
       final p = roomPlayers[myPlayerId];
       if (p != null) {
         p.votedRematch = ready;
@@ -1446,7 +1907,7 @@ class LanMultiplayerService {
     roomPlayersNotifier.value = roomPlayers.values.toList();
   }
 
-  Future<void> disconnect() async {
+  Future<void> disconnect({bool keepMode = false}) async {
     _beaconTimer?.cancel();
     _beaconTimer = null;
     _rematchTimer?.cancel();
@@ -1454,6 +1915,10 @@ class LanMultiplayerService {
     _victoryDelayTimer?.cancel();
     _victoryDelayTimer = null;
     _matchEnded = false;
+
+    if (!keepMode) {
+      await _closeOnlineLobbySocket();
+    }
 
     if (!kIsWeb) {
       try {
@@ -1483,6 +1948,7 @@ class LanMultiplayerService {
 
     role = MatchRole.none;
     isConnected = false;
+    currentOnlineRoomId = null;
     inMatchNotifier.value = false;
     matchSessionIdNotifier.value = 0;
     rematchCountdownNotifier.value = null;

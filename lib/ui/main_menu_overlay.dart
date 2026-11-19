@@ -172,16 +172,46 @@ class _MainMenuOverlayState extends State<MainMenuOverlay> {
                                         },
                                       ),
                                       const SizedBox(height: 8),
-                                      _buildCartoonMenuButton(
-                                        iconAsset: CartoonAssets.uiBtnControls,
-                                        label: AppLocalizations.tr(
-                                          'btn_multiplayer',
-                                        ),
-                                        bgColor: const Color(0xFF6A1B9A),
-                                        textColor: ComicTheme.paperWhite,
-                                        onTap: () {
-                                          widget.game.openMultiplayerLobby();
-                                        },
+                                      Row(
+                                        children: [
+                                          Expanded(
+                                            child: _buildCartoonMenuButton(
+                                              iconAsset:
+                                                  CartoonAssets.uiBtnControls,
+                                              label: AppLocalizations.tr(
+                                                'btn_multiplayer_local',
+                                              ),
+                                              bgColor: const Color(0xFF6A1B9A),
+                                              textColor: ComicTheme.paperWhite,
+                                              compact: true,
+                                              onTap: () {
+                                                widget.game
+                                                    .openMultiplayerLobby(
+                                                  onlineMode: false,
+                                                );
+                                              },
+                                            ),
+                                          ),
+                                          const SizedBox(width: 10),
+                                          Expanded(
+                                            child: _buildCartoonMenuButton(
+                                              iconAsset:
+                                                  CartoonAssets.uiBtnControls,
+                                              label: AppLocalizations.tr(
+                                                'btn_multiplayer_online',
+                                              ),
+                                              bgColor: const Color(0xFF00838F),
+                                              textColor: ComicTheme.paperWhite,
+                                              compact: true,
+                                              onTap: () {
+                                                widget.game
+                                                    .openMultiplayerLobby(
+                                                  onlineMode: true,
+                                                );
+                                              },
+                                            ),
+                                          ),
+                                        ],
                                       ),
                                       const SizedBox(height: 8),
                                       _buildCartoonMenuButton(

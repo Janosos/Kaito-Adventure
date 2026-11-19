@@ -450,9 +450,14 @@ class MangaGame extends FlameGame
     }
   }
 
-  void openMultiplayerLobby() {
+  void openMultiplayerLobby({bool? onlineMode}) {
     isMultiplayer = false;
     _startedMatchSessionId = 0;
+    if (onlineMode != null) {
+      LanMultiplayerService.instance.setMultiplayerMode(
+        onlineMode ? MultiplayerMode.online : MultiplayerMode.local,
+      );
+    }
     _bindMultiplayerNotifiers();
     overlays.remove('main_menu');
     overlays.remove('hud');

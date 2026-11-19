@@ -21,6 +21,7 @@ class _MultiplayerOverlayState extends State<MultiplayerOverlay> {
   late final TextEditingController _nicknameController;
   late final TextEditingController _ipController;
   late final TextEditingController _roomNameController;
+  late final TextEditingController _onlineServerController;
 
   String? _statusMessage;
   bool _copiedIpFeedback = false;
@@ -33,13 +34,35 @@ class _MultiplayerOverlayState extends State<MultiplayerOverlay> {
     _ipController = TextEditingController(text: kIsWeb ? '127.0.0.1' : '');
     _roomNameController =
         TextEditingController(text: 'Dojo de ${net.myNickname}');
+    _onlineServerController =
+        TextEditingController(text: net.onlineServerAddress);
 
-    // Start WiFi discovery and listen to match start
-    net.startRoomDiscovery();
     net.inMatchNotifier.addListener(_onMatchStarted);
+    net.modeNotifier.addListener(_onModeChanged);
     net.refreshLocalIp().then((_) {
       if (mounted) setState(() {});
     });
+
+    if (net.isOnlineMode) {
+      _handleRefreshOnlineServer(playSfx: false);
+    } else {
+      net.startRoomDiscovery();
+    }
+  }
+
+  void _onModeChanged() {
+    if (!mounted) return;
+    final net = LanMultiplayerService.instance;
+    setState(() {
+      _statusMessage = null;
+      _onlineServerController.text = net.onlineServerAddress;
+    });
+    if (net.isOnlineMode) {
+      net.stopRoomDiscovery();
+      _handleRefreshOnlineServer(playSfx: false);
+    } else {
+      net.startRoomDiscovery();
+    }
   }
 
   void _onMatchStarted() {
@@ -52,10 +75,12 @@ class _MultiplayerOverlayState extends State<MultiplayerOverlay> {
   void dispose() {
     LanMultiplayerService.instance.inMatchNotifier
         .removeListener(_onMatchStarted);
+    LanMultiplayerService.instance.modeNotifier.removeListener(_onModeChanged);
     LanMultiplayerService.instance.stopRoomDiscovery();
     _nicknameController.dispose();
     _ipController.dispose();
     _roomNameController.dispose();
+    _onlineServerController.dispose();
     super.dispose();
   }
 
@@ -141,11 +166,78 @@ class _MultiplayerOverlayState extends State<MultiplayerOverlay> {
   Future<void> _handleCancelRoom() async {
     AudioService.buttonHaptic();
     AudioService.playSfx(AudioService.sfxClick);
-    await LanMultiplayerService.instance.disconnect();
-    await LanMultiplayerService.instance.startRoomDiscovery();
+    final net = LanMultiplayerService.instance;
+    final wasOnline = net.isOnlineMode;
+    await net.disconnect(keepMode: true);
+    if (wasOnline) {
+      await net.refreshOnlineServer();
+    } else {
+      await net.startRoomDiscovery();
+    }
     if (mounted) {
       setState(() {
         _statusMessage = null;
+      });
+    }
+  }
+
+  Future<void> _handleRefreshOnlineServer({bool playSfx = true}) async {
+    if (playSfx) {
+      AudioService.buttonHaptic();
+      AudioService.playSfx(AudioService.sfxClick);
+    }
+    final net = LanMultiplayerService.instance;
+    setState(() {
+      _statusMessage = null;
+    });
+    final customAddr = _onlineServerController.text.trim();
+    final ok = await net.refreshOnlineServer(
+      customAddress: customAddr.isNotEmpty ? customAddr : null,
+    );
+    if (mounted) {
+      setState(() {
+        _onlineServerController.text = net.onlineServerAddress;
+        if (!ok) {
+          _statusMessage = null;
+        }
+      });
+    }
+  }
+
+  Future<void> _handleCreateOnlineRoom() async {
+    AudioService.buttonHaptic();
+    AudioService.playSfx(AudioService.sfxStart);
+    final net = LanMultiplayerService.instance;
+    setState(() {
+      _statusMessage = 'Creando sala en el Servidor Online...';
+    });
+    final ok = await net.createOnlineRoom(
+      roomName: _roomNameController.text,
+    );
+    if (mounted) {
+      setState(() {
+        _statusMessage = ok
+            ? null
+            : (net.onlineErrorNotifier.value ??
+                'No se pudo crear la sala. Verifica que el Servidor Online esté activo.');
+      });
+    }
+  }
+
+  Future<void> _handleJoinOnlineRoom({String? roomId}) async {
+    AudioService.buttonHaptic();
+    AudioService.playSfx(AudioService.sfxStart);
+    final net = LanMultiplayerService.instance;
+    setState(() {
+      _statusMessage = 'Uniéndose a la sala online...';
+    });
+    final ok = await net.joinOnlineRoom(roomId: roomId);
+    if (mounted) {
+      setState(() {
+        _statusMessage = ok
+            ? null
+            : (net.onlineErrorNotifier.value ??
+                'No se pudo unir a la sala online.');
       });
     }
   }
@@ -217,44 +309,55 @@ class _MultiplayerOverlayState extends State<MultiplayerOverlay> {
   }
 
   Widget _buildRoomSetupView(LanMultiplayerService net) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        // 1. Top Header Bar
-        _buildHeader(net),
-        const SizedBox(height: 10),
+    return ValueListenableBuilder<MultiplayerMode>(
+      valueListenable: net.modeNotifier,
+      builder: (context, mode, _) {
+        final isOnline = mode == MultiplayerMode.online;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // 1. Top Header Bar with Mode Switcher (WiFi Local | Online Server)
+            _buildHeader(net),
+            const SizedBox(height: 10),
 
-        // 2. Nickname & Kaito Custom Color Selector
-        _buildCustomizerBar(net),
-        const SizedBox(height: 10),
+            // 2. Nickname & Kaito Custom Color Selector
+            _buildCustomizerBar(net),
+            const SizedBox(height: 10),
 
-        // 3. Main Center Split: Left (Available Rooms) | Right (Create or Direct Connect)
-        Expanded(
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // Left: Discovered Rooms List
-              Expanded(
-                flex: 6,
-                child: _buildRoomsListCard(net),
-              ),
-              const SizedBox(width: 12),
+            // 3. Main Center Content: Online Server View vs Local WiFi View
+            Expanded(
+              child: isOnline
+                  ? _buildOnlineServerSection(net)
+                  : Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        // Left: Discovered WiFi Rooms List
+                        Expanded(
+                          flex: 6,
+                          child: _buildRoomsListCard(net),
+                        ),
+                        const SizedBox(width: 12),
 
-              // Right: Host / Direct Connect Controls
-              Expanded(
-                flex: 5,
-                child: _buildHostAndJoinCard(net),
-              ),
-            ],
-          ),
-        ),
-      ],
+                        // Right: Local Host / Direct Connect Controls
+                        Expanded(
+                          flex: 5,
+                          child: _buildHostAndJoinCard(net),
+                        ),
+                      ],
+                    ),
+            ),
+          ],
+        );
+      },
     );
   }
 
   Widget _buildWaitingRoomLobby(LanMultiplayerService net) {
     final isHost = net.role == MatchRole.host;
-    final fullIp = '${net.localIpAddress ?? "127.0.0.1"}:7777';
+    final isOnline = net.isOnlineMode;
+    final fullIp = isOnline
+        ? net.onlineServerAddress
+        : '${net.localIpAddress ?? "127.0.0.1"}:7777';
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -292,7 +395,9 @@ class _MultiplayerOverlayState extends State<MultiplayerOverlay> {
                     children: [
                       Flexible(
                         child: Text(
-                          'IP DE LA SALA: $fullIp',
+                          isOnline
+                              ? 'SERVIDOR ONLINE: $fullIp (${net.currentOnlineRoomId ?? "SALA ACTIVA"})'
+                              : 'IP DE LA SALA: $fullIp',
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
                             color: Colors.black87,
@@ -304,7 +409,10 @@ class _MultiplayerOverlayState extends State<MultiplayerOverlay> {
                       const SizedBox(width: 8),
                       GestureDetector(
                         onTap: () => _copyIpToClipboard(
-                            net.localIpAddress ?? '127.0.0.1'),
+                          isOnline
+                              ? net.onlineServerAddress
+                              : (net.localIpAddress ?? '127.0.0.1'),
+                        ),
                         child: Container(
                           padding: const EdgeInsets.symmetric(
                               horizontal: 6, vertical: 2),
@@ -610,9 +718,11 @@ class _MultiplayerOverlayState extends State<MultiplayerOverlay> {
                   color: ComicTheme.comicYellow,
                 ),
               ),
-              const Text(
-                'Red Local WiFi Activa',
-                style: TextStyle(
+              Text(
+                net.isOnlineMode
+                    ? '● Servidor Online Activo (${net.onlineServerAddress})'
+                    : 'Red Local WiFi Activa',
+                style: const TextStyle(
                   color: Color(0xFF00E676),
                   fontSize: 12,
                   fontWeight: FontWeight.bold,
@@ -945,16 +1055,22 @@ class _MultiplayerOverlayState extends State<MultiplayerOverlay> {
   }
 
   Widget _buildHeader(LanMultiplayerService net) {
+    final isOnline = net.isOnlineMode;
+
     return Row(
       children: [
         Container(
           padding: const EdgeInsets.all(6),
           decoration: BoxDecoration(
-            color: ComicTheme.actionRed,
+            color: isOnline ? const Color(0xFF00838F) : ComicTheme.actionRed,
             borderRadius: BorderRadius.circular(6),
             border: Border.all(color: Colors.black, width: 2),
           ),
-          child: const Icon(Icons.wifi, color: Colors.white, size: 24),
+          child: Icon(
+            isOnline ? Icons.public : Icons.wifi,
+            color: Colors.white,
+            size: 24,
+          ),
         ),
         const SizedBox(width: 10),
         Expanded(
@@ -963,22 +1079,119 @@ class _MultiplayerOverlayState extends State<MultiplayerOverlay> {
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                'MODO MULTIJUGADOR • SALAS WIFI LOCAL',
+                isOnline
+                    ? 'MODO MULTIJUGADOR ONLINE • SERVIDOR PC'
+                    : 'MODO MULTIJUGADOR • SALAS WIFI LOCAL',
                 style: ComicTheme.titleText(
-                  size: 20,
-                  color: ComicTheme.actionRed,
+                  size: 19,
+                  color:
+                      isOnline ? const Color(0xFF006064) : ComicTheme.actionRed,
                 ),
               ),
               Text(
-                'CONÉCTATE CON HASTA 5 JUGADORES EN LA MISMA RED WIFI • DUELO & BATTLE ROYALE',
+                isOnline
+                    ? 'CONECTADO AL SERVIDOR PORTABLE DE PC • SALAS ONLINE DE 2 A 5 SHINOBIS'
+                    : 'CONÉCTATE CON HASTA 5 JUGADORES EN LA MISMA RED WIFI • DUELO & BATTLE ROYALE',
                 style: ComicTheme.bodyText(
-                  size: 11,
+                  size: 10.5,
                   color: ComicTheme.inkBlack,
                 ),
               ),
             ],
           ),
         ),
+        const SizedBox(width: 8),
+
+        // Mode Switcher Tabs: [ WIFI LOCAL ] | [ MULTIPLAYER ONLINE ]
+        Container(
+          padding: const EdgeInsets.all(3),
+          decoration: BoxDecoration(
+            color: ComicTheme.mangaPanelBg,
+            borderRadius: BorderRadius.circular(7),
+            border: Border.all(color: Colors.black, width: 2.5),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              GestureDetector(
+                onTap: () {
+                  if (isOnline) {
+                    AudioService.buttonHaptic();
+                    AudioService.playSfx(AudioService.sfxClick);
+                    net.setMultiplayerMode(MultiplayerMode.local);
+                  }
+                },
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: !isOnline
+                        ? ComicTheme.comicYellow
+                        : Colors.transparent,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.wifi,
+                        size: 14,
+                        color: !isOnline ? Colors.black : Colors.white70,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        'WIFI LOCAL',
+                        style: ComicTheme.titleText(
+                          size: 11.5,
+                          color: !isOnline ? Colors.black : Colors.white70,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 4),
+              GestureDetector(
+                onTap: () {
+                  if (!isOnline) {
+                    AudioService.buttonHaptic();
+                    AudioService.playSfx(AudioService.sfxClick);
+                    net.setMultiplayerMode(MultiplayerMode.online);
+                  }
+                },
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  decoration: BoxDecoration(
+                    color:
+                        isOnline ? ComicTheme.energyCyan : Colors.transparent,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.public,
+                        size: 14,
+                        color: isOnline ? Colors.black : Colors.white70,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        'ONLINE',
+                        style: ComicTheme.titleText(
+                          size: 11.5,
+                          color: isOnline ? Colors.black : Colors.white70,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 8),
+
         GestureDetector(
           onTap: () {
             AudioService.buttonHaptic();
@@ -1006,6 +1219,776 @@ class _MultiplayerOverlayState extends State<MultiplayerOverlay> {
           ),
         ),
       ],
+    );
+  }
+
+  // ===========================================================================
+  // DEDICATED PC ONLINE SERVER LOBBY VIEWS
+  // ===========================================================================
+  Widget _buildOnlineServerSection(LanMultiplayerService net) {
+    return ValueListenableBuilder<bool>(
+      valueListenable: net.isCheckingOnlineServer,
+      builder: (context, isChecking, _) {
+        if (isChecking) {
+          return Container(
+            padding: const EdgeInsets.all(20),
+            decoration: ComicTheme.panelDecoration(
+              backgroundColor: ComicTheme.mangaPanelBg,
+              borderWidth: 3.5,
+              shadowOffset: 4,
+            ),
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const SizedBox(
+                    width: 44,
+                    height: 44,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 4,
+                      color: ComicTheme.energyCyan,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'BUSCANDO SERVIDOR ONLINE ACTIVO...',
+                    style: ComicTheme.titleText(
+                      size: 18,
+                      color: ComicTheme.energyCyan,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Verificando conexión con el servidor en ${net.onlineServerAddress} (Puerto TCP 7779 / UDP 7780)...',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: Colors.white70,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+
+        return ValueListenableBuilder<bool>(
+          valueListenable: net.isOnlineServerActive,
+          builder: (context, isServerActive, _) {
+            if (!isServerActive) {
+              return _buildNoOnlineServerActiveView(net);
+            }
+
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // Left: Active Online Rooms List on the Server
+                Expanded(
+                  flex: 6,
+                  child: _buildOnlineRoomsListCard(net),
+                ),
+                const SizedBox(width: 12),
+
+                // Right: Create Online Room & Quick Join on the Server
+                Expanded(
+                  flex: 5,
+                  child: _buildOnlineCreateAndQuickJoinCard(net),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildNoOnlineServerActiveView(LanMultiplayerService net) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+      decoration: ComicTheme.panelDecoration(
+        backgroundColor: ComicTheme.mangaPanelBg,
+        borderWidth: 3.5,
+        shadowOffset: 4,
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            decoration: BoxDecoration(
+              color: ComicTheme.actionRed.withValues(alpha: 0.20),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: ComicTheme.actionRed, width: 2),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.cloud_off, color: Colors.redAccent, size: 18),
+                const SizedBox(width: 6),
+                Text(
+                  '● SERVIDOR ONLINE DESCONECTADO',
+                  style: ComicTheme.titleText(
+                    size: 12,
+                    color: Colors.redAccent,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            'NO HAY SERVIDOR ONLINE ACTIVADO',
+            textAlign: TextAlign.center,
+            style: ComicTheme.titleText(
+              size: 26,
+              color: ComicTheme.comicYellow,
+            ),
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'No se encontró ningún servidor online activo en este momento.\n'
+            'Para activar el Multijugador Online, abre la carpeta portable "servidor_online" en tu PC,\n'
+            'ejecuta el archivo "INICIAR_SERVIDOR_ONLINE.bat" y pulsa el botón REFRESCAR.',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: Colors.white70,
+              fontSize: 12,
+              height: 1.35,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 14),
+
+          // Server IP / Port input + Big Refresh Button
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 620),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              decoration: BoxDecoration(
+                color: Colors.black38,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.white24, width: 1.5),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.dns, color: ComicTheme.energyCyan, size: 18),
+                  const SizedBox(width: 8),
+                  Text(
+                    'SERVIDOR (IP:PUERTO):',
+                    style: ComicTheme.titleText(
+                      size: 12,
+                      color: ComicTheme.energyCyan,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Container(
+                      height: 34,
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: Colors.black, width: 2),
+                      ),
+                      child: TextField(
+                        controller: _onlineServerController,
+                        style: const TextStyle(
+                          color: Colors.black,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                        ),
+                        decoration: const InputDecoration(
+                          hintText: '127.0.0.1:7779 o IP del Servidor PC',
+                          border: InputBorder.none,
+                          isDense: true,
+                          contentPadding: EdgeInsets.symmetric(vertical: 8),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  GestureDetector(
+                    onTap: _handleRefreshOnlineServer,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 18,
+                        vertical: 8,
+                      ),
+                      decoration: ComicTheme.panelDecoration(
+                        backgroundColor: ComicTheme.comicYellow,
+                        borderWidth: 2.5,
+                        shadowOffset: 3,
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            Icons.refresh,
+                            color: Colors.black,
+                            size: 18,
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            'REFRESCAR',
+                            style: ComicTheme.titleText(
+                              size: 14,
+                              color: Colors.black,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildOnlineRoomsListCard(LanMultiplayerService net) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: ComicTheme.panelDecoration(
+        backgroundColor: ComicTheme.mangaPanelBg,
+        borderWidth: 3.5,
+        shadowOffset: 4,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF00E676).withValues(alpha: 0.16),
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(color: const Color(0xFF00E676), width: 1.5),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.check_circle,
+                      color: Color(0xFF00E676),
+                      size: 14,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      'SERVIDOR ONLINE ACTIVO (${net.onlineServerAddress})',
+                      style: const TextStyle(
+                        color: Color(0xFF00E676),
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Spacer(),
+              GestureDetector(
+                onTap: _handleRefreshOnlineServer,
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.white12,
+                    borderRadius: BorderRadius.circular(4),
+                    border: Border.all(color: Colors.white30),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.refresh, size: 14, color: Colors.white),
+                      const SizedBox(width: 4),
+                      Text(
+                        'REFRESCAR',
+                        style: ComicTheme.titleText(
+                            size: 11, color: Colors.white),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+
+          Expanded(
+            child: ValueListenableBuilder<List<OnlineRoomSummary>>(
+              valueListenable: net.onlineRoomsNotifier,
+              builder: (context, rooms, _) {
+                if (rooms.isEmpty) {
+                  return Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(
+                          Icons.cloud_done,
+                          size: 38,
+                          color: ComicTheme.energyCyan,
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          'CONECTADO A ${net.onlineServerName.toUpperCase()}',
+                          textAlign: TextAlign.center,
+                          style: ComicTheme.titleText(
+                            size: 13,
+                            color: ComicTheme.comicYellow,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        const Text(
+                          'No hay salas online creadas en este momento.\n'
+                          '¡Crea una nueva Sala Online en el panel derecho o pulsa Partida Rápida!',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: Colors.white60,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+
+                return ListView.separated(
+                  itemCount: rooms.length,
+                  separatorBuilder: (_, _) => const SizedBox(height: 6),
+                  itemBuilder: (context, idx) {
+                    final room = rooms[idx];
+                    final hostColor = kMultiplayerColors[room.hostColorIndex
+                            .clamp(0, kMultiplayerColors.length - 1)]
+                        .primary;
+                    final isFull = room.playerCount >= room.maxPlayers;
+                    final canJoin = !room.inMatch && !isFull;
+
+                    return Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 8,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.06),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: Colors.white24),
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 14,
+                            height: 14,
+                            decoration: BoxDecoration(
+                              color: hostColor,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  room.roomName,
+                                  style: ComicTheme.titleText(
+                                    size: 13,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                                Text(
+                                  'Host: ${room.hostName} • ${room.config.stage.name} • '
+                                  '${room.config.maxHp} HP • ${room.config.lives} Vidas (${room.playerCount}/${room.maxPlayers})',
+                                  style: const TextStyle(
+                                    color: Colors.white60,
+                                    fontSize: 10,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          GestureDetector(
+                            onTap: canJoin
+                                ? () => _handleJoinOnlineRoom(
+                                      roomId: room.roomId,
+                                    )
+                                : null,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 14,
+                                vertical: 6,
+                              ),
+                              decoration: ComicTheme.panelDecoration(
+                                backgroundColor: canJoin
+                                    ? const Color(0xFF00E676)
+                                    : Colors.grey.shade700,
+                                borderWidth: 2,
+                                shadowOffset: 2,
+                              ),
+                              child: Text(
+                                room.inMatch
+                                    ? 'EN COMBATE'
+                                    : (isFull ? 'SALA LLENA' : 'UNIRSE'),
+                                style: ComicTheme.titleText(
+                                  size: 11.5,
+                                  color:
+                                      canJoin ? Colors.black : Colors.white70,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildOnlineCreateAndQuickJoinCard(LanMultiplayerService net) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: ComicTheme.panelDecoration(
+        backgroundColor: ComicTheme.mangaPanelBg,
+        borderWidth: 3.5,
+        shadowOffset: 4,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.public,
+                color: ComicTheme.energyCyan,
+                size: 20,
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  'CREAR SALA ONLINE O PARTIDA RÁPIDA',
+                  overflow: TextOverflow.ellipsis,
+                  style: ComicTheme.titleText(
+                    size: 13,
+                    color: ComicTheme.energyCyan,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+
+          Text(
+            'Nombre de la Sala Online:',
+            style: ComicTheme.bodyText(size: 11, color: Colors.white70),
+          ),
+          const SizedBox(height: 4),
+          Container(
+            height: 34,
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: Colors.black, width: 2),
+            ),
+            child: TextField(
+              controller: _roomNameController,
+              style: const TextStyle(
+                color: Colors.black,
+                fontWeight: FontWeight.bold,
+                fontSize: 12,
+              ),
+              decoration: const InputDecoration(
+                border: InputBorder.none,
+                isDense: true,
+                contentPadding: EdgeInsets.symmetric(vertical: 8),
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+
+          // Create Online Room & Quick Join Buttons
+          Row(
+            children: [
+              Expanded(
+                child: GestureDetector(
+                  onTap: _handleCreateOnlineRoom,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    decoration: ComicTheme.panelDecoration(
+                      backgroundColor: ComicTheme.comicYellow,
+                      borderWidth: 3,
+                      shadowOffset: 3,
+                    ),
+                    child: Center(
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            Icons.add_circle,
+                            color: Colors.black,
+                            size: 18,
+                          ),
+                          const SizedBox(width: 5),
+                          Text(
+                            'CREAR SALA ONLINE',
+                            style: ComicTheme.titleText(
+                              size: 12.5,
+                              color: Colors.black,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: GestureDetector(
+                  onTap: () => _handleJoinOnlineRoom(),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    decoration: ComicTheme.panelDecoration(
+                      backgroundColor: ComicTheme.energyCyan,
+                      borderWidth: 3,
+                      shadowOffset: 3,
+                    ),
+                    child: Center(
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            Icons.flash_on,
+                            color: Colors.black,
+                            size: 18,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            'PARTIDA RÁPIDA',
+                            style: ComicTheme.titleText(
+                              size: 12.5,
+                              color: Colors.black,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+
+          // Pre-Room Quick Stage & Rules Selector
+          ValueListenableBuilder<MultiplayerMatchConfig>(
+            valueListenable: net.matchConfigNotifier,
+            builder: (context, cfg, _) {
+              return Wrap(
+                spacing: 6,
+                runSpacing: 4,
+                alignment: WrapAlignment.center,
+                children: [
+                  GestureDetector(
+                    onTap: () {
+                      AudioService.buttonHaptic();
+                      AudioService.playSfx(AudioService.sfxClick);
+                      net.updateMatchConfig(
+                        stageIndex: (cfg.stageIndex + 1) % kPvpStages.length,
+                      );
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 7, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: Colors.white10,
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(color: ComicTheme.comicYellow),
+                      ),
+                      child: Text(
+                        '🗺️ ${cfg.stage.name}',
+                        style: const TextStyle(
+                          color: ComicTheme.comicYellow,
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+                  GestureDetector(
+                    onTap: () {
+                      AudioService.buttonHaptic();
+                      AudioService.playSfx(AudioService.sfxClick);
+                      const opts = MultiplayerMatchConfig.kTimeOptions;
+                      final idx = opts.indexOf(cfg.timeLimitSeconds);
+                      net.updateMatchConfig(
+                        timeLimitSeconds: opts[(idx + 1) % opts.length],
+                      );
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 7, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: Colors.white10,
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(color: ComicTheme.energyCyan),
+                      ),
+                      child: Text(
+                        '⏱️ ${cfg.formattedTimeLimit}',
+                        style: const TextStyle(
+                          color: ComicTheme.energyCyan,
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+                  GestureDetector(
+                    onTap: () {
+                      AudioService.buttonHaptic();
+                      AudioService.playSfx(AudioService.sfxClick);
+                      const opts = MultiplayerMatchConfig.kHpOptions;
+                      final idx = opts.indexOf(cfg.maxHp);
+                      net.updateMatchConfig(
+                        maxHp: opts[(idx + 1) % opts.length],
+                      );
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 7, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: Colors.white10,
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(color: const Color(0xFF00E676)),
+                      ),
+                      child: Text(
+                        '⚡ ${cfg.maxHp} HP',
+                        style: const TextStyle(
+                          color: Color(0xFF00E676),
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+                  GestureDetector(
+                    onTap: () {
+                      AudioService.buttonHaptic();
+                      AudioService.playSfx(AudioService.sfxClick);
+                      const opts = MultiplayerMatchConfig.kLivesOptions;
+                      final idx = opts.indexOf(cfg.lives);
+                      net.updateMatchConfig(
+                        lives: opts[(idx + 1) % opts.length],
+                      );
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 7, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: Colors.white10,
+                        borderRadius: BorderRadius.circular(4),
+                        border: Border.all(color: ComicTheme.actionRed),
+                      ),
+                      child: Text(
+                        '❤️ ${cfg.lives} Vidas',
+                        style: const TextStyle(
+                          color: Colors.redAccent,
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+
+          const Divider(color: Colors.white24, height: 14),
+
+          // Change Online Server IP:Port
+          Text(
+            'Dirección del Servidor Online (IP:Puerto):',
+            style: ComicTheme.bodyText(size: 11, color: Colors.white70),
+          ),
+          const SizedBox(height: 4),
+          Row(
+            children: [
+              Expanded(
+                child: Container(
+                  height: 32,
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: Colors.black, width: 2),
+                  ),
+                  child: TextField(
+                    controller: _onlineServerController,
+                    style: const TextStyle(
+                      color: Colors.black,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 11.5,
+                    ),
+                    decoration: const InputDecoration(
+                      hintText: '127.0.0.1:7779',
+                      border: InputBorder.none,
+                      isDense: true,
+                      contentPadding: EdgeInsets.symmetric(vertical: 7),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              GestureDetector(
+                onTap: _handleRefreshOnlineServer,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 6,
+                  ),
+                  decoration: ComicTheme.panelDecoration(
+                    backgroundColor: const Color(0xFF00E676),
+                    borderWidth: 2,
+                    shadowOffset: 2,
+                  ),
+                  child: Text(
+                    'CAMBIAR IP',
+                    style: ComicTheme.titleText(
+                      size: 11.5,
+                      color: Colors.black,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          if (_statusMessage != null) ...[
+            const SizedBox(height: 6),
+            Text(
+              _statusMessage!,
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: ComicTheme.titleText(
+                size: 10.5,
+                color: Colors.amberAccent,
+              ),
+            ),
+          ],
+          const Spacer(),
+        ],
+      ),
     );
   }
 
