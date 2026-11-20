@@ -1080,7 +1080,7 @@ class _MultiplayerOverlayState extends State<MultiplayerOverlay> {
             children: [
               Text(
                 isOnline
-                    ? 'MODO MULTIJUGADOR ONLINE • SERVIDOR PC'
+                    ? 'MODO MULTIJUGADOR ONLINE'
                     : 'MODO MULTIJUGADOR • SALAS WIFI LOCAL',
                 style: ComicTheme.titleText(
                   size: 19,
@@ -1088,15 +1088,14 @@ class _MultiplayerOverlayState extends State<MultiplayerOverlay> {
                       isOnline ? const Color(0xFF006064) : ComicTheme.actionRed,
                 ),
               ),
-              Text(
-                isOnline
-                    ? 'CONECTADO AL SERVIDOR PORTABLE DE PC • SALAS ONLINE DE 2 A 5 SHINOBIS'
-                    : 'CONÉCTATE CON HASTA 5 JUGADORES EN LA MISMA RED WIFI • DUELO & BATTLE ROYALE',
-                style: ComicTheme.bodyText(
-                  size: 10.5,
-                  color: ComicTheme.inkBlack,
+              if (!isOnline)
+                Text(
+                  'CONÉCTATE CON HASTA 5 JUGADORES EN LA MISMA RED WIFI • DUELO & BATTLE ROYALE',
+                  style: ComicTheme.bodyText(
+                    size: 10.5,
+                    color: ComicTheme.inkBlack,
+                  ),
                 ),
-              ),
             ],
           ),
         ),
@@ -1347,9 +1346,7 @@ class _MultiplayerOverlayState extends State<MultiplayerOverlay> {
           ),
           const SizedBox(height: 6),
           const Text(
-            'No se encontró ningún servidor online activo en este momento.\n'
-            'Para activar el Multijugador Online, abre la carpeta portable "servidor_online" en tu PC,\n'
-            'ejecuta el archivo "INICIAR_SERVIDOR_ONLINE.bat" y pulsa el botón REFRESCAR.',
+            'No se encontró ningún servidor online activo en este momento.',
             textAlign: TextAlign.center,
             style: TextStyle(
               color: Colors.white70,
