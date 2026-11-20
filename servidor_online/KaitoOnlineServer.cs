@@ -1,7 +1,31 @@
+// ============================================================================
+//  KAITO ADVENTURE: INK SHINOBI - SERVIDOR MULTIPLAYER ONLINE (VERSION OPTIMIZADA)
+//
+//  - Protocolo identico al anterior (mismos tipos de paquete y campos): el cliente NO cambia.
+//  - Sintaxis C# 5 (compila con el csc.exe que trae Windows, mismas referencias que antes).
+//
+//  Resumen de optimizaciones:
+//   1. Envio asincrono por cliente (cola + hilo escritor, escrituras agrupadas).
+//      Un jugador con mala conexion ya NO bloquea al resto (antes un Write lento frenaba
+//      el broadcast y, a veces, hasta el lock global de TODO el servidor).
+//   2. "state" con conflacion: si un cliente va atrasado se descartan posiciones viejas
+//      en vez de entregarlas todas en rafaga (evita el efecto "se congela y se adelanta").
+//   3. Lectura con buffer propio (antes: ReadByte() = 1 llamada al sistema + 1 array por byte).
+//   4. Ruta rapida para state/hit/player_action/spawn_kunai/ring_out_blast: sin
+//      JavaScriptSerializer y con el frame WebSocket armado UNA sola vez para todos.
+//   5. Broadcast sin lock global (copia inmutable de miembros por sala).
+//   6. Ping/Pong WebSocket cada 10 s: mide el RTT de cada jugador (tecla [S]), mantiene
+//      vivo el tunel y limpia conexiones "fantasma".
+//   7. Log asincrono: la consola (p.ej. un clic en la ventana) ya no puede congelar el servidor.
+//   8. Prioridad de proceso, GC de baja latencia, anti-flood, y el enlace global se retira
+//      si el tunel se cae (antes se seguia anunciando un enlace muerto).
+// ============================================================================
+
 using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Net;
 using System.Net.NetworkInformation;
@@ -15,6 +39,9 @@ using System.Web.Script.Serialization;
 
 namespace KaitoOnlineServer
 {
+    // ========================================================================
+    //  MODELOS (sin cambios de comportamiento)
+    // ========================================================================
     public class MatchConfig
     {
         public int stage;
@@ -82,6 +109,9 @@ namespace KaitoOnlineServer
         public bool votedRematch;
         public ClientConnection connection;
 
+        // Clave de conflacion de sus paquetes "state" (se calcula una sola vez, no por paquete).
+        public string stateKey;
+
         public OnlinePlayer()
         {
             id = "p_1";
@@ -97,6 +127,7 @@ namespace KaitoOnlineServer
             ougi = 0.0;
             placement = 0;
             votedRematch = false;
+            stateKey = null;
         }
 
         public Dictionary<string, object> ToDict()
@@ -133,6 +164,9 @@ namespace KaitoOnlineServer
         public int rematchSeconds;
         public DateTime createdAt;
 
+        // Copia inmutable de los jugadores: permite hacer broadcast sin lock y sin asignar memoria.
+        public volatile OnlinePlayer[] snapshot;
+
         public OnlineRoom(string id, string name, MatchConfig cfg)
         {
             roomId = id;
@@ -144,6 +178,15 @@ namespace KaitoOnlineServer
             matchEnded = false;
             rematchSeconds = 0;
             createdAt = DateTime.UtcNow;
+            snapshot = new OnlinePlayer[0];
+        }
+
+        // Llamar SIEMPRE con ServerLock tomado, despues de agregar o quitar jugadores.
+        public void RefreshSnapshot()
+        {
+            OnlinePlayer[] arr = new OnlinePlayer[players.Count];
+            players.Values.CopyTo(arr, 0);
+            snapshot = arr;
         }
 
         public OnlinePlayer GetHostPlayer()
@@ -201,6 +244,304 @@ namespace KaitoOnlineServer
         }
     }
 
+    // ========================================================================
+    //  FRAMES WEBSOCKET (se arman una sola vez y se comparten entre destinatarios)
+    // ========================================================================
+    internal static class WsFrame
+    {
+        public static byte[] BuildText(string text)
+        {
+            int byteCount = Encoding.UTF8.GetByteCount(text);
+            int headerLen = HeaderLength(byteCount);
+            byte[] frame = new byte[headerLen + byteCount];
+            WriteHeader(frame, 0x81, byteCount);
+            Encoding.UTF8.GetBytes(text, 0, text.Length, frame, headerLen);
+            return frame;
+        }
+
+        public static byte[] BuildText(byte[] payload, int offset, int length)
+        {
+            int headerLen = HeaderLength(length);
+            byte[] frame = new byte[headerLen + length];
+            WriteHeader(frame, 0x81, length);
+            if (length > 0) Buffer.BlockCopy(payload, offset, frame, headerLen, length);
+            return frame;
+        }
+
+        public static byte[] BuildControl(byte opcode, byte[] payload, int length)
+        {
+            int len = Math.Min(length, 125);
+            if (len < 0) len = 0;
+            byte[] frame = new byte[2 + len];
+            frame[0] = (byte)(0x80 | opcode);
+            frame[1] = (byte)len;
+            if (len > 0) Buffer.BlockCopy(payload, 0, frame, 2, len);
+            return frame;
+        }
+
+        private static int HeaderLength(int payloadLen)
+        {
+            if (payloadLen < 126) return 2;
+            if (payloadLen <= 65535) return 4;
+            return 10;
+        }
+
+        private static void WriteHeader(byte[] frame, byte firstByte, int payloadLen)
+        {
+            frame[0] = firstByte;
+            if (payloadLen < 126)
+            {
+                frame[1] = (byte)payloadLen;
+            }
+            else if (payloadLen <= 65535)
+            {
+                frame[1] = 126;
+                frame[2] = (byte)((payloadLen >> 8) & 0xFF);
+                frame[3] = (byte)(payloadLen & 0xFF);
+            }
+            else
+            {
+                frame[1] = 127;
+                long len = payloadLen;
+                for (int i = 0; i < 8; i++)
+                {
+                    frame[9 - i] = (byte)(len & 0xFF);
+                    len >>= 8;
+                }
+            }
+        }
+    }
+
+    // ========================================================================
+    //  LECTOR JSON MINIMO PARA LA RUTA RAPIDA
+    //  Solo extrae del nivel superior: type, sessionId, hp, ougi. No asigna memoria
+    //  (salvo numeros decimales raros). Si algo no cuadra devuelve false y el paquete
+    //  se procesa por la ruta normal con JavaScriptSerializer (cero perdida de funciones).
+    // ========================================================================
+    internal struct FastInfo
+    {
+        public int typeCode;
+        public bool hasSession;
+        public int session;
+        public bool hasHp;
+        public double hp;
+        public bool hasOugi;
+        public double ougi;
+    }
+
+    internal static class FastJson
+    {
+        public const int T_UNKNOWN = 0;
+        public const int T_STATE = 1;
+        public const int T_ACTION = 2;
+        public const int T_KUNAI = 3;
+        public const int T_HIT = 4;
+        public const int T_RINGOUT = 5;
+
+        private static readonly byte[] KType = Encoding.ASCII.GetBytes("type");
+        private static readonly byte[] KSession = Encoding.ASCII.GetBytes("sessionId");
+        private static readonly byte[] KHp = Encoding.ASCII.GetBytes("hp");
+        private static readonly byte[] KOugi = Encoding.ASCII.GetBytes("ougi");
+
+        private static readonly byte[] VState = Encoding.ASCII.GetBytes("state");
+        private static readonly byte[] VAction = Encoding.ASCII.GetBytes("player_action");
+        private static readonly byte[] VKunai = Encoding.ASCII.GetBytes("spawn_kunai");
+        private static readonly byte[] VHit = Encoding.ASCII.GetBytes("hit");
+        private static readonly byte[] VRingOut = Encoding.ASCII.GetBytes("ring_out_blast");
+
+        private static bool IsWs(byte c)
+        {
+            return c == 0x20 || c == 0x09 || c == 0x0A || c == 0x0D;
+        }
+
+        private static bool Eq(byte[] b, int start, int count, byte[] lit)
+        {
+            if (count != lit.Length) return false;
+            for (int i = 0; i < count; i++)
+            {
+                if (b[start + i] != lit[i]) return false;
+            }
+            return true;
+        }
+
+        // b[i] es la comilla de apertura. Devuelve el indice justo despues de la comilla de cierre (o -1).
+        private static int SkipString(byte[] b, int len, int i)
+        {
+            int j = i + 1;
+            while (j < len)
+            {
+                byte c = b[j];
+                if (c == 0x5C) { j += 2; continue; }   // barra invertida: salta el caracter escapado
+                if (c == 0x22) return j + 1;           // comilla de cierre
+                j++;
+            }
+            return -1;
+        }
+
+        // b[i] es '{' o '['. Devuelve el indice justo despues del cierre correspondiente (o -1).
+        private static int SkipContainer(byte[] b, int len, int i)
+        {
+            int depth = 0;
+            int j = i;
+            while (j < len)
+            {
+                byte c = b[j];
+                if (c == 0x22)
+                {
+                    j = SkipString(b, len, j);
+                    if (j < 0) return -1;
+                    continue;
+                }
+                if (c == 0x7B || c == 0x5B)
+                {
+                    depth++;
+                }
+                else if (c == 0x7D || c == 0x5D)
+                {
+                    depth--;
+                    if (depth == 0) return j + 1;
+                }
+                j++;
+            }
+            return -1;
+        }
+
+        private static bool ParseNumber(byte[] b, int start, int end, out double value)
+        {
+            value = 0.0;
+            int count = end - start;
+            if (count <= 0 || count > 40) return false;
+
+            // Camino rapido: enteros simples (hasta 15 digitos)
+            int p = start;
+            bool neg = false;
+            if (b[p] == 0x2D) { neg = true; p++; }
+            long acc = 0;
+            int digits = 0;
+            while (p < end && b[p] >= 0x30 && b[p] <= 0x39 && digits < 15)
+            {
+                acc = acc * 10 + (b[p] - 0x30);
+                p++;
+                digits++;
+            }
+            if (digits > 0 && p == end)
+            {
+                value = neg ? -(double)acc : (double)acc;
+                return true;
+            }
+
+            // Decimales / exponente: ruta correcta (poco frecuente)
+            byte f = b[start];
+            if (!((f >= 0x30 && f <= 0x39) || f == 0x2D)) return false;   // null, true, false...
+            string s = Encoding.ASCII.GetString(b, start, count);
+            return double.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out value);
+        }
+
+        private static int TypeCodeOf(byte[] b, int start, int count)
+        {
+            if (Eq(b, start, count, VState)) return T_STATE;
+            if (Eq(b, start, count, VAction)) return T_ACTION;
+            if (Eq(b, start, count, VKunai)) return T_KUNAI;
+            if (Eq(b, start, count, VHit)) return T_HIT;
+            if (Eq(b, start, count, VRingOut)) return T_RINGOUT;
+            return T_UNKNOWN;
+        }
+
+        // Devuelve true si logro recorrer un objeto JSON de nivel superior bien formado.
+        public static bool Scan(byte[] b, int len, ref FastInfo info)
+        {
+            int i = 0;
+            while (i < len && IsWs(b[i])) i++;
+            if (i >= len || b[i] != 0x7B) return false;
+            i++;
+
+            while (i < len)
+            {
+                byte c = b[i];
+                if (c == 0x2C || IsWs(c)) { i++; continue; }
+                if (c == 0x7D) return true;
+                if (c != 0x22) return false;
+
+                // --- clave ---
+                int keyStart = i + 1;
+                int afterKey = SkipString(b, len, i);
+                if (afterKey < 0) return false;
+                int keyLen = afterKey - 1 - keyStart;
+                i = afterKey;
+                while (i < len && IsWs(b[i])) i++;
+                if (i >= len || b[i] != 0x3A) return false;
+                i++;
+                while (i < len && IsWs(b[i])) i++;
+                if (i >= len) return false;
+
+                int key = 0;
+                if (Eq(b, keyStart, keyLen, KType)) key = 1;
+                else if (Eq(b, keyStart, keyLen, KSession)) key = 2;
+                else if (Eq(b, keyStart, keyLen, KHp)) key = 3;
+                else if (Eq(b, keyStart, keyLen, KOugi)) key = 4;
+
+                // --- valor ---
+                c = b[i];
+                if (c == 0x22)
+                {
+                    int vStart = i + 1;
+                    int afterVal = SkipString(b, len, i);
+                    if (afterVal < 0) return false;
+                    if (key == 1) info.typeCode = TypeCodeOf(b, vStart, afterVal - 1 - vStart);
+                    i = afterVal;
+                }
+                else if (c == 0x7B || c == 0x5B)
+                {
+                    i = SkipContainer(b, len, i);
+                    if (i < 0) return false;
+                }
+                else
+                {
+                    int vStart2 = i;
+                    while (i < len && b[i] != 0x2C && b[i] != 0x7D && !IsWs(b[i])) i++;
+                    if (key >= 2)
+                    {
+                        double d;
+                        if (ParseNumber(b, vStart2, i, out d))
+                        {
+                            if (key == 2)
+                            {
+                                info.hasSession = true;
+                                info.session = (d > int.MaxValue || d < int.MinValue) ? int.MinValue : (int)d;
+                            }
+                            else if (key == 3)
+                            {
+                                info.hasHp = true;
+                                info.hp = d;
+                            }
+                            else
+                            {
+                                info.hasOugi = true;
+                                info.ougi = d;
+                            }
+                        }
+                    }
+                }
+            }
+            return false;
+        }
+    }
+
+    // ========================================================================
+    //  CONEXION DE CLIENTE
+    // ========================================================================
+    public class OutFrame
+    {
+        public byte[] data;
+        public string key;
+
+        public OutFrame(byte[] d, string k)
+        {
+            data = d;
+            key = k;
+        }
+    }
+
     public class ClientConnection
     {
         public string connectionId;
@@ -210,110 +551,268 @@ namespace KaitoOnlineServer
         public OnlineRoom currentRoom;
         public OnlinePlayer currentPlayer;
         public bool isWebSocket;
-        public bool isClosed;
-        private readonly object _sendLock = new object();
+        public volatile bool isClosed;
+        public volatile int lastRecvTick;
+        public double rttMs;
+
+        // --- recepcion ---
+        private readonly byte[] _rbuf = new byte[8192];
+        private int _rpos;
+        private int _rlen;
+        public byte[] payloadBuf = new byte[4096];
+        public readonly byte[] maskKey = new byte[4];
+        public readonly byte[] extBuf = new byte[8];
+        public int rateWindowStart;
+        public int rateCount;
+
+        // --- envio ---
+        private readonly object _qLock = new object();
+        private readonly List<OutFrame> _queue = new List<OutFrame>();
+        private int _queuedBytes;
+        private byte[] _scratch = new byte[4096];
+        private Thread _writerThread;
+        private int _closeOnce;
 
         public ClientConnection(string id, TcpClient client)
         {
             connectionId = id;
             tcpClient = client;
+            try { client.NoDelay = true; } catch { }                 // sin algoritmo de Nagle
+            try { client.SendBufferSize = 32 * 1024; } catch { }     // poco "bufferbloat" en el kernel
+            try { client.SendTimeout = 15000; } catch { }            // un Write atascado no es eterno
             stream = client.GetStream();
-            remoteEndpoint = client.Client.RemoteEndPoint != null
-                ? client.Client.RemoteEndPoint.ToString()
-                : "unknown";
+            string ep = "unknown";
+            try
+            {
+                if (client.Client.RemoteEndPoint != null) ep = client.Client.RemoteEndPoint.ToString();
+            }
+            catch { }
+            remoteEndpoint = ep;
             isWebSocket = false;
             isClosed = false;
+            lastRecvTick = Environment.TickCount;
+        }
+
+        // ------------------------------ recepcion ------------------------------
+        public int ReadByteBuffered()
+        {
+            if (_rpos >= _rlen)
+            {
+                int n = stream.Read(_rbuf, 0, _rbuf.Length);
+                if (n <= 0) return -1;
+                _rpos = 0;
+                _rlen = n;
+            }
+            return _rbuf[_rpos++];
+        }
+
+        public bool ReadExactBuffered(byte[] dst, int count)
+        {
+            int got = 0;
+            while (got < count)
+            {
+                if (_rpos >= _rlen)
+                {
+                    int remaining = count - got;
+                    if (remaining >= _rbuf.Length)
+                    {
+                        // Lectura grande: directo al destino, sin copia intermedia
+                        int direct = stream.Read(dst, got, remaining);
+                        if (direct <= 0) return false;
+                        got += direct;
+                        continue;
+                    }
+                    int n = stream.Read(_rbuf, 0, _rbuf.Length);
+                    if (n <= 0) return false;
+                    _rpos = 0;
+                    _rlen = n;
+                }
+                int take = Math.Min(_rlen - _rpos, count - got);
+                Buffer.BlockCopy(_rbuf, _rpos, dst, got, take);
+                _rpos += take;
+                got += take;
+            }
+            return true;
+        }
+
+        public byte[] EnsurePayloadCapacity(int needed)
+        {
+            if (payloadBuf.Length < needed)
+            {
+                int newSize = Math.Max(needed, payloadBuf.Length * 2);
+                payloadBuf = new byte[newSize];
+            }
+            return payloadBuf;
+        }
+
+        // -------------------------------- envio --------------------------------
+        public void StartWriter()
+        {
+            if (_writerThread != null) return;
+            _writerThread = new Thread(WriterLoop);
+            _writerThread.IsBackground = true;
+            _writerThread.Name = "ws-writer-" + connectionId;
+            _writerThread.Start();
+        }
+
+        // Encola un frame (NO bloquea). Si conflateKey != null, reemplaza al frame pendiente
+        // con la misma clave (el viejo ya no sirve: solo importa el ultimo estado).
+        public void SendFrame(byte[] frame, string conflateKey)
+        {
+            if (isClosed || !isWebSocket) return;
+            bool overflow = false;
+            lock (_qLock)
+            {
+                if (isClosed) return;
+
+                if (conflateKey != null)
+                {
+                    for (int i = _queue.Count - 1; i >= 0; i--)
+                    {
+                        if (_queue[i].key == conflateKey)
+                        {
+                            _queuedBytes -= _queue[i].data.Length;
+                            _queue.RemoveAt(i);
+                            break;
+                        }
+                    }
+                }
+
+                if (_queuedBytes + frame.Length > Program.MaxQueuedBytesPerClient)
+                {
+                    overflow = true;   // el cliente esta desesperadamente atrasado
+                }
+                else
+                {
+                    _queue.Add(new OutFrame(frame, conflateKey));
+                    _queuedBytes += frame.Length;
+                    Monitor.Pulse(_qLock);
+                }
+            }
+            if (overflow) Close();
         }
 
         public void SendWebSocketText(string jsonText)
         {
-            if (isClosed || !isWebSocket) return;
-            try
+            SendFrame(WsFrame.BuildText(jsonText), null);
+        }
+
+        public void SendPong(byte[] pingPayload, int length)
+        {
+            SendFrame(WsFrame.BuildControl(0x0A, pingPayload, length), null);
+        }
+
+        // Ping con marca de tiempo: el Pong del navegador la devuelve y asi medimos el RTT real.
+        public void SendPing()
+        {
+            long stamp = Stopwatch.GetTimestamp();
+            byte[] p = new byte[8];
+            for (int i = 0; i < 8; i++)
             {
-                byte[] payload = Encoding.UTF8.GetBytes(jsonText);
-                byte[] frame;
-                if (payload.Length < 126)
+                p[7 - i] = (byte)((stamp >> (8 * i)) & 0xFF);
+            }
+            SendFrame(WsFrame.BuildControl(0x09, p, 8), "ping");
+        }
+
+        public void OnPong(byte[] payload, int length)
+        {
+            if (length != 8) return;
+            long stamp = 0;
+            for (int i = 0; i < 8; i++)
+            {
+                stamp = (stamp << 8) | payload[i];
+            }
+            double ms = (Stopwatch.GetTimestamp() - stamp) * 1000.0 / Stopwatch.Frequency;
+            if (ms < 0.0 || ms > 60000.0) return;
+            rttMs = rttMs <= 0.0 ? ms : (rttMs * 0.7 + ms * 0.3);
+        }
+
+        private void WriterLoop()
+        {
+            List<OutFrame> batch = new List<OutFrame>();
+            while (true)
+            {
+                batch.Clear();
+                lock (_qLock)
                 {
-                    frame = new byte[2 + payload.Length];
-                    frame[0] = 0x81; // FIN + Text Frame
-                    frame[1] = (byte)payload.Length;
-                    Buffer.BlockCopy(payload, 0, frame, 2, payload.Length);
-                }
-                else if (payload.Length <= 65535)
-                {
-                    frame = new byte[4 + payload.Length];
-                    frame[0] = 0x81;
-                    frame[1] = 126;
-                    frame[2] = (byte)((payload.Length >> 8) & 0xFF);
-                    frame[3] = (byte)(payload.Length & 0xFF);
-                    Buffer.BlockCopy(payload, 0, frame, 4, payload.Length);
-                }
-                else
-                {
-                    frame = new byte[10 + payload.Length];
-                    frame[0] = 0x81;
-                    frame[1] = 127;
-                    long len = payload.Length;
-                    for (int i = 0; i < 8; i++)
+                    while (_queue.Count == 0 && !isClosed)
                     {
-                        frame[9 - i] = (byte)(len & 0xFF);
-                        len >>= 8;
+                        Monitor.Wait(_qLock);
                     }
-                    Buffer.BlockCopy(payload, 0, frame, 10, payload.Length);
+                    if (isClosed) return;
+                    batch.AddRange(_queue);
+                    _queue.Clear();
+                    _queuedBytes = 0;
                 }
 
-                lock (_sendLock)
+                try
                 {
-                    if (!isClosed)
-                    {
-                        stream.Write(frame, 0, frame.Length);
-                        stream.Flush();
-                    }
+                    WriteBatch(batch);
                 }
-            }
-            catch
-            {
-                Close();
+                catch
+                {
+                    Close();
+                    return;
+                }
             }
         }
 
-        public void SendPong(byte[] pingPayload)
+        // Agrupa varios frames pendientes en UNA sola escritura (menos paquetes TCP).
+        private void WriteBatch(List<OutFrame> batch)
         {
-            if (isClosed || !isWebSocket) return;
-            try
+            int count = batch.Count;
+            if (count == 1)
             {
-                int len = pingPayload != null ? Math.Min(pingPayload.Length, 125) : 0;
-                byte[] frame = new byte[2 + len];
-                frame[0] = 0x8A; // FIN + Pong
-                frame[1] = (byte)len;
-                if (len > 0)
-                {
-                    Buffer.BlockCopy(pingPayload, 0, frame, 2, len);
-                }
-                lock (_sendLock)
-                {
-                    if (!isClosed)
-                    {
-                        stream.Write(frame, 0, frame.Length);
-                        stream.Flush();
-                    }
-                }
+                byte[] only = batch[0].data;
+                stream.Write(only, 0, only.Length);
+                return;
             }
-            catch
+
+            int total = 0;
+            for (int i = 0; i < count; i++)
             {
-                Close();
+                total += batch[i].data.Length;
             }
+
+            if (total > 65536)
+            {
+                for (int i = 0; i < count; i++)
+                {
+                    byte[] big = batch[i].data;
+                    stream.Write(big, 0, big.Length);
+                }
+                return;
+            }
+
+            if (_scratch.Length < total) _scratch = new byte[total + 1024];
+            int off = 0;
+            for (int i = 0; i < count; i++)
+            {
+                byte[] d = batch[i].data;
+                Buffer.BlockCopy(d, 0, _scratch, off, d.Length);
+                off += d.Length;
+            }
+            stream.Write(_scratch, 0, total);
         }
 
         public void Close()
         {
-            if (isClosed) return;
+            if (Interlocked.Exchange(ref _closeOnce, 1) == 1) return;
             isClosed = true;
+            lock (_qLock)
+            {
+                _queue.Clear();
+                _queuedBytes = 0;
+                Monitor.PulseAll(_qLock);
+            }
             try { stream.Close(); } catch { }
             try { tcpClient.Close(); } catch { }
         }
     }
 
+    // ========================================================================
+    //  PROGRAMA PRINCIPAL
+    // ========================================================================
     class Program
     {
         public static int TcpPort = 7779;
@@ -323,9 +822,20 @@ namespace KaitoOnlineServer
         public const int VictoryCelebrationMs = 3200;
         public static string ServerName = "Servidor Oficial Kaito Online";
 
+        // ---- Ajustes de rendimiento / red (todos modificables) ----
+        public const int PingIntervalMs = 10000;            // Ping WebSocket a cada cliente
+        public const int IdleTimeoutMs = 60000;             // Sin NINGUN frame (ni pong) por 60 s => se cierra
+        public const int IdleTimeoutNoPongMs = 300000;      // Igual, pero para clientes que nunca han respondido un ping
+        public const int MaxQueuedBytesPerClient = 1024 * 1024;
+        public const int MaxPayloadBytes = 256 * 1024;      // Tamano maximo de un mensaje entrante
+        public const int MaxMessagesPerSecond = 1000;       // Anti-flood por conexion
+        // true: si un cliente va atrasado se descartan "state" viejos del mismo jugador.
+        // Ponlo en false SOLO si tu cliente manda eventos de un solo uso dentro de "state".
+        public static bool ConflateStatePackets = true;
+
         // Canal de autodescubrimiento global para vincular la app con esta PC sin abrir puertos
         public const string GlobalDiscoveryUrl = "https://ntfy.sh/kaito_adventure_janosos_online_server_v1";
-        public static string PublicTunnelWsUrl = "";
+        public static volatile string PublicTunnelWsUrl = "";
 
         private static readonly object ServerLock = new object();
         private static readonly Dictionary<string, OnlineRoom> Rooms = new Dictionary<string, OnlineRoom>();
@@ -333,8 +843,8 @@ namespace KaitoOnlineServer
         private static int _nextRoomCounter = 1;
         private static int _nextPlayerCounter = 1;
         private static int _nextConnCounter = 1;
-        private static bool _running = true;
-        private static bool _cleanedUp = false;
+        private static volatile bool _running = true;
+        private static int _shutdownFlag = 0;
         private static TcpListener _tcpListener;
         private static UdpClient _udpListener;
         private static Process _tunnelProcess;
@@ -345,6 +855,18 @@ namespace KaitoOnlineServer
         private static extern bool SetConsoleCtrlHandler(ConsoleCtrlDelegate handler, bool add);
         private static ConsoleCtrlDelegate _consoleHandler;
 
+        // Un serializador por hilo (JavaScriptSerializer no garantiza seguridad entre hilos)
+        [ThreadStatic]
+        private static JavaScriptSerializer _tlsJson;
+        private static JavaScriptSerializer Json
+        {
+            get
+            {
+                if (_tlsJson == null) _tlsJson = new JavaScriptSerializer();
+                return _tlsJson;
+            }
+        }
+
         static void Main(string[] args)
         {
             // Habilitar TLS 1.2 para comunicacion HTTPS segura en .NET Framework 4.x
@@ -353,9 +875,10 @@ namespace KaitoOnlineServer
                 ServicePointManager.SecurityProtocol = (SecurityProtocolType)3072 | SecurityProtocolType.Tls;
             }
             catch { }
+            try { ServicePointManager.Expect100Continue = false; } catch { }
 
-            Console.OutputEncoding = Encoding.UTF8;
-            Console.Title = "KAITO ADVENTURE: INK SHINOBI - SERVIDOR MULTIPLAYER ONLINE";
+            try { Console.OutputEncoding = Encoding.UTF8; } catch { }
+            try { Console.Title = "KAITO ADVENTURE: INK SHINOBI - SERVIDOR MULTIPLAYER ONLINE"; } catch { }
 
             if (args != null && args.Length > 0)
             {
@@ -366,8 +889,11 @@ namespace KaitoOnlineServer
                 }
             }
 
+            TuneProcess();
+            StartLogger();
+
             _consoleHandler = new ConsoleCtrlDelegate(OnConsoleClose);
-            SetConsoleCtrlHandler(_consoleHandler, true);
+            try { SetConsoleCtrlHandler(_consoleHandler, true); } catch { }
             AppDomain.CurrentDomain.ProcessExit += delegate(object s, EventArgs e) { ShutdownServer(); };
 
             PrintBanner();
@@ -381,6 +907,7 @@ namespace KaitoOnlineServer
             {
                 LogError("No se pudo iniciar el servidor en el puerto TCP " + TcpPort + ": " + ex.Message);
                 LogInfo("Verifica que no haya otra ventana del servidor abierta.");
+                FlushLogs(500);
                 Console.WriteLine("\nPresiona cualquier tecla para salir...");
                 try { Console.ReadKey(true); } catch { }
                 return;
@@ -391,6 +918,10 @@ namespace KaitoOnlineServer
             Thread acceptThread = new Thread(AcceptClientsLoop);
             acceptThread.IsBackground = true;
             acceptThread.Start();
+
+            Thread watchdogThread = new Thread(WatchdogLoop);
+            watchdogThread.IsBackground = true;
+            watchdogThread.Start();
 
             LogSuccess("Motor del Servidor iniciado en esta PC (127.0.0.1:" + TcpPort + ").");
 
@@ -408,9 +939,12 @@ namespace KaitoOnlineServer
                 }
             }, null, 25000, 25000);
 
-            Console.WriteLine("--------------------------------------------------------------------------------");
-            Console.WriteLine("Comandos en consola: [S] Ver Salas y Jugadores | [C] Limpiar | [Q] Apagar");
-            Console.WriteLine("--------------------------------------------------------------------------------\n");
+            lock (ConsoleLock)
+            {
+                Console.WriteLine("--------------------------------------------------------------------------------");
+                Console.WriteLine("Comandos en consola: [S] Ver Salas, Jugadores y Ping | [C] Limpiar | [Q] Apagar");
+                Console.WriteLine("--------------------------------------------------------------------------------\n");
+            }
 
             while (_running)
             {
@@ -431,7 +965,10 @@ namespace KaitoOnlineServer
                         }
                         else if (key.Key == ConsoleKey.C)
                         {
-                            Console.Clear();
+                            lock (ConsoleLock)
+                            {
+                                Console.Clear();
+                            }
                             PrintBanner();
                             PrintServerStatus();
                         }
@@ -447,6 +984,15 @@ namespace KaitoOnlineServer
             ShutdownServer();
         }
 
+        // Ajustes del proceso para que el servidor responda parejo aunque la PC este ocupada
+        // (por ejemplo si el anfitrion tambien esta jugando en la misma PC).
+        private static void TuneProcess()
+        {
+            try { Process.GetCurrentProcess().PriorityClass = ProcessPriorityClass.AboveNormal; } catch { }
+            try { System.Runtime.GCSettings.LatencyMode = System.Runtime.GCLatencyMode.SustainedLowLatency; } catch { }
+            try { ThreadPool.SetMinThreads(16, 16); } catch { }   // los Timers nunca esperan a que "nazcan" hilos
+        }
+
         private static bool OnConsoleClose(int sig)
         {
             ShutdownServer();
@@ -455,8 +1001,7 @@ namespace KaitoOnlineServer
 
         private static void ShutdownServer()
         {
-            if (_cleanedUp) return;
-            _cleanedUp = true;
+            if (Interlocked.Exchange(ref _shutdownFlag, 1) == 1) return;
             _running = false;
 
             try { if (_globalBeaconTimer != null) _globalBeaconTimer.Dispose(); } catch { }
@@ -464,8 +1009,144 @@ namespace KaitoOnlineServer
             PublishOnlineBeacon(false);
             try { if (_tcpListener != null) _tcpListener.Stop(); } catch { }
             try { if (_udpListener != null) _udpListener.Close(); } catch { }
+            FlushLogs(300);
         }
 
+        // ====================================================================
+        //  LOG ASINCRONO: ningun hilo de red toca jamas la consola
+        // ====================================================================
+        private sealed class LogLine
+        {
+            public DateTime time;
+            public ConsoleColor color;
+            public string tag;
+            public string msg;
+        }
+
+        private static readonly Queue<LogLine> LogQueue = new Queue<LogLine>();
+        private static readonly object LogLock = new object();
+        private static readonly object ConsoleLock = new object();
+
+        private static void StartLogger()
+        {
+            Thread t = new Thread(LogLoop);
+            t.IsBackground = true;
+            t.Name = "log-writer";
+            t.Start();
+        }
+
+        private static void EnqueueLog(ConsoleColor color, string tag, string msg)
+        {
+            LogLine line = new LogLine();
+            line.time = DateTime.Now;
+            line.color = color;
+            line.tag = tag;
+            line.msg = msg;
+            lock (LogLock)
+            {
+                if (LogQueue.Count >= 2000) LogQueue.Dequeue();   // si la consola esta trabada, descarta lo mas viejo
+                LogQueue.Enqueue(line);
+                Monitor.Pulse(LogLock);
+            }
+        }
+
+        private static void LogLoop()
+        {
+            while (true)
+            {
+                LogLine line;
+                lock (LogLock)
+                {
+                    while (LogQueue.Count == 0)
+                    {
+                        Monitor.Wait(LogLock);
+                    }
+                    line = LogQueue.Dequeue();
+                }
+                try
+                {
+                    lock (ConsoleLock)
+                    {
+                        Console.ForegroundColor = line.color;
+                        Console.Write("[" + line.time.ToString("HH:mm:ss") + "] " + line.tag);
+                        Console.ResetColor();
+                        Console.WriteLine(line.msg);
+                    }
+                }
+                catch { }
+            }
+        }
+
+        private static void FlushLogs(int maxWaitMs)
+        {
+            int waited = 0;
+            while (waited < maxWaitMs)
+            {
+                lock (LogLock)
+                {
+                    if (LogQueue.Count == 0) break;
+                }
+                Thread.Sleep(20);
+                waited += 20;
+            }
+            Thread.Sleep(30);
+        }
+
+        private static void LogInfo(string msg)
+        {
+            EnqueueLog(ConsoleColor.Cyan, "[INFO] ", msg);
+        }
+
+        private static void LogSuccess(string msg)
+        {
+            EnqueueLog(ConsoleColor.Green, "[OK]   ", msg);
+        }
+
+        private static void LogError(string msg)
+        {
+            EnqueueLog(ConsoleColor.Red, "[ERR]  ", msg);
+        }
+
+        // ====================================================================
+        //  VIGILANTE: Ping WebSocket + limpieza de conexiones muertas
+        // ====================================================================
+        private static void WatchdogLoop()
+        {
+            while (_running)
+            {
+                Thread.Sleep(PingIntervalMs);
+                if (!_running) break;
+                try
+                {
+                    List<ClientConnection> snapshot;
+                    lock (ServerLock)
+                    {
+                        snapshot = new List<ClientConnection>(Clients.Values);
+                    }
+                    int now = Environment.TickCount;
+                    for (int i = 0; i < snapshot.Count; i++)
+                    {
+                        ClientConnection c = snapshot[i];
+                        if (c.isClosed || !c.isWebSocket) continue;
+
+                        int idle = unchecked(now - c.lastRecvTick);
+                        int limit = c.rttMs > 0.0 ? IdleTimeoutMs : IdleTimeoutNoPongMs;
+                        if (idle > limit)
+                        {
+                            LogInfo("Conexion " + c.connectionId + " sin respuesta por " + (idle / 1000) + " s: se cierra.");
+                            c.Close();
+                            continue;
+                        }
+                        c.SendPing();
+                    }
+                }
+                catch { }
+            }
+        }
+
+        // ====================================================================
+        //  TUNEL DE INTERNET (sin cambios en el comando; mejor limpieza al caer)
+        // ====================================================================
         private static void StopTunnelProcess()
         {
             try
@@ -498,9 +1179,11 @@ namespace KaitoOnlineServer
         {
             string sshExe = ResolveWindowsSshPath();
             Regex urlRegex = new Regex(@"https://([a-zA-Z0-9\.-]+\.lhr\.life)", RegexOptions.IgnoreCase);
+            int retryDelayMs = 3000;
 
             while (_running)
             {
+                Stopwatch aliveTime = Stopwatch.StartNew();
                 try
                 {
                     LogInfo("Activando puente de Internet saliente (sin abrir puertos)...");
@@ -563,12 +1246,16 @@ namespace KaitoOnlineServer
                 finally
                 {
                     StopTunnelProcess();
+                    if (_running) ClearPublicTunnelUrl();
                 }
 
                 if (_running)
                 {
-                    LogInfo("Reconectando puente de Internet en 3 segundos...");
-                    Thread.Sleep(3000);
+                    // Si el puente vivio mas de 60 s reintenta rapido; si falla enseguida (p.ej. sin Internet) espera cada vez mas.
+                    if (aliveTime.ElapsedMilliseconds > 60000) retryDelayMs = 3000;
+                    LogInfo("Reconectando puente de Internet en " + (retryDelayMs / 1000) + " segundos...");
+                    Thread.Sleep(retryDelayMs);
+                    retryDelayMs = Math.Min(retryDelayMs * 2, 30000);
                 }
             }
         }
@@ -580,30 +1267,40 @@ namespace KaitoOnlineServer
             if (PublicTunnelWsUrl == nextWsUrl) return;
 
             PublicTunnelWsUrl = nextWsUrl;
-            LogSuccess("¡Servidor Online Global ACTIVO usando tu PC e Internet!");
+            LogSuccess("\u00A1Servidor Online Global ACTIVO usando tu PC e Internet!");
             LogSuccess("Enlace directo (sin abrir puertos): " + PublicTunnelWsUrl);
             PublishOnlineBeacon(true);
+        }
+
+        // Si el tunel cae, el enlace anterior ya no sirve: se retira y se avisa como inactivo.
+        private static void ClearPublicTunnelUrl()
+        {
+            if (string.IsNullOrEmpty(PublicTunnelWsUrl)) return;
+            PublicTunnelWsUrl = "";
+            LogInfo("Puente de Internet caido: se retira el enlace anterior.");
+            ThreadPool.QueueUserWorkItem(delegate(object o) { PublishOnlineBeacon(false); });
         }
 
         private static void PublishOnlineBeacon(bool isActive)
         {
             try
             {
-                JavaScriptSerializer serializer = new JavaScriptSerializer();
+                string url = PublicTunnelWsUrl;
                 Dictionary<string, object> payload = new Dictionary<string, object>();
                 payload["type"] = "kaito_online_beacon";
-                payload["active"] = isActive && !string.IsNullOrEmpty(PublicTunnelWsUrl);
-                payload["wsUrl"] = isActive ? PublicTunnelWsUrl : "";
+                payload["active"] = isActive && !string.IsNullOrEmpty(url);
+                payload["wsUrl"] = isActive ? url : "";
                 payload["serverName"] = ServerName;
                 payload["ts"] = (long)(DateTime.UtcNow - new DateTime(1970, 1, 1)).TotalSeconds;
 
-                byte[] bodyBytes = Encoding.UTF8.GetBytes(serializer.Serialize(payload));
+                byte[] bodyBytes = Encoding.UTF8.GetBytes(Json.Serialize(payload));
                 HttpWebRequest req = (HttpWebRequest)WebRequest.Create(GlobalDiscoveryUrl);
                 req.Method = "POST";
                 req.ContentType = "application/json; charset=utf-8";
                 req.Timeout = 4000;
                 req.ReadWriteTimeout = 4000;
                 req.ContentLength = bodyBytes.Length;
+                req.ServicePoint.Expect100Continue = false;
 
                 using (Stream reqStream = req.GetRequestStream())
                 {
@@ -620,44 +1317,72 @@ namespace KaitoOnlineServer
             }
         }
 
+        // ====================================================================
+        //  CONSOLA
+        // ====================================================================
         private static void PrintBanner()
         {
-            Console.ForegroundColor = ConsoleColor.Red;
-            Console.WriteLine("================================================================================");
-            Console.ForegroundColor = ConsoleColor.Yellow;
-            Console.WriteLine("      KAITO ADVENTURE: INK SHINOBI - SERVIDOR DEDICADO MULTIPLAYER ONLINE");
-            Console.ForegroundColor = ConsoleColor.Red;
-            Console.WriteLine("================================================================================");
-            Console.ResetColor();
+            lock (ConsoleLock)
+            {
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine("================================================================================");
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                Console.WriteLine("      KAITO ADVENTURE: INK SHINOBI - SERVIDOR DEDICADO MULTIPLAYER ONLINE");
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine("================================================================================");
+                Console.ResetColor();
 
-            Console.WriteLine("  Modo de Operacion   : Usa tu PC, tu Internet y tus recursos como Servidor");
-            Console.WriteLine("  Requisitos Extra    : NINGUNO (Sin abrir puertos / Sin programas adicionales)");
-            Console.WriteLine("  Puerto Local Motor  : " + TcpPort);
-            Console.WriteLine("  Capacidad por Sala  : 2 a 5 Jugadores (Multiples Salas Online Simultaneas)");
-            Console.WriteLine("================================================================================\n");
+                Console.WriteLine("  Modo de Operacion   : Usa tu PC, tu Internet y tus recursos como Servidor");
+                Console.WriteLine("  Requisitos Extra    : NINGUNO (Sin abrir puertos / Sin programas adicionales)");
+                Console.WriteLine("  Puerto Local Motor  : " + TcpPort);
+                Console.WriteLine("  Capacidad por Sala  : 2 a 5 Jugadores (Multiples Salas Online Simultaneas)");
+                Console.WriteLine("================================================================================\n");
+            }
         }
 
         private static void PrintServerStatus()
         {
+            // Se arma el texto dentro del lock y se imprime FUERA: la consola nunca retiene el lock del servidor.
+            List<string> lines = new List<string>();
             lock (ServerLock)
+            {
+                lines.Add("  Enlace Global      : " + (string.IsNullOrEmpty(PublicTunnelWsUrl) ? "Conectando..." : PublicTunnelWsUrl));
+                lines.Add("  Conexiones activas : " + Clients.Count);
+                lines.Add("  Salas Online       : " + Rooms.Count);
+                foreach (OnlineRoom r in Rooms.Values)
+                {
+                    lines.Add("  * [" + r.roomId + "] \"" + r.roomName + "\" (" + r.players.Count + "/5) - " + (r.inMatch ? "EN COMBATE" : "EN SALA DE ESPERA"));
+                    foreach (OnlinePlayer p in r.players.Values)
+                    {
+                        string ping = "";
+                        if (p.connection != null && p.connection.rttMs > 0.0)
+                        {
+                            ping = " | Ping al servidor: " + ((int)p.connection.rttMs) + " ms";
+                        }
+                        lines.Add("      - Slot " + (p.slot + 1) + ": " + p.nickname + (p.isHost ? " [ANFITRION]" : "") + " (HP: " + p.hp + "/" + p.maxHp + ", Vidas: " + p.lives + ")" + ping);
+                    }
+                }
+            }
+
+            lock (ConsoleLock)
             {
                 Console.ForegroundColor = ConsoleColor.Yellow;
                 Console.WriteLine("\n--- ESTADO ACTUAL DEL SERVIDOR ONLINE ---");
                 Console.ResetColor();
-                Console.WriteLine("  Enlace Global      : " + (string.IsNullOrEmpty(PublicTunnelWsUrl) ? "Conectando..." : PublicTunnelWsUrl));
-                Console.WriteLine("  Conexiones activas : " + Clients.Count);
-                Console.WriteLine("  Salas Online       : " + Rooms.Count);
-                foreach (OnlineRoom r in Rooms.Values)
+                foreach (string l in lines)
                 {
-                    Console.WriteLine("  * [" + r.roomId + "] \"" + r.roomName + "\" (" + r.players.Count + "/5) - " + (r.inMatch ? "EN COMBATE" : "EN SALA DE ESPERA"));
-                    foreach (OnlinePlayer p in r.players.Values)
-                    {
-                        Console.WriteLine("      - Slot " + (p.slot + 1) + ": " + p.nickname + (p.isHost ? " [ANFITRION]" : "") + " (HP: " + p.hp + "/" + p.maxHp + ", Vidas: " + p.lives + ")");
-                    }
+                    Console.WriteLine(l);
                 }
                 Console.WriteLine("-----------------------------------------\n");
             }
         }
+
+        // ====================================================================
+        //  RED LOCAL / DESCUBRIMIENTO UDP
+        // ====================================================================
+        private static readonly object IpCacheLock = new object();
+        private static List<string> _cachedIps;
+        private static int _cachedIpsTick;
 
         private static List<string> GetLocalIPv4Addresses()
         {
@@ -689,6 +1414,21 @@ namespace KaitoOnlineServer
                 list.Add("127.0.0.1");
             }
             return list;
+        }
+
+        // Enumerar interfaces de red es caro: se guarda el resultado 15 s.
+        private static List<string> GetLocalIPv4AddressesCached()
+        {
+            lock (IpCacheLock)
+            {
+                int now = Environment.TickCount;
+                if (_cachedIps == null || unchecked(now - _cachedIpsTick) > 15000)
+                {
+                    _cachedIps = GetLocalIPv4Addresses();
+                    _cachedIpsTick = now;
+                }
+                return _cachedIps;
+            }
         }
 
         private static void StartUdpDiscoveryService()
@@ -745,7 +1485,7 @@ namespace KaitoOnlineServer
 
         private static byte[] BuildUdpBeaconBytes()
         {
-            List<string> ips = GetLocalIPv4Addresses();
+            List<string> ips = GetLocalIPv4AddressesCached();
             string primaryIp = ips.Count > 0 ? ips[0] : "127.0.0.1";
             int roomCount = 0;
             int clientCount = 0;
@@ -762,18 +1502,20 @@ namespace KaitoOnlineServer
             payload["wsUrl"] = PublicTunnelWsUrl;
             payload["roomCount"] = roomCount;
             payload["playerCount"] = clientCount;
-            JavaScriptSerializer serializer = new JavaScriptSerializer();
-            return Encoding.UTF8.GetBytes(serializer.Serialize(payload));
+            return Encoding.UTF8.GetBytes(Json.Serialize(payload));
         }
 
+        // ====================================================================
+        //  ACEPTAR CLIENTES / HANDSHAKE HTTP + WEBSOCKET
+        // ====================================================================
         private static void AcceptClientsLoop()
         {
             while (_running)
             {
+                TcpClient tcpClient = null;
                 try
                 {
-                    TcpClient tcpClient = _tcpListener.AcceptTcpClient();
-                    tcpClient.NoDelay = true;
+                    tcpClient = _tcpListener.AcceptTcpClient();
                     string connId = "c_" + (_nextConnCounter++);
                     ClientConnection conn = new ClientConnection(connId, tcpClient);
                     Thread clientThread = new Thread(delegate() { HandleClientConnection(conn); });
@@ -782,7 +1524,12 @@ namespace KaitoOnlineServer
                 }
                 catch
                 {
+                    if (tcpClient != null)
+                    {
+                        try { tcpClient.Close(); } catch { }
+                    }
                     if (!_running) break;
+                    Thread.Sleep(20);
                 }
             }
         }
@@ -836,12 +1583,15 @@ namespace KaitoOnlineServer
                     conn.stream.Write(respBytes, 0, respBytes.Length);
                     conn.stream.Flush();
                     conn.isWebSocket = true;
+                    conn.lastRecvTick = Environment.TickCount;
+                    conn.StartWriter();
 
                     lock (ServerLock)
                     {
                         Clients[conn.connectionId] = conn;
                     }
 
+                    conn.SendPing();                 // primera medicion de RTT de inmediato
                     SendRoomsListToClient(conn);
                     WebSocketReceiveLoop(conn);
                 }
@@ -863,10 +1613,13 @@ namespace KaitoOnlineServer
 
         private static string ReadHttpHeaders(NetworkStream stream)
         {
-            List<byte> buffer = new List<byte>();
+            List<byte> buffer = new List<byte>(512);
             byte[] single = new byte[1];
+            bool complete = false;
             stream.ReadTimeout = 5000;
-            while (buffer.Count < 16384)
+            Stopwatch sw = Stopwatch.StartNew();
+            // Limite total de 8 s: evita conexiones que mandan 1 byte cada 4 s para ocupar un hilo
+            while (buffer.Count < 16384 && sw.ElapsedMilliseconds < 8000)
             {
                 int read = stream.Read(single, 0, 1);
                 if (read <= 0) break;
@@ -878,10 +1631,12 @@ namespace KaitoOnlineServer
                     buffer[count - 2] == '\r' &&
                     buffer[count - 1] == '\n')
                 {
+                    complete = true;
                     break;
                 }
             }
             stream.ReadTimeout = Timeout.Infinite;
+            if (!complete) return null;
             return Encoding.UTF8.GetString(buffer.ToArray());
         }
 
@@ -909,19 +1664,24 @@ namespace KaitoOnlineServer
         private static string ComputeWebSocketAcceptKey(string secWebSocketKey)
         {
             string combined = secWebSocketKey.Trim() + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
-            byte[] hash = SHA1.Create().ComputeHash(Encoding.ASCII.GetBytes(combined));
-            return Convert.ToBase64String(hash);
+            using (SHA1 sha = SHA1.Create())
+            {
+                byte[] hash = sha.ComputeHash(Encoding.ASCII.GetBytes(combined));
+                return Convert.ToBase64String(hash);
+            }
         }
 
+        // ====================================================================
+        //  BUCLE DE RECEPCION WEBSOCKET (con buffer, sin asignar memoria por frame)
+        // ====================================================================
         private static void WebSocketReceiveLoop(ClientConnection conn)
         {
-            NetworkStream stream = conn.stream;
             while (_running && !conn.isClosed)
             {
-                int b0 = stream.ReadByte();
-                if (b0 == -1) break;
-                int b1 = stream.ReadByte();
-                if (b1 == -1) break;
+                int b0 = conn.ReadByteBuffered();
+                if (b0 < 0) break;
+                int b1 = conn.ReadByteBuffered();
+                if (b1 < 0) break;
 
                 int opcode = b0 & 0x0F;
                 bool masked = (b1 & 0x80) != 0;
@@ -929,42 +1689,56 @@ namespace KaitoOnlineServer
 
                 if (payloadLen == 126)
                 {
-                    byte[] ext = ReadExactBytes(stream, 2);
-                    if (ext == null) break;
-                    payloadLen = (ext[0] << 8) | ext[1];
+                    if (!conn.ReadExactBuffered(conn.extBuf, 2)) break;
+                    payloadLen = (conn.extBuf[0] << 8) | conn.extBuf[1];
                 }
                 else if (payloadLen == 127)
                 {
-                    byte[] ext = ReadExactBytes(stream, 8);
-                    if (ext == null) break;
+                    if (!conn.ReadExactBuffered(conn.extBuf, 8)) break;
                     payloadLen = 0;
                     for (int i = 0; i < 8; i++)
                     {
-                        payloadLen = (payloadLen << 8) | ext[i];
+                        payloadLen = (payloadLen << 8) | conn.extBuf[i];
                     }
                 }
 
-                if (payloadLen > 1048576 || payloadLen < 0)
+                if (payloadLen < 0 || payloadLen > MaxPayloadBytes)
                 {
                     break;
                 }
 
-                byte[] maskKey = null;
                 if (masked)
                 {
-                    maskKey = ReadExactBytes(stream, 4);
-                    if (maskKey == null) break;
+                    if (!conn.ReadExactBuffered(conn.maskKey, 4)) break;
                 }
 
-                byte[] payload = ReadExactBytes(stream, (int)payloadLen);
-                if (payload == null) break;
+                int len = (int)payloadLen;
+                byte[] buf = conn.EnsurePayloadCapacity(len);
+                if (len > 0 && !conn.ReadExactBuffered(buf, len)) break;
 
-                if (masked && maskKey != null)
+                if (masked)
                 {
-                    for (int i = 0; i < payload.Length; i++)
+                    byte[] mk = conn.maskKey;
+                    for (int j = 0; j < len; j++)
                     {
-                        payload[i] = (byte)(payload[i] ^ maskKey[i % 4]);
+                        buf[j] = (byte)(buf[j] ^ mk[j & 3]);
                     }
+                }
+
+                int nowTick = Environment.TickCount;
+                conn.lastRecvTick = nowTick;
+
+                // Anti-flood: ningun juego legitimo manda mas de 1000 mensajes por segundo
+                if (unchecked(nowTick - conn.rateWindowStart) >= 1000)
+                {
+                    conn.rateWindowStart = nowTick;
+                    conn.rateCount = 0;
+                }
+                conn.rateCount++;
+                if (conn.rateCount > MaxMessagesPerSecond)
+                {
+                    LogError("Conexion " + conn.connectionId + " supero " + MaxMessagesPerSecond + " mensajes/s: se desconecta.");
+                    break;
                 }
 
                 if (opcode == 0x08)
@@ -973,32 +1747,80 @@ namespace KaitoOnlineServer
                 }
                 else if (opcode == 0x09)
                 {
-                    conn.SendPong(payload);
+                    conn.SendPong(buf, len);
+                }
+                else if (opcode == 0x0A)
+                {
+                    conn.OnPong(buf, len);
                 }
                 else if (opcode == 0x01 || opcode == 0x02)
                 {
-                    string jsonText = Encoding.UTF8.GetString(payload);
-                    ProcessIncomingPacket(conn, jsonText);
+                    try
+                    {
+                        HandleFrameMessage(conn, buf, len);
+                    }
+                    catch
+                    {
+                        // Un paquete malformado no debe tumbar la conexion del jugador
+                    }
                 }
             }
         }
 
-        private static byte[] ReadExactBytes(NetworkStream stream, int length)
+        // ====================================================================
+        //  PROCESAMIENTO DE PAQUETES
+        // ====================================================================
+
+        // Ruta rapida para los paquetes de alta frecuencia; todo lo demas va por la ruta normal.
+        private static void HandleFrameMessage(ClientConnection conn, byte[] buf, int len)
         {
-            byte[] data = new byte[length];
-            int offset = 0;
-            while (offset < length)
+            FastInfo info = new FastInfo();
+            bool scanned = false;
+            try { scanned = FastJson.Scan(buf, len, ref info); } catch { scanned = false; }
+
+            if (scanned && info.typeCode != FastJson.T_UNKNOWN)
             {
-                int read = stream.Read(data, offset, length - offset);
-                if (read <= 0) return null;
-                offset += read;
+                OnlineRoom room = conn.currentRoom;
+                OnlinePlayer sender = conn.currentPlayer;
+                if (room == null || sender == null) return;
+
+                if (info.typeCode == FastJson.T_STATE)
+                {
+                    lock (ServerLock)
+                    {
+                        if (info.hasSession && info.session != room.sessionId) return;
+
+                        if (!sender.isAlive)
+                        {
+                            sender.hp = 0.0;
+                        }
+                        else if (info.hasHp && info.hp < sender.hp)
+                        {
+                            sender.hp = Math.Max(0.0, Math.Min(sender.maxHp, info.hp));
+                        }
+                        if (info.hasOugi)
+                        {
+                            sender.ougi = info.ougi;
+                        }
+                    }
+                    byte[] stateFrame = WsFrame.BuildText(buf, 0, len);
+                    BroadcastFrame(room, stateFrame, sender.id, ConflateStatePackets ? sender.stateKey : null);
+                    return;
+                }
+
+                // player_action / spawn_kunai / hit / ring_out_blast: reenvio directo
+                if (info.hasSession && info.session != room.sessionId) return;
+                BroadcastFrame(room, WsFrame.BuildText(buf, 0, len), sender.id, null);
+                return;
             }
-            return data;
+
+            ProcessIncomingPacket(conn, Encoding.UTF8.GetString(buf, 0, len));
         }
 
+        // Ruta normal (control de salas, partida, etc.) con la misma logica de siempre.
         private static void ProcessIncomingPacket(ClientConnection conn, string jsonText)
         {
-            JavaScriptSerializer serializer = new JavaScriptSerializer();
+            JavaScriptSerializer serializer = Json;
             Dictionary<string, object> map;
             try
             {
@@ -1110,7 +1932,7 @@ namespace KaitoOnlineServer
                         sender.ougi = ToDouble(map["ougi"], sender.ougi);
                     }
                 }
-                BroadcastToRoom(room, jsonText, sender.id);
+                BroadcastFrame(room, WsFrame.BuildText(jsonText), sender.id, ConflateStatePackets ? sender.stateKey : null);
             }
             else if (type == "player_action" || type == "spawn_kunai" || type == "hit" || type == "ring_out_blast")
             {
@@ -1142,7 +1964,7 @@ namespace KaitoOnlineServer
                         }
                         sender.placement = aliveCount + 1;
 
-                        LogInfo("[" + room.roomName + "] " + sender.nickname + " fue eliminado (" + sender.placement + "° lugar).");
+                        LogInfo("[" + room.roomName + "] " + sender.nickname + " fue eliminado (" + sender.placement + "\u00B0 lugar).");
 
                         Dictionary<string, object> elimPacket = new Dictionary<string, object>();
                         elimPacket["type"] = "player_eliminated";
@@ -1181,10 +2003,13 @@ namespace KaitoOnlineServer
             }
         }
 
+        // ====================================================================
+        //  SALAS
+        // ====================================================================
         private static void HandleCreateOnlineRoom(ClientConnection conn, Dictionary<string, object> map)
         {
             RemovePlayerFromCurrentRoom(conn);
-            JavaScriptSerializer serializer = new JavaScriptSerializer();
+            JavaScriptSerializer serializer = Json;
 
             lock (ServerLock)
             {
@@ -1205,6 +2030,7 @@ namespace KaitoOnlineServer
 
                 OnlinePlayer hostPlayer = new OnlinePlayer();
                 hostPlayer.id = pid;
+                hostPlayer.stateKey = "s:" + pid;
                 hostPlayer.nickname = playerName;
                 hostPlayer.colorIndex = colorIdx;
                 hostPlayer.slot = 0;
@@ -1217,6 +2043,7 @@ namespace KaitoOnlineServer
                 hostPlayer.connection = conn;
 
                 room.players[pid] = hostPlayer;
+                room.RefreshSnapshot();
                 Rooms[roomId] = room;
                 conn.currentRoom = room;
                 conn.currentPlayer = hostPlayer;
@@ -1241,7 +2068,7 @@ namespace KaitoOnlineServer
         private static void HandleJoinOnlineRoom(ClientConnection conn, Dictionary<string, object> map)
         {
             RemovePlayerFromCurrentRoom(conn);
-            JavaScriptSerializer serializer = new JavaScriptSerializer();
+            JavaScriptSerializer serializer = Json;
 
             lock (ServerLock)
             {
@@ -1283,7 +2110,7 @@ namespace KaitoOnlineServer
                 {
                     Dictionary<string, object> err = new Dictionary<string, object>();
                     err["type"] = "error";
-                    err["msg"] = "La sala está llena (Máximo 5 jugadores).";
+                    err["msg"] = "La sala est\u00E1 llena (M\u00E1ximo 5 jugadores).";
                     conn.SendWebSocketText(serializer.Serialize(err));
                     return;
                 }
@@ -1292,7 +2119,7 @@ namespace KaitoOnlineServer
                 {
                     Dictionary<string, object> err = new Dictionary<string, object>();
                     err["type"] = "error";
-                    err["msg"] = "La partida en esta sala ya está en curso.";
+                    err["msg"] = "La partida en esta sala ya est\u00E1 en curso.";
                     conn.SendWebSocketText(serializer.Serialize(err));
                     return;
                 }
@@ -1321,6 +2148,7 @@ namespace KaitoOnlineServer
 
                 OnlinePlayer newPlayer = new OnlinePlayer();
                 newPlayer.id = pid;
+                newPlayer.stateKey = "s:" + pid;
                 newPlayer.nickname = playerName;
                 newPlayer.colorIndex = colorIdx;
                 newPlayer.slot = assignedSlot;
@@ -1333,6 +2161,7 @@ namespace KaitoOnlineServer
                 newPlayer.connection = conn;
 
                 targetRoom.players[pid] = newPlayer;
+                targetRoom.RefreshSnapshot();
                 conn.currentRoom = targetRoom;
                 conn.currentPlayer = newPlayer;
 
@@ -1380,16 +2209,15 @@ namespace KaitoOnlineServer
                 p.votedRematch = false;
             }
 
-            LogSuccess("¡Combate iniciado en la sala \"" + room.roomName + "\"! (" + room.players.Count + " Shinobis, Sesion #" + room.sessionId + ")");
+            LogSuccess("\u00A1Combate iniciado en la sala \"" + room.roomName + "\"! (" + room.players.Count + " Shinobis, Sesion #" + room.sessionId + ")");
 
-            JavaScriptSerializer serializer = new JavaScriptSerializer();
             Dictionary<string, object> startPacket = new Dictionary<string, object>();
             startPacket["type"] = "match_start";
             startPacket["sessionId"] = room.sessionId;
             startPacket["config"] = room.config.ToDict();
             startPacket["players"] = room.GetPlayersDictList();
 
-            BroadcastToRoom(room, serializer.Serialize(startPacket), null);
+            BroadcastToRoom(room, Json.Serialize(startPacket), null);
             BroadcastRoomsListToLobby();
         }
 
@@ -1459,10 +2287,10 @@ namespace KaitoOnlineServer
             OnlinePlayer winner = podium.Count > 0 ? podium[0] : null;
             if (winner != null)
             {
-                LogSuccess("[" + room.roomName + "] ¡CAMPEÓN DE LA PARTIDA: " + winner.nickname + "!");
+                LogSuccess("[" + room.roomName + "] \u00A1CAMPE\u00D3N DE LA PARTIDA: " + winner.nickname + "!");
             }
 
-            JavaScriptSerializer serializer = new JavaScriptSerializer();
+            JavaScriptSerializer serializer = Json;
 
             Dictionary<string, object> victoryPacket = new Dictionary<string, object>();
             victoryPacket["type"] = "match_victory";
@@ -1499,7 +2327,6 @@ namespace KaitoOnlineServer
 
         private static void CheckRoomRematchConditionLocked(OnlineRoom room)
         {
-            JavaScriptSerializer serializer = new JavaScriptSerializer();
             int readyCount = 0;
             foreach (OnlinePlayer p in room.players.Values)
             {
@@ -1515,7 +2342,7 @@ namespace KaitoOnlineServer
                     Dictionary<string, object> cancelPkt = new Dictionary<string, object>();
                     cancelPkt["type"] = "rematch_countdown";
                     cancelPkt["seconds"] = null;
-                    BroadcastToRoom(room, serializer.Serialize(cancelPkt), null);
+                    BroadcastToRoom(room, Json.Serialize(cancelPkt), null);
                 }
                 return;
             }
@@ -1526,7 +2353,7 @@ namespace KaitoOnlineServer
                 Dictionary<string, object> startCountdown = new Dictionary<string, object>();
                 startCountdown["type"] = "rematch_countdown";
                 startCountdown["seconds"] = room.rematchSeconds;
-                BroadcastToRoom(room, serializer.Serialize(startCountdown), null);
+                BroadcastToRoom(room, Json.Serialize(startCountdown), null);
 
                 room.rematchTimer = new Timer(delegate(object state)
                 {
@@ -1548,7 +2375,7 @@ namespace KaitoOnlineServer
                             Dictionary<string, object> cancelPkt = new Dictionary<string, object>();
                             cancelPkt["type"] = "rematch_countdown";
                             cancelPkt["seconds"] = null;
-                            BroadcastToRoom(room, serializer.Serialize(cancelPkt), null);
+                            BroadcastToRoom(room, Json.Serialize(cancelPkt), null);
                             return;
                         }
 
@@ -1567,7 +2394,7 @@ namespace KaitoOnlineServer
                             Dictionary<string, object> tickPkt = new Dictionary<string, object>();
                             tickPkt["type"] = "rematch_countdown";
                             tickPkt["seconds"] = room.rematchSeconds;
-                            BroadcastToRoom(room, serializer.Serialize(tickPkt), null);
+                            BroadcastToRoom(room, Json.Serialize(tickPkt), null);
                         }
                     }
                 }, null, 1000, 1000);
@@ -1586,7 +2413,7 @@ namespace KaitoOnlineServer
 
         private static void RemovePlayerFromCurrentRoom(ClientConnection conn)
         {
-            JavaScriptSerializer serializer = new JavaScriptSerializer();
+            JavaScriptSerializer serializer = Json;
             lock (ServerLock)
             {
                 OnlineRoom room = conn.currentRoom;
@@ -1599,6 +2426,7 @@ namespace KaitoOnlineServer
                 if (room.players.ContainsKey(player.id))
                 {
                     room.players.Remove(player.id);
+                    room.RefreshSnapshot();
                     LogInfo("Jugador \"" + player.nickname + "\" salio de la sala \"" + room.roomName + "\".");
                 }
 
@@ -1657,27 +2485,33 @@ namespace KaitoOnlineServer
             }
         }
 
-        private static void BroadcastToRoom(OnlineRoom room, string jsonText, string excludePlayerId)
+        // ====================================================================
+        //  DIFUSION (siempre no bloqueante: solo encola)
+        // ====================================================================
+        private static void BroadcastFrame(OnlineRoom room, byte[] frame, string excludePlayerId, string conflateKey)
         {
-            List<OnlinePlayer> targets;
-            lock (ServerLock)
+            OnlinePlayer[] targets = room.snapshot;   // copia inmutable: sin lock, sin asignaciones
+            for (int i = 0; i < targets.Length; i++)
             {
-                targets = new List<OnlinePlayer>(room.players.Values);
-            }
-            foreach (OnlinePlayer p in targets)
-            {
+                OnlinePlayer p = targets[i];
                 if (excludePlayerId != null && p.id == excludePlayerId) continue;
-                if (p.connection != null && !p.connection.isClosed)
+                ClientConnection c = p.connection;
+                if (c != null && !c.isClosed)
                 {
-                    p.connection.SendWebSocketText(jsonText);
+                    c.SendFrame(frame, conflateKey);
                 }
             }
         }
 
+        private static void BroadcastToRoom(OnlineRoom room, string jsonText, string excludePlayerId)
+        {
+            BroadcastFrame(room, WsFrame.BuildText(jsonText), excludePlayerId, null);
+        }
+
         private static string BuildStatusJson()
         {
-            JavaScriptSerializer serializer = new JavaScriptSerializer();
-            List<string> ips = GetLocalIPv4Addresses();
+            JavaScriptSerializer serializer = Json;
+            List<string> ips = GetLocalIPv4AddressesCached();
             string primaryIp = ips.Count > 0 ? ips[0] : "127.0.0.1";
 
             lock (ServerLock)
@@ -1704,7 +2538,7 @@ namespace KaitoOnlineServer
 
         private static string BuildRoomsListPacketJson()
         {
-            JavaScriptSerializer serializer = new JavaScriptSerializer();
+            JavaScriptSerializer serializer = Json;
             lock (ServerLock)
             {
                 List<Dictionary<string, object>> roomSummaries = new List<Dictionary<string, object>>();
@@ -1727,13 +2561,12 @@ namespace KaitoOnlineServer
 
         private static void SendRoomsListToClient(ClientConnection conn)
         {
-            string json = BuildRoomsListPacketJson();
-            conn.SendWebSocketText(json);
+            conn.SendFrame(WsFrame.BuildText(BuildRoomsListPacketJson()), "rooms");
         }
 
         private static void BroadcastRoomsListToLobby()
         {
-            string json = BuildRoomsListPacketJson();
+            byte[] frame = WsFrame.BuildText(BuildRoomsListPacketJson());   // se arma una sola vez
             List<ClientConnection> lobbyClients = new List<ClientConnection>();
             lock (ServerLock)
             {
@@ -1745,12 +2578,15 @@ namespace KaitoOnlineServer
                     }
                 }
             }
-            foreach (ClientConnection c in lobbyClients)
+            for (int i = 0; i < lobbyClients.Count; i++)
             {
-                c.SendWebSocketText(json);
+                lobbyClients[i].SendFrame(frame, "rooms");
             }
         }
 
+        // ====================================================================
+        //  UTILIDADES
+        // ====================================================================
         private static int ToInt(object val, int fallback)
         {
             if (val == null) return fallback;
@@ -1761,30 +2597,6 @@ namespace KaitoOnlineServer
         {
             if (val == null) return fallback;
             try { return Convert.ToDouble(val); } catch { return fallback; }
-        }
-
-        private static void LogInfo(string msg)
-        {
-            Console.ForegroundColor = ConsoleColor.Cyan;
-            Console.Write("[" + DateTime.Now.ToString("HH:mm:ss") + "] [INFO] ");
-            Console.ResetColor();
-            Console.WriteLine(msg);
-        }
-
-        private static void LogSuccess(string msg)
-        {
-            Console.ForegroundColor = ConsoleColor.Green;
-            Console.Write("[" + DateTime.Now.ToString("HH:mm:ss") + "] [OK]   ");
-            Console.ResetColor();
-            Console.WriteLine(msg);
-        }
-
-        private static void LogError(string msg)
-        {
-            Console.ForegroundColor = ConsoleColor.Red;
-            Console.Write("[" + DateTime.Now.ToString("HH:mm:ss") + "] [ERR]  ");
-            Console.ResetColor();
-            Console.WriteLine(msg);
         }
     }
 }
