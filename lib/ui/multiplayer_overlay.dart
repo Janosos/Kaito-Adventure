@@ -21,7 +21,6 @@ class _MultiplayerOverlayState extends State<MultiplayerOverlay> {
   late final TextEditingController _nicknameController;
   late final TextEditingController _ipController;
   late final TextEditingController _roomNameController;
-  late final TextEditingController _onlineServerController;
 
   String? _statusMessage;
   bool _copiedIpFeedback = false;
@@ -34,8 +33,6 @@ class _MultiplayerOverlayState extends State<MultiplayerOverlay> {
     _ipController = TextEditingController(text: kIsWeb ? '127.0.0.1' : '');
     _roomNameController =
         TextEditingController(text: 'Dojo de ${net.myNickname}');
-    _onlineServerController =
-        TextEditingController(text: net.onlineServerAddress);
 
     net.inMatchNotifier.addListener(_onMatchStarted);
     net.modeNotifier.addListener(_onModeChanged);
@@ -55,7 +52,6 @@ class _MultiplayerOverlayState extends State<MultiplayerOverlay> {
     final net = LanMultiplayerService.instance;
     setState(() {
       _statusMessage = null;
-      _onlineServerController.text = net.onlineServerAddress;
     });
     if (net.isOnlineMode) {
       net.stopRoomDiscovery();
@@ -80,7 +76,6 @@ class _MultiplayerOverlayState extends State<MultiplayerOverlay> {
     _nicknameController.dispose();
     _ipController.dispose();
     _roomNameController.dispose();
-    _onlineServerController.dispose();
     super.dispose();
   }
 
@@ -190,13 +185,9 @@ class _MultiplayerOverlayState extends State<MultiplayerOverlay> {
     setState(() {
       _statusMessage = null;
     });
-    final customAddr = _onlineServerController.text.trim();
-    final ok = await net.refreshOnlineServer(
-      customAddress: customAddr.isNotEmpty ? customAddr : null,
-    );
+    final ok = await net.refreshOnlineServer();
     if (mounted) {
       setState(() {
-        _onlineServerController.text = net.onlineServerAddress;
         if (!ok) {
           _statusMessage = null;
         }
@@ -391,50 +382,57 @@ class _MultiplayerOverlayState extends State<MultiplayerOverlay> {
                       color: ComicTheme.actionRed,
                     ),
                   ),
-                  Row(
-                    children: [
-                      Flexible(
-                        child: Text(
-                          isOnline
-                              ? 'SERVIDOR ONLINE: $fullIp (${net.currentOnlineRoomId ?? "SALA ACTIVA"})'
-                              : 'IP DE LA SALA: $fullIp',
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: Colors.black87,
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
+                  if (isOnline)
+                    const Text(
+                      'MODO MULTIJUGADOR ONLINE ACTIVO',
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: Colors.black87,
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
                       ),
-                      const SizedBox(width: 8),
-                      GestureDetector(
-                        onTap: () => _copyIpToClipboard(
-                          isOnline
-                              ? net.onlineServerAddress
-                              : (net.localIpAddress ?? '127.0.0.1'),
-                        ),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: _copiedIpFeedback
-                                ? const Color(0xFF00E676)
-                                : Colors.black12,
-                            borderRadius: BorderRadius.circular(4),
-                            border: Border.all(color: Colors.black26),
-                          ),
+                    )
+                  else
+                    Row(
+                      children: [
+                        Flexible(
                           child: Text(
-                            _copiedIpFeedback ? '¡COPIADO!' : 'COPIAR IP',
+                            'IP DE LA SALA: $fullIp',
+                            overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
-                              color: Colors.black,
-                              fontSize: 10,
-                              fontWeight: FontWeight.w900,
+                              color: Colors.black87,
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
                             ),
                           ),
                         ),
-                      ),
-                    ],
-                  ),
+                        const SizedBox(width: 8),
+                        GestureDetector(
+                          onTap: () => _copyIpToClipboard(
+                            net.localIpAddress ?? '127.0.0.1',
+                          ),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: _copiedIpFeedback
+                                  ? const Color(0xFF00E676)
+                                  : Colors.black12,
+                              borderRadius: BorderRadius.circular(4),
+                              border: Border.all(color: Colors.black26),
+                            ),
+                            child: Text(
+                              _copiedIpFeedback ? '¡COPIADO!' : 'COPIAR IP',
+                              style: const TextStyle(
+                                color: Colors.black,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                 ],
               ),
             ),
@@ -720,7 +718,7 @@ class _MultiplayerOverlayState extends State<MultiplayerOverlay> {
               ),
               Text(
                 net.isOnlineMode
-                    ? '● Servidor Online Activo (${net.onlineServerAddress})'
+                    ? '● Servidor Online Activo'
                     : 'Red Local WiFi Activa',
                 style: const TextStyle(
                   color: Color(0xFF00E676),
@@ -1256,16 +1254,6 @@ class _MultiplayerOverlayState extends State<MultiplayerOverlay> {
                       color: ComicTheme.energyCyan,
                     ),
                   ),
-                  const SizedBox(height: 6),
-                  Text(
-                    'Verificando conexión con el servidor en ${net.onlineServerAddress} (Puerto TCP 7779 / UDP 7780)...',
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      color: Colors.white70,
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
                 ],
               ),
             ),
@@ -1355,86 +1343,35 @@ class _MultiplayerOverlayState extends State<MultiplayerOverlay> {
               fontWeight: FontWeight.w600,
             ),
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 16),
 
-          // Server IP / Port input + Big Refresh Button
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 620),
+          // Big Refresh Button
+          GestureDetector(
+            onTap: _handleRefreshOnlineServer,
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              decoration: BoxDecoration(
-                color: Colors.black38,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.white24, width: 1.5),
+              padding: const EdgeInsets.symmetric(
+                horizontal: 24,
+                vertical: 10,
+              ),
+              decoration: ComicTheme.panelDecoration(
+                backgroundColor: ComicTheme.comicYellow,
+                borderWidth: 3.0,
+                shadowOffset: 4,
               ),
               child: Row(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.dns, color: ComicTheme.energyCyan, size: 18),
+                  const Icon(
+                    Icons.refresh,
+                    color: Colors.black,
+                    size: 20,
+                  ),
                   const SizedBox(width: 8),
                   Text(
-                    'SERVIDOR (IP:PUERTO):',
+                    'REFRESCAR',
                     style: ComicTheme.titleText(
-                      size: 12,
-                      color: ComicTheme.energyCyan,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Container(
-                      height: 34,
-                      padding: const EdgeInsets.symmetric(horizontal: 10),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(6),
-                        border: Border.all(color: Colors.black, width: 2),
-                      ),
-                      child: TextField(
-                        controller: _onlineServerController,
-                        style: const TextStyle(
-                          color: Colors.black,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 12,
-                        ),
-                        decoration: const InputDecoration(
-                          hintText: '127.0.0.1:7779 o IP del Servidor PC',
-                          border: InputBorder.none,
-                          isDense: true,
-                          contentPadding: EdgeInsets.symmetric(vertical: 8),
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  GestureDetector(
-                    onTap: _handleRefreshOnlineServer,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 18,
-                        vertical: 8,
-                      ),
-                      decoration: ComicTheme.panelDecoration(
-                        backgroundColor: ComicTheme.comicYellow,
-                        borderWidth: 2.5,
-                        shadowOffset: 3,
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(
-                            Icons.refresh,
-                            color: Colors.black,
-                            size: 18,
-                          ),
-                          const SizedBox(width: 6),
-                          Text(
-                            'REFRESCAR',
-                            style: ComicTheme.titleText(
-                              size: 14,
-                              color: Colors.black,
-                            ),
-                          ),
-                        ],
-                      ),
+                      size: 16,
+                      color: Colors.black,
                     ),
                   ),
                 ],
@@ -1476,9 +1413,9 @@ class _MultiplayerOverlayState extends State<MultiplayerOverlay> {
                       size: 14,
                     ),
                     const SizedBox(width: 4),
-                    Text(
-                      'SERVIDOR ONLINE ACTIVO (${net.onlineServerAddress})',
-                      style: const TextStyle(
+                    const Text(
+                      'SERVIDOR ONLINE ACTIVO',
+                      style: TextStyle(
                         color: Color(0xFF00E676),
                         fontSize: 10.5,
                         fontWeight: FontWeight.w900,
@@ -1910,68 +1847,8 @@ class _MultiplayerOverlayState extends State<MultiplayerOverlay> {
               );
             },
           ),
-
-          const Divider(color: Colors.white24, height: 14),
-
-          // Change Online Server IP:Port
-          Text(
-            'Dirección del Servidor Online (IP:Puerto):',
-            style: ComicTheme.bodyText(size: 11, color: Colors.white70),
-          ),
-          const SizedBox(height: 4),
-          Row(
-            children: [
-              Expanded(
-                child: Container(
-                  height: 32,
-                  padding: const EdgeInsets.symmetric(horizontal: 10),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: Colors.black, width: 2),
-                  ),
-                  child: TextField(
-                    controller: _onlineServerController,
-                    style: const TextStyle(
-                      color: Colors.black,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 11.5,
-                    ),
-                    decoration: const InputDecoration(
-                      hintText: '127.0.0.1:7779',
-                      border: InputBorder.none,
-                      isDense: true,
-                      contentPadding: EdgeInsets.symmetric(vertical: 7),
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              GestureDetector(
-                onTap: _handleRefreshOnlineServer,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 6,
-                  ),
-                  decoration: ComicTheme.panelDecoration(
-                    backgroundColor: const Color(0xFF00E676),
-                    borderWidth: 2,
-                    shadowOffset: 2,
-                  ),
-                  child: Text(
-                    'CAMBIAR IP',
-                    style: ComicTheme.titleText(
-                      size: 11.5,
-                      color: Colors.black,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
           if (_statusMessage != null) ...[
-            const SizedBox(height: 6),
+            const SizedBox(height: 8),
             Text(
               _statusMessage!,
               textAlign: TextAlign.center,

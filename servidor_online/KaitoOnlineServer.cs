@@ -1,12 +1,15 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Web.Script.Serialization;
 
@@ -320,6 +323,10 @@ namespace KaitoOnlineServer
         public const int VictoryCelebrationMs = 3200;
         public static string ServerName = "Servidor Oficial Kaito Online";
 
+        // Canal de autodescubrimiento global para vincular la app con esta PC sin abrir puertos
+        public const string GlobalDiscoveryUrl = "https://ntfy.sh/kaito_adventure_janosos_online_server_v1";
+        public static string PublicTunnelWsUrl = "";
+
         private static readonly object ServerLock = new object();
         private static readonly Dictionary<string, OnlineRoom> Rooms = new Dictionary<string, OnlineRoom>();
         private static readonly Dictionary<string, ClientConnection> Clients = new Dictionary<string, ClientConnection>();
@@ -327,11 +334,26 @@ namespace KaitoOnlineServer
         private static int _nextPlayerCounter = 1;
         private static int _nextConnCounter = 1;
         private static bool _running = true;
+        private static bool _cleanedUp = false;
         private static TcpListener _tcpListener;
         private static UdpClient _udpListener;
+        private static Process _tunnelProcess;
+        private static Timer _globalBeaconTimer;
+
+        private delegate bool ConsoleCtrlDelegate(int sig);
+        [DllImport("Kernel32")]
+        private static extern bool SetConsoleCtrlHandler(ConsoleCtrlDelegate handler, bool add);
+        private static ConsoleCtrlDelegate _consoleHandler;
 
         static void Main(string[] args)
         {
+            // Habilitar TLS 1.2 para comunicacion HTTPS segura en .NET Framework 4.x
+            try
+            {
+                ServicePointManager.SecurityProtocol = (SecurityProtocolType)3072 | SecurityProtocolType.Tls;
+            }
+            catch { }
+
             Console.OutputEncoding = Encoding.UTF8;
             Console.Title = "KAITO ADVENTURE: INK SHINOBI - SERVIDOR MULTIPLAYER ONLINE";
 
@@ -344,6 +366,10 @@ namespace KaitoOnlineServer
                 }
             }
 
+            _consoleHandler = new ConsoleCtrlDelegate(OnConsoleClose);
+            SetConsoleCtrlHandler(_consoleHandler, true);
+            AppDomain.CurrentDomain.ProcessExit += delegate(object s, EventArgs e) { ShutdownServer(); };
+
             PrintBanner();
 
             try
@@ -354,9 +380,9 @@ namespace KaitoOnlineServer
             catch (Exception ex)
             {
                 LogError("No se pudo iniciar el servidor en el puerto TCP " + TcpPort + ": " + ex.Message);
-                LogInfo("Verifica que no haya otra ventana del servidor abierta en el mismo puerto.");
+                LogInfo("Verifica que no haya otra ventana del servidor abierta.");
                 Console.WriteLine("\nPresiona cualquier tecla para salir...");
-                Console.ReadKey(true);
+                try { Console.ReadKey(true); } catch { }
                 return;
             }
 
@@ -366,8 +392,22 @@ namespace KaitoOnlineServer
             acceptThread.IsBackground = true;
             acceptThread.Start();
 
-            LogSuccess("Servidor Online ACTIVO y escuchando en el puerto TCP " + TcpPort + " y UDP " + UdpDiscoveryPort + ".");
-            LogInfo("Abre el juego Kaito Adventure -> Modo Multijugador Online -> Pulsa REFRESCAR.");
+            LogSuccess("Motor del Servidor iniciado en esta PC (127.0.0.1:" + TcpPort + ").");
+
+            // Iniciar tunel publico saliente (sin abrir puertos en el router ni instalar software)
+            Thread tunnelThread = new Thread(StartInternetTunnelLoop);
+            tunnelThread.IsBackground = true;
+            tunnelThread.Start();
+
+            // Publicar latido cada 25 segundos para que cualquier jugador encuentre esta PC automaticamente
+            _globalBeaconTimer = new Timer(delegate(object state)
+            {
+                if (_running && !string.IsNullOrEmpty(PublicTunnelWsUrl))
+                {
+                    PublishOnlineBeacon(true);
+                }
+            }, null, 25000, 25000);
+
             Console.WriteLine("--------------------------------------------------------------------------------");
             Console.WriteLine("Comandos en consola: [S] Ver Salas y Jugadores | [C] Limpiar | [Q] Apagar");
             Console.WriteLine("--------------------------------------------------------------------------------\n");
@@ -404,8 +444,180 @@ namespace KaitoOnlineServer
                 }
             }
 
-            try { _tcpListener.Stop(); } catch { }
+            ShutdownServer();
+        }
+
+        private static bool OnConsoleClose(int sig)
+        {
+            ShutdownServer();
+            return false;
+        }
+
+        private static void ShutdownServer()
+        {
+            if (_cleanedUp) return;
+            _cleanedUp = true;
+            _running = false;
+
+            try { if (_globalBeaconTimer != null) _globalBeaconTimer.Dispose(); } catch { }
+            StopTunnelProcess();
+            PublishOnlineBeacon(false);
+            try { if (_tcpListener != null) _tcpListener.Stop(); } catch { }
             try { if (_udpListener != null) _udpListener.Close(); } catch { }
+        }
+
+        private static void StopTunnelProcess()
+        {
+            try
+            {
+                if (_tunnelProcess != null && !_tunnelProcess.HasExited)
+                {
+                    _tunnelProcess.Kill();
+                    _tunnelProcess.Dispose();
+                }
+            }
+            catch { }
+            _tunnelProcess = null;
+        }
+
+        private static string ResolveWindowsSshPath()
+        {
+            string sys32Ssh = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), @"OpenSSH\ssh.exe");
+            if (File.Exists(sys32Ssh)) return sys32Ssh;
+
+            string winDirSsh = Path.Combine(Environment.GetEnvironmentVariable("WINDIR") ?? @"C:\Windows", @"System32\OpenSSH\ssh.exe");
+            if (File.Exists(winDirSsh)) return winDirSsh;
+
+            string sysNativeSsh = Path.Combine(Environment.GetEnvironmentVariable("WINDIR") ?? @"C:\Windows", @"Sysnative\OpenSSH\ssh.exe");
+            if (File.Exists(sysNativeSsh)) return sysNativeSsh;
+
+            return "ssh.exe";
+        }
+
+        private static void StartInternetTunnelLoop()
+        {
+            string sshExe = ResolveWindowsSshPath();
+            Regex urlRegex = new Regex(@"https://([a-zA-Z0-9\.-]+\.lhr\.life)", RegexOptions.IgnoreCase);
+
+            while (_running)
+            {
+                try
+                {
+                    LogInfo("Activando puente de Internet saliente (sin abrir puertos)...");
+
+                    ProcessStartInfo psi = new ProcessStartInfo();
+                    psi.FileName = sshExe;
+                    psi.Arguments = "-T -o StrictHostKeyChecking=no -o UserKnownHostsFile=NUL -o ServerAliveInterval=20 -o ExitOnForwardFailure=yes -R 80:127.0.0.1:" + TcpPort + " nokey@localhost.run";
+                    psi.UseShellExecute = false;
+                    psi.RedirectStandardOutput = true;
+                    psi.RedirectStandardError = true;
+                    psi.CreateNoWindow = true;
+
+                    _tunnelProcess = Process.Start(psi);
+                    if (_tunnelProcess == null)
+                    {
+                        LogError("No se pudo iniciar el puente OpenSSH integrado de Windows.");
+                        return;
+                    }
+
+                    // Hilo lector de stderr por si hay avisos
+                    Process currentProc = _tunnelProcess;
+                    Thread errThread = new Thread(delegate()
+                    {
+                        try
+                        {
+                            while (_running && currentProc != null && !currentProc.HasExited)
+                            {
+                                string errLine = currentProc.StandardError.ReadLine();
+                                if (errLine == null) break;
+                                Match m = urlRegex.Match(errLine);
+                                if (m.Success)
+                                {
+                                    UpdatePublicTunnelHost(m.Groups[1].Value);
+                                }
+                            }
+                        }
+                        catch { }
+                    });
+                    errThread.IsBackground = true;
+                    errThread.Start();
+
+                    while (_running && currentProc != null && !currentProc.HasExited)
+                    {
+                        string line = currentProc.StandardOutput.ReadLine();
+                        if (line == null) break;
+                        Match m = urlRegex.Match(line);
+                        if (m.Success)
+                        {
+                            UpdatePublicTunnelHost(m.Groups[1].Value);
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    if (_running)
+                    {
+                        LogError("Aviso en puente de Internet: " + ex.Message);
+                    }
+                }
+                finally
+                {
+                    StopTunnelProcess();
+                }
+
+                if (_running)
+                {
+                    LogInfo("Reconectando puente de Internet en 3 segundos...");
+                    Thread.Sleep(3000);
+                }
+            }
+        }
+
+        private static void UpdatePublicTunnelHost(string hostDomain)
+        {
+            if (string.IsNullOrEmpty(hostDomain)) return;
+            string nextWsUrl = "wss://" + hostDomain.Trim();
+            if (PublicTunnelWsUrl == nextWsUrl) return;
+
+            PublicTunnelWsUrl = nextWsUrl;
+            LogSuccess("¡Servidor Online Global ACTIVO usando tu PC e Internet!");
+            LogSuccess("Enlace directo (sin abrir puertos): " + PublicTunnelWsUrl);
+            PublishOnlineBeacon(true);
+        }
+
+        private static void PublishOnlineBeacon(bool isActive)
+        {
+            try
+            {
+                JavaScriptSerializer serializer = new JavaScriptSerializer();
+                Dictionary<string, object> payload = new Dictionary<string, object>();
+                payload["type"] = "kaito_online_beacon";
+                payload["active"] = isActive && !string.IsNullOrEmpty(PublicTunnelWsUrl);
+                payload["wsUrl"] = isActive ? PublicTunnelWsUrl : "";
+                payload["serverName"] = ServerName;
+                payload["ts"] = (long)(DateTime.UtcNow - new DateTime(1970, 1, 1)).TotalSeconds;
+
+                byte[] bodyBytes = Encoding.UTF8.GetBytes(serializer.Serialize(payload));
+                HttpWebRequest req = (HttpWebRequest)WebRequest.Create(GlobalDiscoveryUrl);
+                req.Method = "POST";
+                req.ContentType = "application/json; charset=utf-8";
+                req.Timeout = 4000;
+                req.ReadWriteTimeout = 4000;
+                req.ContentLength = bodyBytes.Length;
+
+                using (Stream reqStream = req.GetRequestStream())
+                {
+                    reqStream.Write(bodyBytes, 0, bodyBytes.Length);
+                }
+                using (WebResponse resp = req.GetResponse())
+                {
+                    // Publicado con exito
+                }
+            }
+            catch
+            {
+                // Ignorar si no hay internet externo momentaneamente
+            }
         }
 
         private static void PrintBanner()
@@ -418,22 +630,10 @@ namespace KaitoOnlineServer
             Console.WriteLine("================================================================================");
             Console.ResetColor();
 
-            List<string> ips = GetLocalIPv4Addresses();
-            string primaryIp = ips.Count > 0 ? ips[0] : "127.0.0.1";
-
-            Console.WriteLine("  Estado del Servidor : ACTIVO (ONLINE)");
-            Console.WriteLine("  Puerto TCP / WS     : " + TcpPort);
-            Console.WriteLine("  Puerto UDP Radar    : " + UdpDiscoveryPort);
-            Console.WriteLine("  Capacidad por Sala  : 2 a 5 Jugadores (Salas Multiples Simultaneas)");
-            Console.WriteLine("--------------------------------------------------------------------------------");
-            Console.ForegroundColor = ConsoleColor.Cyan;
-            Console.WriteLine("  DIRECCIONES IP PARA CONECTARSE DESDE EL JUEGO:");
-            Console.ResetColor();
-            Console.WriteLine("  - En esta misma PC          : 127.0.0.1:" + TcpPort + " (Deteccion automatica)");
-            foreach (string ip in ips)
-            {
-                Console.WriteLine("  - Red Local / VPN Detectada : " + ip + ":" + TcpPort);
-            }
+            Console.WriteLine("  Modo de Operacion   : Usa tu PC, tu Internet y tus recursos como Servidor");
+            Console.WriteLine("  Requisitos Extra    : NINGUNO (Sin abrir puertos / Sin programas adicionales)");
+            Console.WriteLine("  Puerto Local Motor  : " + TcpPort);
+            Console.WriteLine("  Capacidad por Sala  : 2 a 5 Jugadores (Multiples Salas Online Simultaneas)");
             Console.WriteLine("================================================================================\n");
         }
 
@@ -444,6 +644,7 @@ namespace KaitoOnlineServer
                 Console.ForegroundColor = ConsoleColor.Yellow;
                 Console.WriteLine("\n--- ESTADO ACTUAL DEL SERVIDOR ONLINE ---");
                 Console.ResetColor();
+                Console.WriteLine("  Enlace Global      : " + (string.IsNullOrEmpty(PublicTunnelWsUrl) ? "Conectando..." : PublicTunnelWsUrl));
                 Console.WriteLine("  Conexiones activas : " + Clients.Count);
                 Console.WriteLine("  Salas Online       : " + Rooms.Count);
                 foreach (OnlineRoom r in Rooms.Values)
@@ -497,7 +698,6 @@ namespace KaitoOnlineServer
                 _udpListener = new UdpClient(UdpDiscoveryPort);
                 _udpListener.EnableBroadcast = true;
 
-                // Thread 1: Listen for discovery requests from Kaito Adventure clients
                 Thread udpListenThread = new Thread(delegate()
                 {
                     IPEndPoint remoteEp = new IPEndPoint(IPAddress.Any, 0);
@@ -523,7 +723,6 @@ namespace KaitoOnlineServer
                 udpListenThread.IsBackground = true;
                 udpListenThread.Start();
 
-                // Thread 2: Periodic UDP broadcast every 1.5s so clients on the network discover the online server automatically
                 Thread udpBeaconThread = new Thread(delegate()
                 {
                     IPEndPoint broadcastEp = new IPEndPoint(IPAddress.Broadcast, UdpDiscoveryPort);
@@ -541,10 +740,7 @@ namespace KaitoOnlineServer
                 udpBeaconThread.IsBackground = true;
                 udpBeaconThread.Start();
             }
-            catch (Exception ex)
-            {
-                LogInfo("Aviso UDP Radar (" + UdpDiscoveryPort + "): " + ex.Message);
-            }
+            catch { }
         }
 
         private static byte[] BuildUdpBeaconBytes()
@@ -563,6 +759,7 @@ namespace KaitoOnlineServer
             payload["serverName"] = ServerName;
             payload["ip"] = primaryIp;
             payload["port"] = TcpPort;
+            payload["wsUrl"] = PublicTunnelWsUrl;
             payload["roomCount"] = roomCount;
             payload["playerCount"] = clientCount;
             JavaScriptSerializer serializer = new JavaScriptSerializer();
@@ -594,7 +791,6 @@ namespace KaitoOnlineServer
         {
             try
             {
-                // Read initial HTTP request headers
                 string headerText = ReadHttpHeaders(conn.stream);
                 if (string.IsNullOrEmpty(headerText))
                 {
@@ -606,7 +802,6 @@ namespace KaitoOnlineServer
                 string requestLine = lines.Length > 0 ? lines[0] : "";
                 string[] reqParts = requestLine.Split(' ');
                 string method = reqParts.Length > 0 ? reqParts[0].ToUpperInvariant() : "GET";
-                string path = reqParts.Length > 1 ? reqParts[1] : "/";
 
                 Dictionary<string, string> headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
                 for (int i = 1; i < lines.Length; i++)
@@ -620,7 +815,6 @@ namespace KaitoOnlineServer
                     }
                 }
 
-                // Handle CORS preflight OPTIONS
                 if (method == "OPTIONS")
                 {
                     WriteHttpResponse(conn.stream, "200 OK", "text/plain", "");
@@ -628,7 +822,6 @@ namespace KaitoOnlineServer
                     return;
                 }
 
-                // Check if this is a WebSocket Upgrade request
                 string wsKey = headers.ContainsKey("Sec-WebSocket-Key") ? headers["Sec-WebSocket-Key"] : null;
                 if (!string.IsNullOrEmpty(wsKey))
                 {
@@ -649,15 +842,11 @@ namespace KaitoOnlineServer
                         Clients[conn.connectionId] = conn;
                     }
 
-                    // Send initial rooms list upon WebSocket connect
                     SendRoomsListToClient(conn);
-
-                    // Enter WebSocket Frame loop
                     WebSocketReceiveLoop(conn);
                 }
                 else
                 {
-                    // Standard HTTP Status / Rooms Check (GET /status, /rooms, /info, /)
                     string statusJson = BuildStatusJson();
                     WriteHttpResponse(conn.stream, "200 OK", "application/json; charset=utf-8", statusJson);
                     conn.Close();
@@ -665,7 +854,6 @@ namespace KaitoOnlineServer
             }
             catch
             {
-                // Ignore disconnect errors
             }
             finally
             {
@@ -779,15 +967,15 @@ namespace KaitoOnlineServer
                     }
                 }
 
-                if (opcode == 0x08) // Close frame
+                if (opcode == 0x08)
                 {
                     break;
                 }
-                else if (opcode == 0x09) // Ping frame
+                else if (opcode == 0x09)
                 {
                     conn.SendPong(payload);
                 }
-                else if (opcode == 0x01 || opcode == 0x02) // Text or Binary JSON packet
+                else if (opcode == 0x01 || opcode == 0x02)
                 {
                     string jsonText = Encoding.UTF8.GetString(payload);
                     ProcessIncomingPacket(conn, jsonText);
@@ -849,7 +1037,6 @@ namespace KaitoOnlineServer
                 return;
             }
 
-            // Packets inside an active room
             OnlineRoom room = conn.currentRoom;
             OnlinePlayer sender = conn.currentPlayer;
             if (room == null || sender == null) return;
@@ -893,7 +1080,6 @@ namespace KaitoOnlineServer
                 return;
             }
 
-            // Check sessionId for in-match packets
             if (map.ContainsKey("sessionId") && type != "rematch_vote")
             {
                 int packetSession = ToInt(map["sessionId"], room.sessionId);
@@ -1068,7 +1254,6 @@ namespace KaitoOnlineServer
                 }
                 else
                 {
-                    // Quick join or direct connect: pick first available waiting room, or create one if none exist
                     foreach (OnlineRoom r in Rooms.Values)
                     {
                         if (!r.inMatch && r.players.Count < MaxPlayersPerRoom)
@@ -1116,7 +1301,6 @@ namespace KaitoOnlineServer
                 if (string.IsNullOrEmpty(playerName)) playerName = "Shinobi";
                 int colorIdx = map.ContainsKey("color") ? ToInt(map["color"], 1) : 1;
 
-                // Find lowest available slot 0..4
                 HashSet<int> usedSlots = new HashSet<int>();
                 foreach (OnlinePlayer existing in targetRoom.players.Values)
                 {
@@ -1427,7 +1611,6 @@ namespace KaitoOnlineServer
                     return;
                 }
 
-                // If host left, promote lowest slot remaining player to Host
                 bool hasHost = false;
                 foreach (OnlinePlayer p in room.players.Values)
                 {
@@ -1511,6 +1694,7 @@ namespace KaitoOnlineServer
                 status["serverName"] = ServerName;
                 status["ip"] = primaryIp;
                 status["port"] = TcpPort;
+                status["wsUrl"] = PublicTunnelWsUrl;
                 status["connectedClients"] = Clients.Count;
                 status["roomCount"] = Rooms.Count;
                 status["rooms"] = roomSummaries;
@@ -1533,6 +1717,7 @@ namespace KaitoOnlineServer
                 pkt["type"] = "online_rooms_list";
                 pkt["serverName"] = ServerName;
                 pkt["port"] = TcpPort;
+                pkt["wsUrl"] = PublicTunnelWsUrl;
                 pkt["connectedClients"] = Clients.Count;
                 pkt["roomCount"] = Rooms.Count;
                 pkt["rooms"] = roomSummaries;

@@ -1,53 +1,32 @@
-# 🌐 Kaito Adventure: Ink Shinobi — Servidor Dedicado Multiplayer Online
+# 🌐 Kaito Adventure: Ink Shinobi — Servidor Dedicado Multiplayer Online (Portable)
 
-Esta carpeta (`servidor_online`) contiene el **Servidor Dedicado Portable** para habilitar el modo **Multijugador Online** en **Kaito Adventure: Ink Shinobi**.
+Esta carpeta (`servidor_online`) convierte tu PC en el **Servidor Dedicado del Multijugador Online** de **Kaito Adventure: Ink Shinobi**, utilizando los recursos de tu PC y tu conexión a Internet.
 
-Puedes copiar esta carpeta completa a **cualquier PC con Windows** y ejecutarla directamente mediante **`INICIAR_SERVIDOR_ONLINE.bat`** sin necesidad de instalar motores ni programas adicionales.
+- **Sin abrir puertos en el router ni configurar firewall.**
+- **Sin instalar programas externos ni VPNs** (usa únicamente componentes nativos incluidos de fábrica en Windows 10 y Windows 11).
+- **Conexión 100% automática con el juego**: Al encender `INICIAR_SERVIDOR_ONLINE.bat`, el servidor establece un puente saliente seguro (`WSS`) y vincula automáticamente tu PC con la app. Cuando está apagado, el juego muestra **"NO HAY SERVIDOR ONLINE ACTIVADO"** y el botón **`REFRESCAR`**.
 
 ---
 
-## 📋 Requisitos Necesarios para Ejecutar el Servidor
+## 📋 Requisitos Necesarios para Ejecutarlo
 
-| Componente | Requisito Mínimo | Notas |
+| Componente | Requisito | Notas |
 | :--- | :--- | :--- |
-| **Sistema Operativo** | Windows 10 o Windows 11 (64-bit / 32-bit) | También compatible con Windows Server |
-| **Dependencias / Runtime** | **Ninguna instalación externa** | Utiliza `.NET Framework 4.x`, preinstalado de fábrica en Windows 10/11 |
-| **Memoria RAM** | 50 MB libres | Consume ~15–25 MB durante las partidas |
-| **Procesador (CPU)** | Dual-Core 1.5 GHz o superior | Muy ligero, soporta múltiples salas a 60 Hz |
-| **Puertos de Red** | **TCP `7779`** y **UDP `7780`** | TCP `7779` para salas/combate WebSocket; UDP `7780` para autodescubrimiento |
+| **Sistema Operativo** | Windows 10 o Windows 11 (64-bit / 32-bit) | 100% portable en cualquier PC |
+| **Internet** | Conexión a Internet activa | Necesaria para enlazar automáticamente a los jugadores con tu PC |
+| **Componentes Nativos** | `.NET Framework 4.x` y `Windows OpenSSH` | **Preinstalados de fábrica en Windows 10/11** (`C:\Windows\System32\OpenSSH\ssh.exe`) |
+| **Memoria RAM** | 50 MB libres | Consume ~20 MB durante las partidas |
+| **Procesador (CPU)** | Dual-Core 1.5 GHz o superior | Soporta múltiples salas simultáneas de 2 a 5 jugadores a 60 Hz |
 
 ---
 
-## 🚀 Cómo Ejecutar el Servidor (Portable)
+## 🚀 Cómo Ejecutar el Servidor
 
-1. Copia la carpeta `servidor_online` en cualquier ubicación de tu PC.
-2. *(Opcional, recomendado la primera vez en una PC nueva)* Ejecuta **`ABRIR_PUERTOS_FIREWALL_ADMIN.bat`** para autorizar los puertos `7779` (TCP) y `7780` (UDP) en el Firewall de Windows.
-3. Haz doble clic en **`INICIAR_SERVIDOR_ONLINE.bat`**.
-4. La consola mostrará:
-   - `Estado del Servidor : ACTIVO (ONLINE)`
-   - Todas las direcciones IP detectadas en la PC (`127.0.0.1:7779`, IP de red local `192.168.x.x:7779`, e IPs de VPN como Radmin/Tailscale/ZeroTier/Hamachi).
-5. Abre **Kaito Adventure**, entra en **Multijugador Online** y pulsa **`REFRESCAR`**.
-   - Si el servidor está encendido, el juego se conectará y permitirá **Crear Salas Online**, **Unirse a Salas Activas** o jugar en **Partida Rápida Online** (de 2 a 5 jugadores por sala).
-   - Si el servidor está apagado, el juego indicará **"NO HAY SERVIDOR ONLINE ACTIVADO"** con la opción de **`REFRESCAR`**.
-
----
-
-## 🌍 Cómo Conectar Jugadores Remotos por Internet
-
-1. **Con VPN Virtual (Radmin VPN / Tailscale / ZeroTier / Hamachi)** *(Sin abrir puertos en el router)*:
-   - Conecta las PCs o móviles a la misma red virtual.
-   - Ejecuta `INICIAR_SERVIDOR_ONLINE.bat` en la PC que hará de servidor.
-   - Copia la IP virtual que aparece en la consola del servidor (ej. `26.x.x.x:7779`), pégala en el campo **Servidor Online** dentro del juego y pulsa **`REFRESCAR`**.
-2. **Con Apertura de Puertos (Port Forwarding)**:
-   - Redirige el puerto **TCP `7779`** en tu router hacia la IP local de la PC donde corre `INICIAR_SERVIDOR_ONLINE.bat`.
-   - Los jugadores ingresan `TuIpPublica:7779` en el juego y pulsan **`REFRESCAR`**.
-3. **En la Misma PC o Red Local**:
-   - El juego detecta automáticamente el servidor en `127.0.0.1:7779` o por radar UDP (`7780`) sin necesidad de escribir ninguna IP.
-
----
-
-## ⌨️ Comandos de la Consola del Servidor
-
-- **`[S]`**: Mostrar resumen en vivo de salas online creadas y jugadores conectados.
-- **`[C]`**: Limpiar la pantalla de la consola.
-- **`[Q]`**: Apagar el servidor de forma segura.
+1. Copia la carpeta `servidor_online` en cualquier PC con Windows.
+2. Haz doble clic en **`INICIAR_SERVIDOR_ONLINE.bat`**.
+3. En 3–5 segundos la consola mostrará:
+   - `[OK] Motor del Servidor iniciado en esta PC (127.0.0.1:7779).`
+   - `[OK] ¡Servidor Online Global ACTIVO usando tu PC e Internet!`
+4. Abre **Kaito Adventure** (en Windows, Android o Web), entra a **Multijugador Online** y pulsa **`REFRESCAR`**.
+   - El juego se conectará automáticamente a tu PC sin pedir direcciones IP ni puertos.
+   - Para apagar el servidor, presiona **`[Q]`** en la consola o cierra la ventana.

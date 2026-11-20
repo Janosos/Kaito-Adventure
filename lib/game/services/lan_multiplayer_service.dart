@@ -361,6 +361,8 @@ class LanMultiplayerService {
   static const int kDiscoveryPort = 7778;
   static const int kOnlineServerPort = 7779;
   static const int kOnlineDiscoveryPort = 7780;
+  static const String kGlobalDiscoveryWsUrl =
+      'wss://ntfy.sh/kaito_adventure_janosos_online_server_v1/ws?since=90s';
   static const int maxPlayers = 5;
   static const double kPvpMaxHp = 300.0;
   static const int kPvpMaxHpInt = 300;
@@ -376,6 +378,7 @@ class LanMultiplayerService {
 
   // Dedicated Online Server State
   String onlineServerAddress = '127.0.0.1:7779';
+  String activeOnlineServerWsUri = 'ws://127.0.0.1:7779';
   String activeOnlineServerHost = '127.0.0.1';
   int activeOnlineServerPort = kOnlineServerPort;
   String onlineServerName = 'Servidor Oficial Kaito Online';
@@ -1281,56 +1284,146 @@ class LanMultiplayerService {
     }
   }
 
-  /// Checks if the portable PC Online Server (`INICIAR_SERVIDOR_ONLINE.bat`) is active,
-  /// and subscribes to live room list updates when found.
-  Future<bool> refreshOnlineServer({String? customAddress}) async {
-    if (customAddress != null && customAddress.trim().isNotEmpty) {
-      final parsed = _parseAddress(customAddress);
-      onlineServerAddress = '${parsed.$1}:${parsed.$2}';
+  /// Queries the global rendezvous discovery stream (`ntfy.sh`) over WebSocket
+  /// to automatically find the active public WSS tunnel of the PC running `INICIAR_SERVIDOR_ONLINE.bat`.
+  Future<String?> _discoverGlobalOnlineServerWsUrl() async {
+    WebSocketChannel? channel;
+    StreamSubscription? sub;
+    final completer = Completer<String?>();
+    String? latestWsUrl;
+    bool latestActive = false;
+    int latestTime = -1;
+    Timer? settleTimer;
+
+    void finish() {
+      settleTimer?.cancel();
+      if (!completer.isCompleted) {
+        completer.complete(
+          (latestActive && latestWsUrl != null && latestWsUrl!.isNotEmpty)
+              ? latestWsUrl
+              : null,
+        );
+      }
     }
 
+    try {
+      channel = WebSocketChannel.connect(Uri.parse(kGlobalDiscoveryWsUrl));
+      await channel.ready.timeout(const Duration(milliseconds: 1800));
+
+      // Wait briefly after opening so all cached messages from the last 90s arrive
+      settleTimer = Timer(const Duration(milliseconds: 750), finish);
+
+      sub = channel.stream.listen(
+        (data) {
+          try {
+            final text = data is String ? data : utf8.decode(data as List<int>);
+            final outer = jsonDecode(text) as Map<String, dynamic>;
+            final event = outer['event'] as String?;
+            if (event == 'message') {
+              final msgTime = (outer['time'] as num?)?.toInt() ?? 0;
+              final rawMessage = outer['message'] as String?;
+              if (rawMessage != null && rawMessage.isNotEmpty) {
+                final inner = jsonDecode(rawMessage) as Map<String, dynamic>;
+                if (inner['type'] == 'kaito_online_beacon' &&
+                    msgTime >= latestTime) {
+                  latestTime = msgTime;
+                  latestActive = inner['active'] as bool? ?? false;
+                  latestWsUrl = inner['wsUrl'] as String?;
+                  // Reset settle timer slightly to catch any newer message in the burst
+                  settleTimer?.cancel();
+                  settleTimer =
+                      Timer(const Duration(milliseconds: 220), finish);
+                }
+              }
+            }
+          } catch (_) {}
+        },
+        onDone: finish,
+        onError: (_) => finish(),
+      );
+
+      return await completer.future.timeout(
+        const Duration(milliseconds: 1800),
+        onTimeout: () =>
+            (latestActive && latestWsUrl != null && latestWsUrl!.isNotEmpty)
+                ? latestWsUrl
+                : null,
+      );
+    } catch (_) {
+      return null;
+    } finally {
+      settleTimer?.cancel();
+      try {
+        await sub?.cancel();
+      } catch (_) {}
+      try {
+        await channel?.sink.close();
+      } catch (_) {}
+    }
+  }
+
+  /// Checks if the portable PC Online Server (`INICIAR_SERVIDOR_ONLINE.bat`) is active
+  /// (either locally on the same PC/LAN or globally across the Internet via its automatic tunnel),
+  /// and subscribes to live room list updates when found.
+  Future<bool> refreshOnlineServer({String? customAddress}) async {
     await _closeOnlineLobbySocket();
     isCheckingOnlineServer.value = true;
     onlineErrorNotifier.value = null;
 
-    final candidates = <(String, int)>[];
-    void addCandidate(String host, int port) {
-      if (host.isEmpty) return;
-      final exists = candidates.any((c) => c.$1 == host && c.$2 == port);
-      if (!exists) {
-        candidates.add((host, port));
+    final candidateWsUris = <String>[];
+    void addWsCandidate(String uriStr) {
+      final clean = uriStr.trim();
+      if (clean.isEmpty) return;
+      if (!candidateWsUris.contains(clean)) {
+        candidateWsUris.add(clean);
       }
     }
 
-    // 1. User's configured / typed server address first
-    final configured = _parseAddress(onlineServerAddress);
-    addCandidate(configured.$1, configured.$2);
-
-    // 2. Localhost (same PC running INICIAR_SERVIDOR_ONLINE.bat)
-    addCandidate('127.0.0.1', kOnlineServerPort);
-
-    // 3. Quick UDP radar probe on port 7780 for portable servers on the network
-    final udpDiscovered = await _discoverOnlineServerViaUdp();
-    if (udpDiscovered != null) {
-      addCandidate(udpDiscovered.$1, udpDiscovered.$2);
+    // 1. If a custom address was explicitly provided
+    if (customAddress != null && customAddress.trim().isNotEmpty) {
+      final raw = customAddress.trim();
+      if (raw.startsWith('ws://') || raw.startsWith('wss://')) {
+        addWsCandidate(raw);
+      } else {
+        final parsed = _parseAddress(raw);
+        addWsCandidate('ws://${parsed.$1}:${parsed.$2}');
+      }
     }
 
-    // 4. Local IPv4 interface address
-    if (!kIsWeb &&
-        localIpAddress != null &&
-        localIpAddress!.isNotEmpty &&
-        localIpAddress != '127.0.0.1') {
-      addCandidate(localIpAddress!, kOnlineServerPort);
+    // 2. Same-PC & Local LAN fast check (when running INICIAR_SERVIDOR_ONLINE.bat on the same PC)
+    if (!kIsWeb) {
+      addWsCandidate('ws://127.0.0.1:$kOnlineServerPort');
+      final udpDiscovered = await _discoverOnlineServerViaUdp();
+      if (udpDiscovered != null) {
+        addWsCandidate('ws://${udpDiscovered.$1}:${udpDiscovered.$2}');
+      }
     }
 
-    for (final candidate in candidates) {
-      final host = candidate.$1;
-      final port = candidate.$2;
-      final ok = await _tryConnectOnlineLobbySocket(host, port);
+    // 3. Global automatic discovery via the PC Server's outbound WSS tunnel (works anywhere without opening ports!)
+    final globalTunnelWsUrl = await _discoverGlobalOnlineServerWsUrl();
+    if (globalTunnelWsUrl != null && globalTunnelWsUrl.isNotEmpty) {
+      // On Web (HTTPS), put the WSS tunnel first; on Native, check right after localhost
+      if (kIsWeb) {
+        candidateWsUris.insert(0, globalTunnelWsUrl);
+      } else {
+        addWsCandidate(globalTunnelWsUrl);
+      }
+    }
+
+    // 4. Fallback localhost check for local Web debugging
+    if (kIsWeb) {
+      addWsCandidate('ws://127.0.0.1:$kOnlineServerPort');
+    }
+
+    for (final wsUriStr in candidateWsUris) {
+      final ok = await _tryConnectOnlineLobbySocketUri(wsUriStr);
       if (ok) {
-        activeOnlineServerHost = host;
-        activeOnlineServerPort = port;
-        onlineServerAddress = '$host:$port';
+        activeOnlineServerWsUri = wsUriStr;
+        final uri = Uri.tryParse(wsUriStr);
+        activeOnlineServerHost = uri?.host ?? '127.0.0.1';
+        activeOnlineServerPort =
+            (uri != null && uri.hasPort) ? uri.port : kOnlineServerPort;
+        onlineServerAddress = activeOnlineServerHost;
         isOnlineServerActive.value = true;
         isCheckingOnlineServer.value = false;
         return true;
@@ -1343,13 +1436,13 @@ class LanMultiplayerService {
     return false;
   }
 
-  Future<bool> _tryConnectOnlineLobbySocket(String host, int port) async {
+  Future<bool> _tryConnectOnlineLobbySocketUri(String wsUriStr) async {
     LanSocket? socket;
     final firstPacketCompleter = Completer<bool>();
     try {
-      final wsUri = Uri.parse('ws://$host:$port');
+      final wsUri = Uri.parse(wsUriStr);
       final channel = WebSocketChannel.connect(wsUri);
-      await channel.ready.timeout(const Duration(milliseconds: 1800));
+      await channel.ready.timeout(const Duration(milliseconds: 2800));
       socket = ChannelWebSocket(channel);
 
       socket.stream.listen(
@@ -1395,7 +1488,7 @@ class LanMultiplayerService {
       socket.send(jsonEncode({'type': 'online_get_rooms'}));
 
       final confirmed = await firstPacketCompleter.future.timeout(
-        const Duration(milliseconds: 1500),
+        const Duration(milliseconds: 2200),
         onTimeout: () => false,
       );
 
@@ -1455,6 +1548,7 @@ class LanMultiplayerService {
   Future<bool> _connectToOnlineServerForRoom(
       Map<String, dynamic> handshakePayload) async {
     final savedConfig = matchConfigNotifier.value;
+    final savedWsUri = activeOnlineServerWsUri;
     final savedHost = activeOnlineServerHost;
     final savedPort = activeOnlineServerPort;
     final savedAddress = onlineServerAddress;
@@ -1464,6 +1558,7 @@ class LanMultiplayerService {
 
     modeNotifier.value = MultiplayerMode.online;
     matchConfigNotifier.value = savedConfig;
+    activeOnlineServerWsUri = savedWsUri;
     activeOnlineServerHost = savedHost;
     activeOnlineServerPort = savedPort;
     onlineServerAddress = savedAddress;
@@ -1472,7 +1567,7 @@ class LanMultiplayerService {
     final welcomeCompleter = Completer<bool>();
 
     try {
-      final wsUri = Uri.parse('ws://$activeOnlineServerHost:$activeOnlineServerPort');
+      final wsUri = Uri.parse(activeOnlineServerWsUri);
       final channel = WebSocketChannel.connect(wsUri);
       await channel.ready.timeout(const Duration(seconds: 4));
 
