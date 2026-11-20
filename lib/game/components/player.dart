@@ -421,16 +421,6 @@ class MangaPlayer extends PositionComponent
         y: position.y,
         facing: facingDirection,
       );
-      LanMultiplayerService.instance.sendPlayerState(
-        x: position.x,
-        y: position.y,
-        vx: velocity.x,
-        vy: velocity.y,
-        facing: facingDirection,
-        action: PlayerAction.ougi.name,
-        hp: hp.toDouble(),
-        ougi: 0.0,
-      );
     }
 
     // In-game dynamic Ougi sequence: Full-stage Celestial Blade Flurry dome & 8-frame Ougi animation!

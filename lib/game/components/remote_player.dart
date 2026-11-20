@@ -33,6 +33,7 @@ class RemotePlayer extends PositionComponent
   bool isDying = false;
   bool isCelebrating = false;
   double hitFlashTimer = 0.0;
+  double _timeSinceLastState = 0.0;
   double _celebrationTime = 0.0;
   double _attackAnimLockTimer = 0.0;
   double _lastSlashFxCooldown = 0.0;
@@ -177,6 +178,7 @@ class RemotePlayer extends PositionComponent
 
     targetPosition.setValues(x, y);
     networkVelocity.setValues(vx, vy);
+    _timeSinceLastState = 0.0;
     facingDirection = facing < 0 ? -1 : 1;
 
     // Never allow health regeneration or stale higher HP packets in PvP
@@ -331,6 +333,7 @@ class RemotePlayer extends PositionComponent
     if (isDying || isCelebrating) return;
     if (x != null && y != null && x.isFinite && y.isFinite) {
       targetPosition.setValues(x, y);
+      _timeSinceLastState = 0.0;
       if (actionType == 'ougi' || position.distanceTo(targetPosition) < 140) {
         position.setValues(x, y);
       }
@@ -381,6 +384,7 @@ class RemotePlayer extends PositionComponent
         direction: Vector2(facingDirection.toDouble(), 0),
       ));
     } else if (actionType == 'ougi') {
+      ougi = 0.0;
       action = PlayerAction.ougi;
       _tickers?[action]?.reset();
       _attackAnimLockTimer = 0.68;
@@ -493,9 +497,20 @@ class RemotePlayer extends PositionComponent
       _celebrationTime += dt;
     }
 
-    // Smooth position interpolation
-    if (position.distanceTo(targetPosition) > 1.0) {
-      position.lerp(targetPosition, (dt * 24.0).clamp(0.0, 1.0));
+    // Short-horizon dead-reckoning prediction + frame-rate-independent smoothing
+    _timeSinceLastState += dt;
+    if (!isDying && !isCelebrating && _timeSinceLastState < 0.09) {
+      targetPosition.x = (targetPosition.x + networkVelocity.x * dt)
+          .clamp(game.minPlayerX, game.maxPlayerX);
+      targetPosition.y += networkVelocity.y * dt;
+    }
+
+    final dist = position.distanceTo(targetPosition);
+    if (dist > 240.0) {
+      position.setFrom(targetPosition);
+    } else if (dist > 0.5) {
+      final smooth = 1.0 - math.exp(-22.0 * dt);
+      position.lerp(targetPosition, smooth);
     }
 
     final ticker = _tickers?[action] ?? _tickers?[PlayerAction.idle];

@@ -180,6 +180,13 @@ class MangaGame extends FlameGame
     } else if (component is MangaDustEffect) {
       final activeDust = world.children.whereType<MangaDustEffect>().length;
       if (activeDust >= 5) return null;
+    } else if (component is SlashArcEffect) {
+      final activeSlashes = world.children.whereType<SlashArcEffect>().length;
+      if (activeSlashes >= 10) return null;
+    } else if (component is SpeedLineStreakComponent) {
+      final activeStreaks =
+          world.children.whereType<SpeedLineStreakComponent>().length;
+      if (activeStreaks >= 4) return null;
     }
     return world.add(component);
   }
@@ -1008,9 +1015,19 @@ class MangaGame extends FlameGame
               (player.position.y - _lastSentY).abs() > 0.5;
           final localDead = player.isDying || player.hp <= 0;
           final reportedHp = localDead ? 0 : player.hp;
-          final urgentChange = currentAction != _lastSentAction ||
-              player.facingDirection != _lastSentFacing ||
-              reportedHp != _lastSentHp;
+          final hpChanged = reportedHp != _lastSentHp;
+          // Attack/dash/ougi transitions already fire an immediate `player_action` packet
+          // in MangaPlayer, so avoid duplicating a `state` packet on the exact same frame.
+          final isActionAlreadySentByEvent = player.action == PlayerAction.attack1 ||
+              player.action == PlayerAction.attack2 ||
+              player.action == PlayerAction.attack3 ||
+              player.action == PlayerAction.dashing ||
+              player.action == PlayerAction.ougi;
+          final urgentChange = hpChanged ||
+              (((!isActionAlreadySentByEvent &&
+                          currentAction != _lastSentAction) ||
+                      player.facingDirection != _lastSentFacing) &&
+                  _stateSyncAccumulator >= 0.025);
           final syncInterval = movedSignificantly ? 0.033 : 0.20;
           if (urgentChange || _stateSyncAccumulator >= syncInterval) {
             _stateSyncAccumulator = 0.0;

@@ -1847,6 +1847,9 @@ class LanMultiplayerService {
     }
   }
 
+  static double _round1(double v) =>
+      v.isFinite ? (v * 10.0).roundToDouble() / 10.0 : 0.0;
+
   void sendPlayerState({
     required double x,
     required double y,
@@ -1872,14 +1875,14 @@ class LanMultiplayerService {
       'type': 'state',
       'sessionId': matchSessionIdNotifier.value,
       'id': myPlayerId,
-      'x': x,
-      'y': y,
-      'vx': vx,
-      'vy': vy,
+      'x': _round1(x),
+      'y': _round1(y),
+      'vx': _round1(vx),
+      'vy': _round1(vy),
       'f': facing,
       'act': action,
-      'hp': hp,
-      'ougi': ougi,
+      'hp': _round1(hp),
+      'ougi': _round1(ougi),
     });
   }
 
@@ -1896,8 +1899,8 @@ class LanMultiplayerService {
       'id': myPlayerId,
       'actType': actionType,
       'combo': comboIndex,
-      'x': x,
-      'y': y,
+      'x': _round1(x),
+      'y': _round1(y),
       'f': facing,
     });
   }
@@ -1912,10 +1915,10 @@ class LanMultiplayerService {
       'type': 'spawn_kunai',
       'sessionId': matchSessionIdNotifier.value,
       'throwerId': myPlayerId,
-      'x': x,
-      'y': y,
-      'vx': vx,
-      'vy': vy,
+      'x': _round1(x),
+      'y': _round1(y),
+      'vx': _round1(vx),
+      'vy': _round1(vy),
     });
   }
 
@@ -1931,10 +1934,10 @@ class LanMultiplayerService {
       'sessionId': matchSessionIdNotifier.value,
       'targetId': targetId,
       'attackerId': myPlayerId,
-      'dmg': damage,
-      'kbX': knockbackX,
-      'kbY': knockbackY,
-      'hp': targetRemainingHp,
+      'dmg': _round1(damage),
+      'kbX': _round1(knockbackX),
+      'kbY': _round1(knockbackY),
+      'hp': _round1(targetRemainingHp),
     });
   }
 
@@ -1946,7 +1949,7 @@ class LanMultiplayerService {
       'type': 'ring_out_blast',
       'sessionId': matchSessionIdNotifier.value,
       'id': myPlayerId,
-      'x': x,
+      'x': _round1(x),
       'color': colorIndex,
     };
     sendRaw(packet);

@@ -1,24 +1,21 @@
 // ============================================================================
-//  KAITO ADVENTURE: INK SHINOBI - SERVIDOR MULTIPLAYER ONLINE (VERSION OPTIMIZADA)
+//  KAITO ADVENTURE: INK SHINOBI - SERVIDOR MULTIPLAYER ONLINE (ULTRA LOW-LATENCY)
 //
-//  - Protocolo identico al anterior (mismos tipos de paquete y campos): el cliente NO cambia.
-//  - Sintaxis C# 5 (compila con el csc.exe que trae Windows, mismas referencias que antes).
-//
-//  Resumen de optimizaciones:
-//   1. Envio asincrono por cliente (cola + hilo escritor, escrituras agrupadas).
-//      Un jugador con mala conexion ya NO bloquea al resto (antes un Write lento frenaba
-//      el broadcast y, a veces, hasta el lock global de TODO el servidor).
-//   2. "state" con conflacion: si un cliente va atrasado se descartan posiciones viejas
-//      en vez de entregarlas todas en rafaga (evita el efecto "se congela y se adelanta").
-//   3. Lectura con buffer propio (antes: ReadByte() = 1 llamada al sistema + 1 array por byte).
-//   4. Ruta rapida para state/hit/player_action/spawn_kunai/ring_out_blast: sin
-//      JavaScriptSerializer y con el frame WebSocket armado UNA sola vez para todos.
-//   5. Broadcast sin lock global (copia inmutable de miembros por sala).
-//   6. Ping/Pong WebSocket cada 10 s: mide el RTT de cada jugador (tecla [S]), mantiene
-//      vivo el tunel y limpia conexiones "fantasma".
-//   7. Log asincrono: la consola (p.ej. un clic en la ventana) ya no puede congelar el servidor.
-//   8. Prioridad de proceso, GC de baja latencia, anti-flood, y el enlace global se retira
-//      si el tunel se cae (antes se seguia anunciando un enlace muerto).
+//  Optimizaciones clave contra lag y retraso acumulado en peleas intensas:
+//   1. Doble cola por cliente con Prioridad Estricta:
+//      - Cola de Eventos (_eventQueue): hit, player_action, spawn_kunai, ring_out_blast,
+//        eliminaciones y control de sala salen SIEMPRE PRIMERO con 0 ms de espera.
+//      - Ranuras O(1) de Estado (_latestStates[0..4]): las posiciones "state" nunca
+//        hacen fila ni asignan memoria; cada ranura guarda solo el ultimo frame por slot.
+//   2. Coalescencia y Pacing en el Servidor (MinStateIntervalMs = 28 ms / ~35 Hz):
+//      Como el puente SSH corre en localhost (127.0.0.1), escribir sin control llenaba
+//      la ventana interna de 2 MB de ssh.exe durante lluvias de ataques, causando
+//      segundos de retraso (bufferbloat). Ahora el servidor deja pasar el movimiento
+//      normal (~33 ms) con 0 ms extra y fusiona en memoria las rafagas de "state"
+//      menores a 28 ms antes de tocar el socket de ssh.exe; StateFlushLoop entrega
+//      cualquier estado pendiente puntualmente.
+//   3. Ruta rapida 100% Lock-Free (sin ServerLock en state/hit/player_action/kunai).
+//   4. Tunel SSH optimizado con -o IPQoS=lowdelay -o Compression=no y SendBuffer de 8 KB.
 // ============================================================================
 
 using System;
@@ -40,7 +37,7 @@ using System.Web.Script.Serialization;
 namespace KaitoOnlineServer
 {
     // ========================================================================
-    //  MODELOS (sin cambios de comportamiento)
+    //  MODELOS
     // ========================================================================
     public class MatchConfig
     {
@@ -99,7 +96,7 @@ namespace KaitoOnlineServer
         public int colorIndex;
         public int slot;
         public bool isHost;
-        public bool isAlive;
+        public volatile bool isAlive;
         public double hp;
         public double maxHp;
         public int lives;
@@ -109,8 +106,10 @@ namespace KaitoOnlineServer
         public bool votedRematch;
         public ClientConnection connection;
 
-        // Clave de conflacion de sus paquetes "state" (se calcula una sola vez, no por paquete).
-        public string stateKey;
+        // Control de pacing y coalescencia de "state" en el servidor (evita saturar ssh.exe)
+        public readonly object statePacingLock = new object();
+        public volatile byte[] pendingStateFrame;
+        public int lastStateBroadcastTick;
 
         public OnlinePlayer()
         {
@@ -127,7 +126,8 @@ namespace KaitoOnlineServer
             ougi = 0.0;
             placement = 0;
             votedRematch = false;
-            stateKey = null;
+            pendingStateFrame = null;
+            lastStateBroadcastTick = Environment.TickCount - 1000;
         }
 
         public Dictionary<string, object> ToDict()
@@ -156,9 +156,9 @@ namespace KaitoOnlineServer
         public string roomName;
         public MatchConfig config;
         public Dictionary<string, OnlinePlayer> players;
-        public int sessionId;
-        public bool inMatch;
-        public bool matchEnded;
+        public volatile int sessionId;
+        public volatile bool inMatch;
+        public volatile bool matchEnded;
         public Timer victoryDelayTimer;
         public Timer rematchTimer;
         public int rematchSeconds;
@@ -313,10 +313,7 @@ namespace KaitoOnlineServer
     }
 
     // ========================================================================
-    //  LECTOR JSON MINIMO PARA LA RUTA RAPIDA
-    //  Solo extrae del nivel superior: type, sessionId, hp, ougi. No asigna memoria
-    //  (salvo numeros decimales raros). Si algo no cuadra devuelve false y el paquete
-    //  se procesa por la ruta normal con JavaScriptSerializer (cero perdida de funciones).
+    //  LECTOR JSON MINIMO PARA LA RUTA RAPIDA (100% LOCK-FREE)
     // ========================================================================
     internal struct FastInfo
     {
@@ -364,21 +361,19 @@ namespace KaitoOnlineServer
             return true;
         }
 
-        // b[i] es la comilla de apertura. Devuelve el indice justo despues de la comilla de cierre (o -1).
         private static int SkipString(byte[] b, int len, int i)
         {
             int j = i + 1;
             while (j < len)
             {
                 byte c = b[j];
-                if (c == 0x5C) { j += 2; continue; }   // barra invertida: salta el caracter escapado
-                if (c == 0x22) return j + 1;           // comilla de cierre
+                if (c == 0x5C) { j += 2; continue; }
+                if (c == 0x22) return j + 1;
                 j++;
             }
             return -1;
         }
 
-        // b[i] es '{' o '['. Devuelve el indice justo despues del cierre correspondiente (o -1).
         private static int SkipContainer(byte[] b, int len, int i)
         {
             int depth = 0;
@@ -412,7 +407,6 @@ namespace KaitoOnlineServer
             int count = end - start;
             if (count <= 0 || count > 40) return false;
 
-            // Camino rapido: enteros simples (hasta 15 digitos)
             int p = start;
             bool neg = false;
             if (b[p] == 0x2D) { neg = true; p++; }
@@ -429,10 +423,29 @@ namespace KaitoOnlineServer
                 value = neg ? -(double)acc : (double)acc;
                 return true;
             }
+            if (digits > 0 && p < end && b[p] == 0x2E)
+            {
+                p++;
+                double frac = 0.0;
+                double div = 10.0;
+                int fdigits = 0;
+                while (p < end && b[p] >= 0x30 && b[p] <= 0x39 && fdigits < 10)
+                {
+                    frac += (b[p] - 0x30) / div;
+                    div *= 10.0;
+                    p++;
+                    fdigits++;
+                }
+                if (p == end)
+                {
+                    double res = acc + frac;
+                    value = neg ? -res : res;
+                    return true;
+                }
+            }
 
-            // Decimales / exponente: ruta correcta (poco frecuente)
             byte f = b[start];
-            if (!((f >= 0x30 && f <= 0x39) || f == 0x2D)) return false;   // null, true, false...
+            if (!((f >= 0x30 && f <= 0x39) || f == 0x2D)) return false;
             string s = Encoding.ASCII.GetString(b, start, count);
             return double.TryParse(s, NumberStyles.Float, CultureInfo.InvariantCulture, out value);
         }
@@ -447,7 +460,6 @@ namespace KaitoOnlineServer
             return T_UNKNOWN;
         }
 
-        // Devuelve true si logro recorrer un objeto JSON de nivel superior bien formado.
         public static bool Scan(byte[] b, int len, ref FastInfo info)
         {
             int i = 0;
@@ -462,7 +474,6 @@ namespace KaitoOnlineServer
                 if (c == 0x7D) return true;
                 if (c != 0x22) return false;
 
-                // --- clave ---
                 int keyStart = i + 1;
                 int afterKey = SkipString(b, len, i);
                 if (afterKey < 0) return false;
@@ -480,7 +491,6 @@ namespace KaitoOnlineServer
                 else if (Eq(b, keyStart, keyLen, KHp)) key = 3;
                 else if (Eq(b, keyStart, keyLen, KOugi)) key = 4;
 
-                // --- valor ---
                 c = b[i];
                 if (c == 0x22)
                 {
@@ -528,20 +538,8 @@ namespace KaitoOnlineServer
     }
 
     // ========================================================================
-    //  CONEXION DE CLIENTE
+    //  CONEXION DE CLIENTE CON PRIORIDAD ESTRICTA EVENTOS > ESTADOS O(1)
     // ========================================================================
-    public class OutFrame
-    {
-        public byte[] data;
-        public string key;
-
-        public OutFrame(byte[] d, string k)
-        {
-            data = d;
-            key = k;
-        }
-    }
-
     public class ClientConnection
     {
         public string connectionId;
@@ -565,11 +563,16 @@ namespace KaitoOnlineServer
         public int rateWindowStart;
         public int rateCount;
 
-        // --- envio ---
+        // --- envio con doble prioridad ---
         private readonly object _qLock = new object();
-        private readonly List<OutFrame> _queue = new List<OutFrame>();
-        private int _queuedBytes;
-        private byte[] _scratch = new byte[4096];
+        // Prioridad 1: Eventos de combate (hit, slash, kunai, ougi, salas)
+        private readonly Queue<byte[]> _eventQueue = new Queue<byte[]>(64);
+        private int _queuedEventBytes;
+        // Prioridad 2: Ultimo "state" por ranura de jugador (0..4) + 1 ranura para ping y 1 para rooms
+        private readonly byte[][] _latestSlots = new byte[8][];
+        private int _dirtySlotsMask;
+
+        private byte[] _scratch = new byte[8192];
         private Thread _writerThread;
         private int _closeOnce;
 
@@ -577,9 +580,10 @@ namespace KaitoOnlineServer
         {
             connectionId = id;
             tcpClient = client;
-            try { client.NoDelay = true; } catch { }                 // sin algoritmo de Nagle
-            try { client.SendBufferSize = 32 * 1024; } catch { }     // poco "bufferbloat" en el kernel
-            try { client.SendTimeout = 15000; } catch { }            // un Write atascado no es eterno
+            try { client.NoDelay = true; } catch { }
+            try { client.SendBufferSize = 8192; } catch { }
+            try { client.ReceiveBufferSize = 16384; } catch { }
+            try { client.SendTimeout = 10000; } catch { }
             stream = client.GetStream();
             string ep = "unknown";
             try
@@ -616,7 +620,6 @@ namespace KaitoOnlineServer
                     int remaining = count - got;
                     if (remaining >= _rbuf.Length)
                     {
-                        // Lectura grande: directo al destino, sin copia intermedia
                         int direct = stream.Read(dst, got, remaining);
                         if (direct <= 0) return false;
                         got += direct;
@@ -651,58 +654,58 @@ namespace KaitoOnlineServer
             if (_writerThread != null) return;
             _writerThread = new Thread(WriterLoop);
             _writerThread.IsBackground = true;
+            _writerThread.Priority = ThreadPriority.AboveNormal;
             _writerThread.Name = "ws-writer-" + connectionId;
             _writerThread.Start();
         }
 
-        // Encola un frame (NO bloquea). Si conflateKey != null, reemplaza al frame pendiente
-        // con la misma clave (el viejo ya no sirve: solo importa el ultimo estado).
-        public void SendFrame(byte[] frame, string conflateKey)
+        // Encola un evento de combate o control (Prioridad 1: sale antes que cualquier "state").
+        public void EnqueueEvent(byte[] frame)
         {
-            if (isClosed || !isWebSocket) return;
+            if (isClosed || !isWebSocket || frame == null) return;
             bool overflow = false;
             lock (_qLock)
             {
                 if (isClosed) return;
-
-                if (conflateKey != null)
+                if (_queuedEventBytes + frame.Length > Program.MaxQueuedBytesPerClient)
                 {
-                    for (int i = _queue.Count - 1; i >= 0; i--)
-                    {
-                        if (_queue[i].key == conflateKey)
-                        {
-                            _queuedBytes -= _queue[i].data.Length;
-                            _queue.RemoveAt(i);
-                            break;
-                        }
-                    }
-                }
-
-                if (_queuedBytes + frame.Length > Program.MaxQueuedBytesPerClient)
-                {
-                    overflow = true;   // el cliente esta desesperadamente atrasado
+                    overflow = true;
                 }
                 else
                 {
-                    _queue.Add(new OutFrame(frame, conflateKey));
-                    _queuedBytes += frame.Length;
+                    _eventQueue.Enqueue(frame);
+                    _queuedEventBytes += frame.Length;
                     Monitor.Pulse(_qLock);
                 }
             }
             if (overflow) Close();
         }
 
+        // Guarda en O(1) el ultimo estado de una ranura (0..4 = jugadores, 5 = ping, 6 = rooms).
+        // Cero asignaciones de memoria y cero acumulacion de cola.
+        public void EnqueueSlotState(int slotIndex, byte[] frame)
+        {
+            if (isClosed || !isWebSocket || frame == null) return;
+            int idx = (slotIndex >= 0 && slotIndex < _latestSlots.Length) ? slotIndex : 0;
+            lock (_qLock)
+            {
+                if (isClosed) return;
+                _latestSlots[idx] = frame;
+                _dirtySlotsMask |= (1 << idx);
+                Monitor.Pulse(_qLock);
+            }
+        }
+
         public void SendWebSocketText(string jsonText)
         {
-            SendFrame(WsFrame.BuildText(jsonText), null);
+            EnqueueEvent(WsFrame.BuildText(jsonText));
         }
 
         public void SendPong(byte[] pingPayload, int length)
         {
-            SendFrame(WsFrame.BuildControl(0x0A, pingPayload, length), null);
+            EnqueueEvent(WsFrame.BuildControl(0x0A, pingPayload, length));
         }
 
-        // Ping con marca de tiempo: el Pong del navegador la devuelve y asi medimos el RTT real.
         public void SendPing()
         {
             long stamp = Stopwatch.GetTimestamp();
@@ -711,7 +714,7 @@ namespace KaitoOnlineServer
             {
                 p[7 - i] = (byte)((stamp >> (8 * i)) & 0xFF);
             }
-            SendFrame(WsFrame.BuildControl(0x09, p, 8), "ping");
+            EnqueueSlotState(5, WsFrame.BuildControl(0x09, p, 8));
         }
 
         public void OnPong(byte[] payload, int length)
@@ -729,20 +732,39 @@ namespace KaitoOnlineServer
 
         private void WriterLoop()
         {
-            List<OutFrame> batch = new List<OutFrame>();
+            List<byte[]> batch = new List<byte[]>(16);
             while (true)
             {
                 batch.Clear();
                 lock (_qLock)
                 {
-                    while (_queue.Count == 0 && !isClosed)
+                    while (_eventQueue.Count == 0 && _dirtySlotsMask == 0 && !isClosed)
                     {
                         Monitor.Wait(_qLock);
                     }
                     if (isClosed) return;
-                    batch.AddRange(_queue);
-                    _queue.Clear();
-                    _queuedBytes = 0;
+
+                    // 1. Drenar TODOS los eventos prioritarios primero (ataques, impactos, kunais, salas)
+                    while (_eventQueue.Count > 0)
+                    {
+                        batch.Add(_eventQueue.Dequeue());
+                    }
+                    _queuedEventBytes = 0;
+
+                    // 2. Drenar solo el ultimo "state" de cada ranura sucia
+                    if (_dirtySlotsMask != 0)
+                    {
+                        for (int i = 0; i < _latestSlots.Length; i++)
+                        {
+                            if ((_dirtySlotsMask & (1 << i)) != 0)
+                            {
+                                byte[] sFrame = _latestSlots[i];
+                                _latestSlots[i] = null;
+                                if (sFrame != null) batch.Add(sFrame);
+                            }
+                        }
+                        _dirtySlotsMask = 0;
+                    }
                 }
 
                 try
@@ -757,13 +779,13 @@ namespace KaitoOnlineServer
             }
         }
 
-        // Agrupa varios frames pendientes en UNA sola escritura (menos paquetes TCP).
-        private void WriteBatch(List<OutFrame> batch)
+        private void WriteBatch(List<byte[]> batch)
         {
             int count = batch.Count;
+            if (count == 0) return;
             if (count == 1)
             {
-                byte[] only = batch[0].data;
+                byte[] only = batch[0];
                 stream.Write(only, 0, only.Length);
                 return;
             }
@@ -771,14 +793,14 @@ namespace KaitoOnlineServer
             int total = 0;
             for (int i = 0; i < count; i++)
             {
-                total += batch[i].data.Length;
+                total += batch[i].Length;
             }
 
-            if (total > 65536)
+            if (total > 32768)
             {
                 for (int i = 0; i < count; i++)
                 {
-                    byte[] big = batch[i].data;
+                    byte[] big = batch[i];
                     stream.Write(big, 0, big.Length);
                 }
                 return;
@@ -788,7 +810,7 @@ namespace KaitoOnlineServer
             int off = 0;
             for (int i = 0; i < count; i++)
             {
-                byte[] d = batch[i].data;
+                byte[] d = batch[i];
                 Buffer.BlockCopy(d, 0, _scratch, off, d.Length);
                 off += d.Length;
             }
@@ -801,8 +823,10 @@ namespace KaitoOnlineServer
             isClosed = true;
             lock (_qLock)
             {
-                _queue.Clear();
-                _queuedBytes = 0;
+                _eventQueue.Clear();
+                _queuedEventBytes = 0;
+                for (int i = 0; i < _latestSlots.Length; i++) _latestSlots[i] = null;
+                _dirtySlotsMask = 0;
                 Monitor.PulseAll(_qLock);
             }
             try { stream.Close(); } catch { }
@@ -822,16 +846,16 @@ namespace KaitoOnlineServer
         public const int VictoryCelebrationMs = 3200;
         public static string ServerName = "Servidor Oficial Kaito Online";
 
-        // ---- Ajustes de rendimiento / red (todos modificables) ----
-        public const int PingIntervalMs = 10000;            // Ping WebSocket a cada cliente
-        public const int IdleTimeoutMs = 60000;             // Sin NINGUN frame (ni pong) por 60 s => se cierra
-        public const int IdleTimeoutNoPongMs = 300000;      // Igual, pero para clientes que nunca han respondido un ping
-        public const int MaxQueuedBytesPerClient = 1024 * 1024;
-        public const int MaxPayloadBytes = 256 * 1024;      // Tamano maximo de un mensaje entrante
-        public const int MaxMessagesPerSecond = 1000;       // Anti-flood por conexion
-        // true: si un cliente va atrasado se descartan "state" viejos del mismo jugador.
-        // Ponlo en false SOLO si tu cliente manda eventos de un solo uso dentro de "state".
-        public static bool ConflateStatePackets = true;
+        // ---- Ajustes de rendimiento / red ----
+        // Intervalo minimo entre dos "state" del mismo jugador hacia el puente SSH (28 ms = ~35 Hz).
+        // Deja pasar el tick normal del juego (33 ms) con 0 ms extra y frena rafagas en ssh.exe.
+        public const int MinStateIntervalMs = 28;
+        public const int PingIntervalMs = 10000;
+        public const int IdleTimeoutMs = 60000;
+        public const int IdleTimeoutNoPongMs = 300000;
+        public const int MaxQueuedBytesPerClient = 512 * 1024;
+        public const int MaxPayloadBytes = 128 * 1024;
+        public const int MaxMessagesPerSecond = 1200;
 
         // Canal de autodescubrimiento global (MQTT Retained sobre TCP/WSS, sin limites 429)
         public const string GlobalDiscoveryTopic = "kaito_adventure/janosos/online_srv_v2";
@@ -844,6 +868,7 @@ namespace KaitoOnlineServer
 
         private static readonly object ServerLock = new object();
         private static readonly Dictionary<string, OnlineRoom> Rooms = new Dictionary<string, OnlineRoom>();
+        private static volatile OnlineRoom[] _roomsSnapshot = new OnlineRoom[0];
         private static readonly Dictionary<string, ClientConnection> Clients = new Dictionary<string, ClientConnection>();
         private static int _nextRoomCounter = 1;
         private static int _nextPlayerCounter = 1;
@@ -860,7 +885,6 @@ namespace KaitoOnlineServer
         private static extern bool SetConsoleCtrlHandler(ConsoleCtrlDelegate handler, bool add);
         private static ConsoleCtrlDelegate _consoleHandler;
 
-        // Un serializador por hilo (JavaScriptSerializer no garantiza seguridad entre hilos)
         [ThreadStatic]
         private static JavaScriptSerializer _tlsJson;
         private static JavaScriptSerializer Json
@@ -872,9 +896,15 @@ namespace KaitoOnlineServer
             }
         }
 
+        private static void RefreshRoomsSnapshotLocked()
+        {
+            OnlineRoom[] arr = new OnlineRoom[Rooms.Count];
+            Rooms.Values.CopyTo(arr, 0);
+            _roomsSnapshot = arr;
+        }
+
         static void Main(string[] args)
         {
-            // Habilitar TLS 1.2 para comunicacion HTTPS segura en .NET Framework 4.x
             try
             {
                 ServicePointManager.SecurityProtocol = (SecurityProtocolType)3072 | SecurityProtocolType.Tls;
@@ -924,18 +954,23 @@ namespace KaitoOnlineServer
             acceptThread.IsBackground = true;
             acceptThread.Start();
 
+            // Hilo de precision (cada 10 ms) que entrega los "state" coalescidos puntualmente
+            Thread stateFlushThread = new Thread(StateFlushLoop);
+            stateFlushThread.IsBackground = true;
+            stateFlushThread.Priority = ThreadPriority.AboveNormal;
+            stateFlushThread.Name = "state-pacing-flush";
+            stateFlushThread.Start();
+
             Thread watchdogThread = new Thread(WatchdogLoop);
             watchdogThread.IsBackground = true;
             watchdogThread.Start();
 
             LogSuccess("Motor del Servidor iniciado en esta PC (127.0.0.1:" + TcpPort + ").");
 
-            // Iniciar tunel publico saliente (sin abrir puertos en el router ni instalar software)
             Thread tunnelThread = new Thread(StartInternetTunnelLoop);
             tunnelThread.IsBackground = true;
             tunnelThread.Start();
 
-            // Refrescar el beacon retenido cada 2 minutos por seguridad
             _globalBeaconTimer = new Timer(delegate(object state)
             {
                 if (_running && !string.IsNullOrEmpty(PublicTunnelWsUrl))
@@ -989,13 +1024,11 @@ namespace KaitoOnlineServer
             ShutdownServer();
         }
 
-        // Ajustes del proceso para que el servidor responda parejo aunque la PC este ocupada
-        // (por ejemplo si el anfitrion tambien esta jugando en la misma PC).
         private static void TuneProcess()
         {
             try { Process.GetCurrentProcess().PriorityClass = ProcessPriorityClass.AboveNormal; } catch { }
             try { System.Runtime.GCSettings.LatencyMode = System.Runtime.GCLatencyMode.SustainedLowLatency; } catch { }
-            try { ThreadPool.SetMinThreads(16, 16); } catch { }   // los Timers nunca esperan a que "nazcan" hilos
+            try { ThreadPool.SetMinThreads(24, 24); } catch { }
         }
 
         private static bool OnConsoleClose(int sig)
@@ -1018,7 +1051,76 @@ namespace KaitoOnlineServer
         }
 
         // ====================================================================
-        //  LOG ASINCRONO: ningun hilo de red toca jamas la consola
+        //  PACING Y COALESCENCIA DE ESTADOS (evita bufferbloat en ssh.exe)
+        // ====================================================================
+        private static void HandlePlayerStatePaced(OnlineRoom room, OnlinePlayer sender, byte[] stateFrame)
+        {
+            bool sendNow = false;
+            int now = Environment.TickCount;
+            lock (sender.statePacingLock)
+            {
+                int elapsed = unchecked(now - sender.lastStateBroadcastTick);
+                if (elapsed >= MinStateIntervalMs && sender.pendingStateFrame == null)
+                {
+                    sender.lastStateBroadcastTick = now;
+                    sendNow = true;
+                }
+                else
+                {
+                    // Reemplaza en memoria el estado pendiente sin saturar el socket TCP de ssh.exe
+                    sender.pendingStateFrame = stateFrame;
+                }
+            }
+            if (sendNow)
+            {
+                BroadcastStateToRoom(room, stateFrame, sender.id, sender.slot);
+            }
+        }
+
+        private static void StateFlushLoop()
+        {
+            while (_running)
+            {
+                Thread.Sleep(10);
+                if (!_running) break;
+                try
+                {
+                    int now = Environment.TickCount;
+                    OnlineRoom[] rooms = _roomsSnapshot;
+                    for (int r = 0; r < rooms.Length; r++)
+                    {
+                        OnlineRoom room = rooms[r];
+                        if (room == null) continue;
+                        OnlinePlayer[] players = room.snapshot;
+                        for (int p = 0; p < players.Length; p++)
+                        {
+                            OnlinePlayer player = players[p];
+                            if (player == null || player.pendingStateFrame == null) continue;
+
+                            byte[] toSend = null;
+                            lock (player.statePacingLock)
+                            {
+                                if (player.pendingStateFrame != null &&
+                                    unchecked(now - player.lastStateBroadcastTick) >= MinStateIntervalMs)
+                                {
+                                    toSend = player.pendingStateFrame;
+                                    player.pendingStateFrame = null;
+                                    player.lastStateBroadcastTick = now;
+                                }
+                            }
+                            if (toSend != null)
+                            {
+                                BroadcastStateToRoom(room, toSend, player.id, player.slot);
+                            }
+                        }
+                    }
+                }
+                catch { }
+            }
+        }
+
+        // ====================================================================
+        //  LOG ASINCRONO
         // ====================================================================
         private sealed class LogLine
         {
@@ -1036,6 +1138,7 @@ namespace KaitoOnlineServer
         {
             Thread t = new Thread(LogLoop);
             t.IsBackground = true;
+            t.Priority = ThreadPriority.BelowNormal;
             t.Name = "log-writer";
             t.Start();
         }
@@ -1049,7 +1152,7 @@ namespace KaitoOnlineServer
             line.msg = msg;
             lock (LogLock)
             {
-                if (LogQueue.Count >= 2000) LogQueue.Dequeue();   // si la consola esta trabada, descarta lo mas viejo
+                if (LogQueue.Count >= 2000) LogQueue.Dequeue();
                 LogQueue.Enqueue(line);
                 Monitor.Pulse(LogLock);
             }
@@ -1150,7 +1253,7 @@ namespace KaitoOnlineServer
         }
 
         // ====================================================================
-        //  TUNEL DE INTERNET (sin cambios en el comando; mejor limpieza al caer)
+        //  TUNEL DE INTERNET (optimizado con IPQoS=lowdelay y Compression=no)
         // ====================================================================
         private static void StopTunnelProcess()
         {
@@ -1191,11 +1294,11 @@ namespace KaitoOnlineServer
                 Stopwatch aliveTime = Stopwatch.StartNew();
                 try
                 {
-                    LogInfo("Activando puente de Internet saliente (sin abrir puertos)...");
+                    LogInfo("Activando puente de Internet de baja latencia (sin abrir puertos)...");
 
                     ProcessStartInfo psi = new ProcessStartInfo();
                     psi.FileName = sshExe;
-                    psi.Arguments = "-T -o StrictHostKeyChecking=no -o UserKnownHostsFile=NUL -o ServerAliveInterval=20 -o ExitOnForwardFailure=yes -R 80:127.0.0.1:" + TcpPort + " nokey@localhost.run";
+                    psi.Arguments = "-T -o StrictHostKeyChecking=no -o UserKnownHostsFile=NUL -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o ExitOnForwardFailure=yes -o IPQoS=lowdelay -o Compression=no -R 80:127.0.0.1:" + TcpPort + " nokey@localhost.run";
                     psi.UseShellExecute = false;
                     psi.RedirectStandardOutput = true;
                     psi.RedirectStandardError = true;
@@ -1207,8 +1310,8 @@ namespace KaitoOnlineServer
                         LogError("No se pudo iniciar el puente OpenSSH integrado de Windows.");
                         return;
                     }
+                    try { _tunnelProcess.PriorityClass = ProcessPriorityClass.AboveNormal; } catch { }
 
-                    // Hilo lector de stderr por si hay avisos
                     Process currentProc = _tunnelProcess;
                     Thread errThread = new Thread(delegate()
                     {
@@ -1256,7 +1359,6 @@ namespace KaitoOnlineServer
 
                 if (_running)
                 {
-                    // Si el puente vivio mas de 60 s reintenta rapido; si falla enseguida (p.ej. sin Internet) espera cada vez mas.
                     if (aliveTime.ElapsedMilliseconds > 60000) retryDelayMs = 3000;
                     LogInfo("Reconectando puente de Internet en " + (retryDelayMs / 1000) + " segundos...");
                     Thread.Sleep(retryDelayMs);
@@ -1277,7 +1379,6 @@ namespace KaitoOnlineServer
             PublishOnlineBeacon(true);
         }
 
-        // Si el tunel cae, el enlace anterior ya no sirve: se retira y se avisa como inactivo.
         private static void ClearPublicTunnelUrl()
         {
             if (string.IsNullOrEmpty(PublicTunnelWsUrl)) return;
@@ -1310,7 +1411,6 @@ namespace KaitoOnlineServer
             }
             catch
             {
-                // Ignorar si no hay internet externo momentaneamente
             }
         }
 
@@ -1356,7 +1456,6 @@ namespace KaitoOnlineServer
 
                 using (NetworkStream ns = client.GetStream())
                 {
-                    // 1. CONNECT (MQTT 3.1.1, Clean Session)
                     MemoryStream connectBody = new MemoryStream();
                     WriteMqttUtf8(connectBody, "MQTT");
                     connectBody.WriteByte(4);
@@ -1370,11 +1469,10 @@ namespace KaitoOnlineServer
                     int r = ns.Read(ack, 0, 4);
                     if (r < 4 || ack[0] != 0x20 || ack[3] != 0x00) return;
 
-                    // 2. PUBLISH (QoS 1, Retain = 1 => 0x33) y esperar PUBACK para garantizar guardado
                     MemoryStream pubBody = new MemoryStream();
                     WriteMqttUtf8(pubBody, topic);
                     pubBody.WriteByte(0x00);
-                    pubBody.WriteByte(0x01); // Packet ID = 1
+                    pubBody.WriteByte(0x01);
                     byte[] payloadBytes = Encoding.UTF8.GetBytes(jsonPayload);
                     pubBody.Write(payloadBytes, 0, payloadBytes.Length);
                     WriteMqttPacket(ns, 0x33, pubBody.ToArray());
@@ -1382,7 +1480,6 @@ namespace KaitoOnlineServer
                     byte[] pubAck = new byte[4];
                     ns.Read(pubAck, 0, 4);
 
-                    // 3. DISCONNECT
                     WriteMqttPacket(ns, 0xE0, new byte[0]);
                 }
             }
@@ -1404,7 +1501,7 @@ namespace KaitoOnlineServer
                 Console.ResetColor();
 
                 Console.WriteLine("  Modo de Operacion   : Usa tu PC, tu Internet y tus recursos como Servidor");
-                Console.WriteLine("  Requisitos Extra    : NINGUNO (Sin abrir puertos / Sin programas adicionales)");
+                Console.WriteLine("  Motor de Red        : Baja Latencia (Prioridad Ataques + Anti-Bufferbloat)");
                 Console.WriteLine("  Puerto Local Motor  : " + TcpPort);
                 Console.WriteLine("  Capacidad por Sala  : 2 a 5 Jugadores (Multiples Salas Online Simultaneas)");
                 Console.WriteLine("================================================================================\n");
@@ -1413,7 +1510,6 @@ namespace KaitoOnlineServer
 
         private static void PrintServerStatus()
         {
-            // Se arma el texto dentro del lock y se imprime FUERA: la consola nunca retiene el lock del servidor.
             List<string> lines = new List<string>();
             lock (ServerLock)
             {
@@ -1487,7 +1583,6 @@ namespace KaitoOnlineServer
             return list;
         }
 
-        // Enumerar interfaces de red es caro: se guarda el resultado 15 s.
         private static List<string> GetLocalIPv4AddressesCached()
         {
             lock (IpCacheLock)
@@ -1591,6 +1686,7 @@ namespace KaitoOnlineServer
                     ClientConnection conn = new ClientConnection(connId, tcpClient);
                     Thread clientThread = new Thread(delegate() { HandleClientConnection(conn); });
                     clientThread.IsBackground = true;
+                    clientThread.Priority = ThreadPriority.AboveNormal;
                     clientThread.Start();
                 }
                 catch
@@ -1662,7 +1758,7 @@ namespace KaitoOnlineServer
                         Clients[conn.connectionId] = conn;
                     }
 
-                    conn.SendPing();                 // primera medicion de RTT de inmediato
+                    conn.SendPing();
                     SendRoomsListToClient(conn);
                     WebSocketReceiveLoop(conn);
                 }
@@ -1689,7 +1785,6 @@ namespace KaitoOnlineServer
             bool complete = false;
             stream.ReadTimeout = 5000;
             Stopwatch sw = Stopwatch.StartNew();
-            // Limite total de 8 s: evita conexiones que mandan 1 byte cada 4 s para ocupar un hilo
             while (buffer.Count < 16384 && sw.ElapsedMilliseconds < 8000)
             {
                 int read = stream.Read(single, 0, 1);
@@ -1743,7 +1838,7 @@ namespace KaitoOnlineServer
         }
 
         // ====================================================================
-        //  BUCLE DE RECEPCION WEBSOCKET (con buffer, sin asignar memoria por frame)
+        //  BUCLE DE RECEPCION WEBSOCKET
         // ====================================================================
         private static void WebSocketReceiveLoop(ClientConnection conn)
         {
@@ -1799,7 +1894,6 @@ namespace KaitoOnlineServer
                 int nowTick = Environment.TickCount;
                 conn.lastRecvTick = nowTick;
 
-                // Anti-flood: ningun juego legitimo manda mas de 1000 mensajes por segundo
                 if (unchecked(nowTick - conn.rateWindowStart) >= 1000)
                 {
                     conn.rateWindowStart = nowTick;
@@ -1832,17 +1926,14 @@ namespace KaitoOnlineServer
                     }
                     catch
                     {
-                        // Un paquete malformado no debe tumbar la conexion del jugador
                     }
                 }
             }
         }
 
         // ====================================================================
-        //  PROCESAMIENTO DE PAQUETES
+        //  PROCESAMIENTO DE PAQUETES (RUTA RAPIDA 100% SIN SERVERLOCK)
         // ====================================================================
-
-        // Ruta rapida para los paquetes de alta frecuencia; todo lo demas va por la ruta normal.
         private static void HandleFrameMessage(ClientConnection conn, byte[] buf, int len)
         {
             FastInfo info = new FastInfo();
@@ -1854,41 +1945,38 @@ namespace KaitoOnlineServer
                 OnlineRoom room = conn.currentRoom;
                 OnlinePlayer sender = conn.currentPlayer;
                 if (room == null || sender == null) return;
+                if (info.hasSession && info.session != room.sessionId) return;
 
                 if (info.typeCode == FastJson.T_STATE)
                 {
-                    lock (ServerLock)
+                    // Actualizacion local sin bloquear ServerLock
+                    if (!sender.isAlive)
                     {
-                        if (info.hasSession && info.session != room.sessionId) return;
-
-                        if (!sender.isAlive)
-                        {
-                            sender.hp = 0.0;
-                        }
-                        else if (info.hasHp && info.hp < sender.hp)
-                        {
-                            sender.hp = Math.Max(0.0, Math.Min(sender.maxHp, info.hp));
-                        }
-                        if (info.hasOugi)
-                        {
-                            sender.ougi = info.ougi;
-                        }
+                        sender.hp = 0.0;
                     }
+                    else if (info.hasHp && info.hp < sender.hp)
+                    {
+                        sender.hp = Math.Max(0.0, Math.Min(sender.maxHp, info.hp));
+                    }
+                    if (info.hasOugi)
+                    {
+                        sender.ougi = info.ougi;
+                    }
+
                     byte[] stateFrame = WsFrame.BuildText(buf, 0, len);
-                    BroadcastFrame(room, stateFrame, sender.id, ConflateStatePackets ? sender.stateKey : null);
+                    HandlePlayerStatePaced(room, sender, stateFrame);
                     return;
                 }
 
-                // player_action / spawn_kunai / hit / ring_out_blast: reenvio directo
-                if (info.hasSession && info.session != room.sessionId) return;
-                BroadcastFrame(room, WsFrame.BuildText(buf, 0, len), sender.id, null);
+                // Eventos prioritarios (player_action, spawn_kunai, hit, ring_out_blast):
+                // Salen inmediatamente por la cola de prioridad 1 (_eventQueue), adelantando a "state".
+                BroadcastEventFrame(room, WsFrame.BuildText(buf, 0, len), sender.id);
                 return;
             }
 
             ProcessIncomingPacket(conn, Encoding.UTF8.GetString(buf, 0, len));
         }
 
-        // Ruta normal (control de salas, partida, etc.) con la misma logica de siempre.
         private static void ProcessIncomingPacket(ClientConnection conn, string jsonText)
         {
             JavaScriptSerializer serializer = Json;
@@ -1984,26 +2072,23 @@ namespace KaitoOnlineServer
 
             if (type == "state")
             {
-                lock (ServerLock)
+                if (!sender.isAlive)
                 {
-                    if (!sender.isAlive)
+                    sender.hp = 0.0;
+                }
+                else if (map.ContainsKey("hp"))
+                {
+                    double incomingHp = ToDouble(map["hp"], sender.hp);
+                    if (incomingHp < sender.hp)
                     {
-                        sender.hp = 0.0;
-                    }
-                    else if (map.ContainsKey("hp"))
-                    {
-                        double incomingHp = ToDouble(map["hp"], sender.hp);
-                        if (incomingHp < sender.hp)
-                        {
-                            sender.hp = Math.Max(0.0, Math.Min(sender.maxHp, incomingHp));
-                        }
-                    }
-                    if (map.ContainsKey("ougi"))
-                    {
-                        sender.ougi = ToDouble(map["ougi"], sender.ougi);
+                        sender.hp = Math.Max(0.0, Math.Min(sender.maxHp, incomingHp));
                     }
                 }
-                BroadcastFrame(room, WsFrame.BuildText(jsonText), sender.id, ConflateStatePackets ? sender.stateKey : null);
+                if (map.ContainsKey("ougi"))
+                {
+                    sender.ougi = ToDouble(map["ougi"], sender.ougi);
+                }
+                HandlePlayerStatePaced(room, sender, WsFrame.BuildText(jsonText));
             }
             else if (type == "player_action" || type == "spawn_kunai" || type == "hit" || type == "ring_out_blast")
             {
@@ -2101,7 +2186,6 @@ namespace KaitoOnlineServer
 
                 OnlinePlayer hostPlayer = new OnlinePlayer();
                 hostPlayer.id = pid;
-                hostPlayer.stateKey = "s:" + pid;
                 hostPlayer.nickname = playerName;
                 hostPlayer.colorIndex = colorIdx;
                 hostPlayer.slot = 0;
@@ -2116,6 +2200,7 @@ namespace KaitoOnlineServer
                 room.players[pid] = hostPlayer;
                 room.RefreshSnapshot();
                 Rooms[roomId] = room;
+                RefreshRoomsSnapshotLocked();
                 conn.currentRoom = room;
                 conn.currentPlayer = hostPlayer;
 
@@ -2219,7 +2304,6 @@ namespace KaitoOnlineServer
 
                 OnlinePlayer newPlayer = new OnlinePlayer();
                 newPlayer.id = pid;
-                newPlayer.stateKey = "s:" + pid;
                 newPlayer.nickname = playerName;
                 newPlayer.colorIndex = colorIdx;
                 newPlayer.slot = assignedSlot;
@@ -2278,6 +2362,10 @@ namespace KaitoOnlineServer
                 p.ougi = 0.0;
                 p.placement = 0;
                 p.votedRematch = false;
+                lock (p.statePacingLock)
+                {
+                    p.pendingStateFrame = null;
+                }
             }
 
             LogSuccess("\u00A1Combate iniciado en la sala \"" + room.roomName + "\"! (" + room.players.Count + " Shinobis, Sesion #" + room.sessionId + ")");
@@ -2505,6 +2593,7 @@ namespace KaitoOnlineServer
                 {
                     room.StopTimers();
                     Rooms.Remove(room.roomId);
+                    RefreshRoomsSnapshotLocked();
                     LogInfo("Sala \"" + room.roomName + "\" cerrada (0 jugadores).");
                     BroadcastRoomsListToLobby();
                     return;
@@ -2557,11 +2646,11 @@ namespace KaitoOnlineServer
         }
 
         // ====================================================================
-        //  DIFUSION (siempre no bloqueante: solo encola)
+        //  DIFUSION CON PRIORIDAD SEPARADA (EVENTOS vs ESTADOS O(1))
         // ====================================================================
-        private static void BroadcastFrame(OnlineRoom room, byte[] frame, string excludePlayerId, string conflateKey)
+        private static void BroadcastEventFrame(OnlineRoom room, byte[] frame, string excludePlayerId)
         {
-            OnlinePlayer[] targets = room.snapshot;   // copia inmutable: sin lock, sin asignaciones
+            OnlinePlayer[] targets = room.snapshot;
             for (int i = 0; i < targets.Length; i++)
             {
                 OnlinePlayer p = targets[i];
@@ -2569,14 +2658,30 @@ namespace KaitoOnlineServer
                 ClientConnection c = p.connection;
                 if (c != null && !c.isClosed)
                 {
-                    c.SendFrame(frame, conflateKey);
+                    c.EnqueueEvent(frame);
+                }
+            }
+        }
+
+        private static void BroadcastStateToRoom(OnlineRoom room, byte[] frame, string excludePlayerId, int senderSlot)
+        {
+            OnlinePlayer[] targets = room.snapshot;
+            int slotIdx = (senderSlot >= 0 && senderSlot < 5) ? senderSlot : 0;
+            for (int i = 0; i < targets.Length; i++)
+            {
+                OnlinePlayer p = targets[i];
+                if (excludePlayerId != null && p.id == excludePlayerId) continue;
+                ClientConnection c = p.connection;
+                if (c != null && !c.isClosed)
+                {
+                    c.EnqueueSlotState(slotIdx, frame);
                 }
             }
         }
 
         private static void BroadcastToRoom(OnlineRoom room, string jsonText, string excludePlayerId)
         {
-            BroadcastFrame(room, WsFrame.BuildText(jsonText), excludePlayerId, null);
+            BroadcastEventFrame(room, WsFrame.BuildText(jsonText), excludePlayerId);
         }
 
         private static string BuildStatusJson()
@@ -2632,12 +2737,12 @@ namespace KaitoOnlineServer
 
         private static void SendRoomsListToClient(ClientConnection conn)
         {
-            conn.SendFrame(WsFrame.BuildText(BuildRoomsListPacketJson()), "rooms");
+            conn.EnqueueSlotState(6, WsFrame.BuildText(BuildRoomsListPacketJson()));
         }
 
         private static void BroadcastRoomsListToLobby()
         {
-            byte[] frame = WsFrame.BuildText(BuildRoomsListPacketJson());   // se arma una sola vez
+            byte[] frame = WsFrame.BuildText(BuildRoomsListPacketJson());
             List<ClientConnection> lobbyClients = new List<ClientConnection>();
             lock (ServerLock)
             {
@@ -2651,7 +2756,7 @@ namespace KaitoOnlineServer
             }
             for (int i = 0; i < lobbyClients.Count; i++)
             {
-                lobbyClients[i].SendFrame(frame, "rooms");
+                lobbyClients[i].EnqueueSlotState(6, frame);
             }
         }
 
