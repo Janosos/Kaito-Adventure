@@ -833,8 +833,13 @@ namespace KaitoOnlineServer
         // Ponlo en false SOLO si tu cliente manda eventos de un solo uso dentro de "state".
         public static bool ConflateStatePackets = true;
 
-        // Canal de autodescubrimiento global para vincular la app con esta PC sin abrir puertos
-        public const string GlobalDiscoveryUrl = "https://ntfy.sh/kaito_adventure_janosos_online_server_v1";
+        // Canal de autodescubrimiento global (MQTT Retained sobre TCP/WSS, sin limites 429)
+        public const string GlobalDiscoveryTopic = "kaito_adventure/janosos/online_srv_v2";
+        public static readonly string[] GlobalMqttBrokers = new string[] {
+            "broker.emqx.io",
+            "broker.hivemq.com"
+        };
+        public const int GlobalMqttTcpPort = 1883;
         public static volatile string PublicTunnelWsUrl = "";
 
         private static readonly object ServerLock = new object();
@@ -930,14 +935,14 @@ namespace KaitoOnlineServer
             tunnelThread.IsBackground = true;
             tunnelThread.Start();
 
-            // Publicar latido cada 25 segundos para que cualquier jugador encuentre esta PC automaticamente
+            // Refrescar el beacon retenido cada 2 minutos por seguridad
             _globalBeaconTimer = new Timer(delegate(object state)
             {
                 if (_running && !string.IsNullOrEmpty(PublicTunnelWsUrl))
                 {
                     PublishOnlineBeacon(true);
                 }
-            }, null, 25000, 25000);
+            }, null, 120000, 120000);
 
             lock (ConsoleLock)
             {
@@ -1293,27 +1298,93 @@ namespace KaitoOnlineServer
                 payload["serverName"] = ServerName;
                 payload["ts"] = (long)(DateTime.UtcNow - new DateTime(1970, 1, 1)).TotalSeconds;
 
-                byte[] bodyBytes = Encoding.UTF8.GetBytes(Json.Serialize(payload));
-                HttpWebRequest req = (HttpWebRequest)WebRequest.Create(GlobalDiscoveryUrl);
-                req.Method = "POST";
-                req.ContentType = "application/json; charset=utf-8";
-                req.Timeout = 4000;
-                req.ReadWriteTimeout = 4000;
-                req.ContentLength = bodyBytes.Length;
-                req.ServicePoint.Expect100Continue = false;
-
-                using (Stream reqStream = req.GetRequestStream())
+                string jsonText = Json.Serialize(payload);
+                for (int i = 0; i < GlobalMqttBrokers.Length; i++)
                 {
-                    reqStream.Write(bodyBytes, 0, bodyBytes.Length);
-                }
-                using (WebResponse resp = req.GetResponse())
-                {
-                    // Publicado con exito
+                    try
+                    {
+                        PublishMqttRetained(GlobalMqttBrokers[i], GlobalMqttTcpPort, GlobalDiscoveryTopic, jsonText);
+                    }
+                    catch { }
                 }
             }
             catch
             {
                 // Ignorar si no hay internet externo momentaneamente
+            }
+        }
+
+        private static void WriteMqttUtf8(MemoryStream ms, string s)
+        {
+            byte[] b = Encoding.UTF8.GetBytes(s);
+            ms.WriteByte((byte)((b.Length >> 8) & 0xFF));
+            ms.WriteByte((byte)(b.Length & 0xFF));
+            ms.Write(b, 0, b.Length);
+        }
+
+        private static void WriteMqttPacket(Stream s, byte header, byte[] body)
+        {
+            s.WriteByte(header);
+            int len = body.Length;
+            do
+            {
+                byte d = (byte)(len % 128);
+                len /= 128;
+                if (len > 0) d |= 0x80;
+                s.WriteByte(d);
+            } while (len > 0);
+            if (body.Length > 0)
+            {
+                s.Write(body, 0, body.Length);
+            }
+            s.Flush();
+        }
+
+        private static void PublishMqttRetained(string host, int port, string topic, string jsonPayload)
+        {
+            using (TcpClient client = new TcpClient())
+            {
+                client.SendTimeout = 3500;
+                client.ReceiveTimeout = 3500;
+                IAsyncResult ar = client.BeginConnect(host, port, null, null);
+                if (!ar.AsyncWaitHandle.WaitOne(3000))
+                {
+                    client.Close();
+                    return;
+                }
+                client.EndConnect(ar);
+
+                using (NetworkStream ns = client.GetStream())
+                {
+                    // 1. CONNECT (MQTT 3.1.1, Clean Session)
+                    MemoryStream connectBody = new MemoryStream();
+                    WriteMqttUtf8(connectBody, "MQTT");
+                    connectBody.WriteByte(4);
+                    connectBody.WriteByte(0x02);
+                    connectBody.WriteByte(0);
+                    connectBody.WriteByte(30);
+                    WriteMqttUtf8(connectBody, "kaito_srv_" + Guid.NewGuid().ToString("N").Substring(0, 10));
+                    WriteMqttPacket(ns, 0x10, connectBody.ToArray());
+
+                    byte[] ack = new byte[4];
+                    int r = ns.Read(ack, 0, 4);
+                    if (r < 4 || ack[0] != 0x20 || ack[3] != 0x00) return;
+
+                    // 2. PUBLISH (QoS 1, Retain = 1 => 0x33) y esperar PUBACK para garantizar guardado
+                    MemoryStream pubBody = new MemoryStream();
+                    WriteMqttUtf8(pubBody, topic);
+                    pubBody.WriteByte(0x00);
+                    pubBody.WriteByte(0x01); // Packet ID = 1
+                    byte[] payloadBytes = Encoding.UTF8.GetBytes(jsonPayload);
+                    pubBody.Write(payloadBytes, 0, payloadBytes.Length);
+                    WriteMqttPacket(ns, 0x33, pubBody.ToArray());
+
+                    byte[] pubAck = new byte[4];
+                    ns.Read(pubAck, 0, 4);
+
+                    // 3. DISCONNECT
+                    WriteMqttPacket(ns, 0xE0, new byte[0]);
+                }
             }
         }
 

@@ -361,8 +361,12 @@ class LanMultiplayerService {
   static const int kDiscoveryPort = 7778;
   static const int kOnlineServerPort = 7779;
   static const int kOnlineDiscoveryPort = 7780;
-  static const String kGlobalDiscoveryWsUrl =
-      'wss://ntfy.sh/kaito_adventure_janosos_online_server_v1/ws?since=90s';
+  static const String kGlobalDiscoveryTopic =
+      'kaito_adventure/janosos/online_srv_v2';
+  static const List<String> kGlobalDiscoveryBrokerWsUrls = [
+    'wss://broker.emqx.io:8084/mqtt',
+    'wss://broker.hivemq.com:8884/mqtt',
+  ];
   static const int maxPlayers = 5;
   static const double kPvpMaxHp = 300.0;
   static const int kPvpMaxHpInt = 300;
@@ -1284,75 +1288,121 @@ class LanMultiplayerService {
     }
   }
 
-  /// Queries the global rendezvous discovery stream (`ntfy.sh`) over WebSocket
+  /// Queries the global MQTT-over-WebSocket retained discovery topic
   /// to automatically find the active public WSS tunnel of the PC running `INICIAR_SERVIDOR_ONLINE.bat`.
   Future<String?> _discoverGlobalOnlineServerWsUrl() async {
+    for (final brokerUrl in kGlobalDiscoveryBrokerWsUrls) {
+      final res = await _queryMqttBrokerForBeacon(brokerUrl);
+      if (res != null) {
+        return res.isNotEmpty ? res : null;
+      }
+    }
+    return null;
+  }
+
+  Future<String?> _queryMqttBrokerForBeacon(String brokerWsUrl) async {
     WebSocketChannel? channel;
     StreamSubscription? sub;
     final completer = Completer<String?>();
-    String? latestWsUrl;
-    bool latestActive = false;
-    int latestTime = -1;
     Timer? settleTimer;
 
-    void finish() {
+    void finish([String? result]) {
       settleTimer?.cancel();
       if (!completer.isCompleted) {
-        completer.complete(
-          (latestActive && latestWsUrl != null && latestWsUrl!.isNotEmpty)
-              ? latestWsUrl
-              : null,
-        );
+        completer.complete(result);
       }
     }
 
     try {
-      channel = WebSocketChannel.connect(Uri.parse(kGlobalDiscoveryWsUrl));
-      await channel.ready.timeout(const Duration(milliseconds: 1800));
+      channel = WebSocketChannel.connect(
+        Uri.parse(brokerWsUrl),
+        protocols: const ['mqtt'],
+      );
+      await channel.ready.timeout(const Duration(milliseconds: 2500));
 
-      // Wait briefly after opening so all cached messages from the last 90s arrive
-      settleTimer = Timer(const Duration(milliseconds: 750), finish);
+      final clientIdBytes =
+          utf8.encode('kaito_c_${Random().nextInt(899999) + 100000}');
+      final topicBytes = utf8.encode(kGlobalDiscoveryTopic);
+
+      // 1. MQTT CONNECT Packet (3.1.1, Clean Session)
+      final connectPkt = Uint8List.fromList([
+        0x10,
+        12 + clientIdBytes.length,
+        0x00,
+        0x04,
+        0x4D,
+        0x51,
+        0x54,
+        0x54,
+        0x04,
+        0x02,
+        0x00,
+        0x1E,
+        (clientIdBytes.length >> 8) & 0xFF,
+        clientIdBytes.length & 0xFF,
+        ...clientIdBytes,
+      ]);
+
+      // 2. MQTT SUBSCRIBE Packet (Packet ID = 1, QoS 0)
+      final subPkt = Uint8List.fromList([
+        0x82,
+        5 + topicBytes.length,
+        0x00,
+        0x01,
+        (topicBytes.length >> 8) & 0xFF,
+        topicBytes.length & 0xFF,
+        ...topicBytes,
+        0x00,
+      ]);
 
       sub = channel.stream.listen(
         (data) {
           try {
-            final text = data is String ? data : utf8.decode(data as List<int>);
-            final outer = jsonDecode(text) as Map<String, dynamic>;
-            final event = outer['event'] as String?;
-            if (event == 'message') {
-              final msgTime = (outer['time'] as num?)?.toInt() ?? 0;
-              final rawMessage = outer['message'] as String?;
-              if (rawMessage != null && rawMessage.isNotEmpty) {
-                final inner = jsonDecode(rawMessage) as Map<String, dynamic>;
-                if (inner['type'] == 'kaito_online_beacon' &&
-                    msgTime >= latestTime) {
-                  latestTime = msgTime;
-                  latestActive = inner['active'] as bool? ?? false;
-                  latestWsUrl = inner['wsUrl'] as String?;
-                  // Reset settle timer slightly to catch any newer message in the burst
-                  settleTimer?.cancel();
-                  settleTimer =
-                      Timer(const Duration(milliseconds: 220), finish);
-                }
-              }
+            final bytes =
+                data is List<int> ? data : utf8.encode(data.toString());
+            if (bytes.isEmpty) return;
+            final packetType = bytes[0] & 0xF0;
+
+            final text = utf8.decode(bytes, allowMalformed: true);
+            final startIdx = text.indexOf('{"type":"kaito_online_beacon"');
+            final endIdx = text.lastIndexOf('}');
+            if (startIdx >= 0 && endIdx > startIdx) {
+              final jsonStr = text.substring(startIdx, endIdx + 1);
+              final map = jsonDecode(jsonStr) as Map<String, dynamic>;
+              final active = map['active'] as bool? ?? false;
+              final wsUrl = (map['wsUrl'] as String? ?? '').trim();
+              finish(active && wsUrl.isNotEmpty ? wsUrl : '');
+              return;
+            }
+
+            if (packetType == 0x20) {
+              // CONNACK received -> send SUBSCRIBE
+              channel?.sink.add(subPkt);
+            } else if (packetType == 0x90) {
+              // SUBACK received -> if no retained message arrives within 700ms, topic is empty
+              settleTimer?.cancel();
+              settleTimer =
+                  Timer(const Duration(milliseconds: 700), () => finish(''));
             }
           } catch (_) {}
         },
-        onDone: finish,
-        onError: (_) => finish(),
+        onDone: () => finish(null),
+        onError: (_) => finish(null),
       );
 
+      channel.sink.add(connectPkt);
+
       return await completer.future.timeout(
-        const Duration(milliseconds: 1800),
-        onTimeout: () =>
-            (latestActive && latestWsUrl != null && latestWsUrl!.isNotEmpty)
-                ? latestWsUrl
-                : null,
+        const Duration(milliseconds: 2500),
+        onTimeout: () => null,
       );
     } catch (_) {
       return null;
     } finally {
       settleTimer?.cancel();
+      try {
+        channel?.sink.add(Uint8List.fromList([0xE0, 0x00]));
+      } catch (_) {}
       try {
         await sub?.cancel();
       } catch (_) {}
@@ -1363,7 +1413,7 @@ class LanMultiplayerService {
   }
 
   /// Checks if the portable PC Online Server (`INICIAR_SERVIDOR_ONLINE.bat`) is active
-  /// (either locally on the same PC/LAN or globally across the Internet via its automatic tunnel),
+  /// (globally across the Internet via its automatic WSS tunnel, or locally on the same PC/LAN),
   /// and subscribes to live room list updates when found.
   Future<bool> refreshOnlineServer({String? customAddress}) async {
     await _closeOnlineLobbySocket();
@@ -1390,28 +1440,20 @@ class LanMultiplayerService {
       }
     }
 
-    // 2. Same-PC & Local LAN fast check (when running INICIAR_SERVIDOR_ONLINE.bat on the same PC)
+    // 2. Global automatic discovery via the PC Server's outbound WSS tunnel (works anywhere over Internet!)
+    final globalTunnelWsUrl = await _discoverGlobalOnlineServerWsUrl();
+    if (globalTunnelWsUrl != null && globalTunnelWsUrl.isNotEmpty) {
+      addWsCandidate(globalTunnelWsUrl);
+    }
+
+    // 3. Same-PC & Local LAN fallback check
     if (!kIsWeb) {
       addWsCandidate('ws://127.0.0.1:$kOnlineServerPort');
       final udpDiscovered = await _discoverOnlineServerViaUdp();
       if (udpDiscovered != null) {
         addWsCandidate('ws://${udpDiscovered.$1}:${udpDiscovered.$2}');
       }
-    }
-
-    // 3. Global automatic discovery via the PC Server's outbound WSS tunnel (works anywhere without opening ports!)
-    final globalTunnelWsUrl = await _discoverGlobalOnlineServerWsUrl();
-    if (globalTunnelWsUrl != null && globalTunnelWsUrl.isNotEmpty) {
-      // On Web (HTTPS), put the WSS tunnel first; on Native, check right after localhost
-      if (kIsWeb) {
-        candidateWsUris.insert(0, globalTunnelWsUrl);
-      } else {
-        addWsCandidate(globalTunnelWsUrl);
-      }
-    }
-
-    // 4. Fallback localhost check for local Web debugging
-    if (kIsWeb) {
+    } else {
       addWsCandidate('ws://127.0.0.1:$kOnlineServerPort');
     }
 
@@ -1439,10 +1481,14 @@ class LanMultiplayerService {
   Future<bool> _tryConnectOnlineLobbySocketUri(String wsUriStr) async {
     LanSocket? socket;
     final firstPacketCompleter = Completer<bool>();
+    final isLocalhost = wsUriStr.contains('127.0.0.1') ||
+        wsUriStr.contains('localhost');
+    final connectTimeout = Duration(milliseconds: isLocalhost ? 1200 : 5000);
+    final packetTimeout = Duration(milliseconds: isLocalhost ? 1200 : 4000);
     try {
       final wsUri = Uri.parse(wsUriStr);
       final channel = WebSocketChannel.connect(wsUri);
-      await channel.ready.timeout(const Duration(milliseconds: 2800));
+      await channel.ready.timeout(connectTimeout);
       socket = ChannelWebSocket(channel);
 
       socket.stream.listen(
@@ -1488,7 +1534,7 @@ class LanMultiplayerService {
       socket.send(jsonEncode({'type': 'online_get_rooms'}));
 
       final confirmed = await firstPacketCompleter.future.timeout(
-        const Duration(milliseconds: 2200),
+        packetTimeout,
         onTimeout: () => false,
       );
 
