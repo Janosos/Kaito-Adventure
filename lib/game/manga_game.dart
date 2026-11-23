@@ -566,6 +566,8 @@ class MangaGame extends FlameGame
                 comboIndex: (data['combo'] as num?)?.toInt() ?? 0,
                 x: (data['x'] as num?)?.toDouble(),
                 y: (data['y'] as num?)?.toDouble(),
+                vx: (data['vx'] as num?)?.toDouble(),
+                vy: (data['vy'] as num?)?.toDouble(),
                 facing: (data['f'] as num?)?.toInt(),
               );
             }
@@ -963,9 +965,12 @@ class MangaGame extends FlameGame
     // Clamping dt guarantees stable physics integration and prevents tunneling/overshoot
     // across all refresh rates: 60 Hz (~16.6ms), 90 Hz (~11.1ms), 120 Hz (~8.33ms), 144 Hz (~6.94ms)
     final clampedDt = dt.clamp(0.0005, 0.1);
-    super.update(clampedDt);
+    final playerReady =
+        isLoaded && world.children.contains(player) && player.isLoaded;
 
-    if (isLoaded && world.children.contains(player) && player.isLoaded) {
+    // Poll and apply local player inputs BEFORE stepping world physics (`super.update`)
+    // so jumps, dashes, attacks, and ultimates execute on the current frame with 0-frame lag.
+    if (playerReady) {
       double horizontal = 0.0;
       if (_pressedKeys.contains(LogicalKeyboardKey.keyA) ||
           _pressedKeys.contains(LogicalKeyboardKey.arrowLeft)) {
@@ -1001,7 +1006,11 @@ class MangaGame extends FlameGame
         ranged: ranged,
         ultimate: ultimate,
       );
+    }
 
+    super.update(clampedDt);
+
+    if (playerReady) {
       if (isMultiplayer) {
         final net = LanMultiplayerService.instance;
         final matchActive = net.inMatchNotifier.value &&
@@ -1016,13 +1025,15 @@ class MangaGame extends FlameGame
           final localDead = player.isDying || player.hp <= 0;
           final reportedHp = localDead ? 0 : player.hp;
           final hpChanged = reportedHp != _lastSentHp;
-          // Attack/dash/ougi transitions already fire an immediate `player_action` packet
+          // Jump/attack/dash/ougi transitions already fire an immediate `player_action` packet
           // in MangaPlayer, so avoid duplicating a `state` packet on the exact same frame.
-          final isActionAlreadySentByEvent = player.action == PlayerAction.attack1 ||
-              player.action == PlayerAction.attack2 ||
-              player.action == PlayerAction.attack3 ||
-              player.action == PlayerAction.dashing ||
-              player.action == PlayerAction.ougi;
+          final isActionAlreadySentByEvent =
+              player.action == PlayerAction.jumping ||
+                  player.action == PlayerAction.attack1 ||
+                  player.action == PlayerAction.attack2 ||
+                  player.action == PlayerAction.attack3 ||
+                  player.action == PlayerAction.dashing ||
+                  player.action == PlayerAction.ougi;
           final urgentChange = hpChanged ||
               (((!isActionAlreadySentByEvent &&
                           currentAction != _lastSentAction) ||

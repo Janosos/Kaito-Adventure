@@ -38,6 +38,7 @@ class RemotePlayer extends PositionComponent
   double _attackAnimLockTimer = 0.0;
   double _lastSlashFxCooldown = 0.0;
   double _lastOugiFxCooldown = 0.0;
+  double _lastJumpFxCooldown = 0.0;
 
   Map<PlayerAction, SpriteAnimationTicker>? _tickers;
   String? _cachedTagName;
@@ -322,15 +323,20 @@ class RemotePlayer extends PositionComponent
     }
   }
 
-  /// Immediately plays attack/dash/ougi animation and spawns comic VFX when remote player acts
+  /// Immediately plays attack/dash/jump/ougi animation and spawns comic VFX when remote player acts
   void triggerRemoteAction({
     required String actionType,
     int comboIndex = 0,
     double? x,
     double? y,
+    double? vx,
+    double? vy,
     int? facing,
   }) {
     if (isDying || isCelebrating) return;
+    if (facing != null) {
+      facingDirection = facing < 0 ? -1 : 1;
+    }
     if (x != null && y != null && x.isFinite && y.isFinite) {
       targetPosition.setValues(x, y);
       _timeSinceLastState = 0.0;
@@ -338,8 +344,8 @@ class RemotePlayer extends PositionComponent
         position.setValues(x, y);
       }
     }
-    if (facing != null) {
-      facingDirection = facing < 0 ? -1 : 1;
+    if (vx != null && vy != null && vx.isFinite && vy.isFinite) {
+      networkVelocity.setValues(vx, vy);
     }
 
     if (actionType == 'slash') {
@@ -368,6 +374,9 @@ class RemotePlayer extends PositionComponent
         targetScale: 0.95,
       ));
     } else if (actionType == 'dash') {
+      if (vx == null) {
+        networkVelocity.setValues(facingDirection * 560.0, 0.0);
+      }
       action = PlayerAction.dashing;
       _tickers?[action]?.reset();
       _attackAnimLockTimer = 0.22;
@@ -383,6 +392,24 @@ class RemotePlayer extends PositionComponent
         size: Vector2(80, size.y),
         direction: Vector2(facingDirection.toDouble(), 0),
       ));
+    } else if (actionType == 'jump') {
+      if (vy == null) {
+        networkVelocity.y = -485.0;
+      }
+      action = PlayerAction.jumping;
+      _tickers?[action]?.reset();
+      if (_lastJumpFxCooldown <= 0) {
+        _lastJumpFxCooldown = 0.14;
+        AudioService.playSfx(AudioService.sfxJump, volume: 0.7);
+        game.add(MangaDustEffect(position: position.clone()));
+        game.add(MangaTextEffect(
+          position: Vector2(position.x, position.y - size.y - 10),
+          text: 'HOP!',
+          fillColor: ComicTheme.paperWhite,
+          initialScale: 0.3,
+          targetScale: 0.7,
+        ));
+      }
     } else if (actionType == 'ougi') {
       ougi = 0.0;
       action = PlayerAction.ougi;
@@ -493,13 +520,21 @@ class RemotePlayer extends PositionComponent
     if (_lastOugiFxCooldown > 0) {
       _lastOugiFxCooldown -= dt;
     }
+    if (_lastJumpFxCooldown > 0) {
+      _lastJumpFxCooldown -= dt;
+    }
     if (isCelebrating) {
       _celebrationTime += dt;
     }
 
-    // Short-horizon dead-reckoning prediction + frame-rate-independent smoothing
+    // Short-horizon dead-reckoning prediction (with gravity on airborne arcs) + smoothing
     _timeSinceLastState += dt;
-    if (!isDying && !isCelebrating && _timeSinceLastState < 0.09) {
+    if (!isDying && !isCelebrating && _timeSinceLastState < 0.11) {
+      if (action == PlayerAction.jumping ||
+          action == PlayerAction.falling ||
+          networkVelocity.y.abs() > 1.0) {
+        networkVelocity.y += 1100.0 * dt;
+      }
       targetPosition.x = (targetPosition.x + networkVelocity.x * dt)
           .clamp(game.minPlayerX, game.maxPlayerX);
       targetPosition.y += networkVelocity.y * dt;
@@ -509,7 +544,7 @@ class RemotePlayer extends PositionComponent
     if (dist > 240.0) {
       position.setFrom(targetPosition);
     } else if (dist > 0.5) {
-      final smooth = 1.0 - math.exp(-22.0 * dt);
+      final smooth = 1.0 - math.exp(-26.0 * dt);
       position.lerp(targetPosition, smooth);
     }
 

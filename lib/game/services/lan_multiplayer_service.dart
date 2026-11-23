@@ -1276,7 +1276,7 @@ class LanMultiplayerService {
       } catch (_) {}
 
       return await completer.future.timeout(
-        const Duration(milliseconds: 380),
+        const Duration(milliseconds: 220),
         onTimeout: () => null,
       );
     } catch (_) {
@@ -1440,21 +1440,22 @@ class LanMultiplayerService {
       }
     }
 
-    // 2. Global automatic discovery via the PC Server's outbound WSS tunnel (works anywhere over Internet!)
-    final globalTunnelWsUrl = await _discoverGlobalOnlineServerWsUrl();
+    // 2. Discover Local LAN (UDP) and Global Tunnel (MQTT) concurrently,
+    //    but ALWAYS prioritize Same-PC (127.0.0.1) and Local LAN first so local
+    //    players get 0.1–2 ms direct latency instead of routing through the tunnel!
+    final udpFuture = !kIsWeb
+        ? _discoverOnlineServerViaUdp()
+        : Future<(String, int)?>.value(null);
+    final globalFuture = _discoverGlobalOnlineServerWsUrl();
+
+    addWsCandidate('ws://127.0.0.1:$kOnlineServerPort');
+    final udpDiscovered = await udpFuture;
+    if (udpDiscovered != null) {
+      addWsCandidate('ws://${udpDiscovered.$1}:${udpDiscovered.$2}');
+    }
+    final globalTunnelWsUrl = await globalFuture;
     if (globalTunnelWsUrl != null && globalTunnelWsUrl.isNotEmpty) {
       addWsCandidate(globalTunnelWsUrl);
-    }
-
-    // 3. Same-PC & Local LAN fallback check
-    if (!kIsWeb) {
-      addWsCandidate('ws://127.0.0.1:$kOnlineServerPort');
-      final udpDiscovered = await _discoverOnlineServerViaUdp();
-      if (udpDiscovered != null) {
-        addWsCandidate('ws://${udpDiscovered.$1}:${udpDiscovered.$2}');
-      }
-    } else {
-      addWsCandidate('ws://127.0.0.1:$kOnlineServerPort');
     }
 
     for (final wsUriStr in candidateWsUris) {
@@ -1483,8 +1484,8 @@ class LanMultiplayerService {
     final firstPacketCompleter = Completer<bool>();
     final isLocalhost = wsUriStr.contains('127.0.0.1') ||
         wsUriStr.contains('localhost');
-    final connectTimeout = Duration(milliseconds: isLocalhost ? 1200 : 5000);
-    final packetTimeout = Duration(milliseconds: isLocalhost ? 1200 : 4000);
+    final connectTimeout = Duration(milliseconds: isLocalhost ? 300 : 5000);
+    final packetTimeout = Duration(milliseconds: isLocalhost ? 500 : 4000);
     try {
       final wsUri = Uri.parse(wsUriStr);
       final channel = WebSocketChannel.connect(wsUri);
@@ -1891,9 +1892,11 @@ class LanMultiplayerService {
     int comboIndex = 0,
     required double x,
     required double y,
+    double? vx,
+    double? vy,
     required int facing,
   }) {
-    sendRaw({
+    final map = <String, dynamic>{
       'type': 'player_action',
       'sessionId': matchSessionIdNotifier.value,
       'id': myPlayerId,
@@ -1902,7 +1905,10 @@ class LanMultiplayerService {
       'x': _round1(x),
       'y': _round1(y),
       'f': facing,
-    });
+    };
+    if (vx != null) map['vx'] = _round1(vx);
+    if (vy != null) map['vy'] = _round1(vy);
+    sendRaw(map);
   }
 
   void sendSpawnKunai({

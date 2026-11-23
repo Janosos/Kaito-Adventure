@@ -43,6 +43,7 @@ class AudioService {
   static const int _sfxPoolSize = 8;
   static final List<AudioPlayer> _sfxPool = [];
   static int _sfxIndex = 0;
+  static final Map<String, int> _lastSfxPlayedMs = {};
 
   // Audio Cache configured with asset prefix
   static final AudioCache _audioCache = AudioCache(prefix: 'assets/audio/');
@@ -112,17 +113,23 @@ class AudioService {
 
       if (_sfxPool.isEmpty) return;
 
+      // Per-sound micro-debounce (42ms) prevents platform-channel saturation during
+      // multi-player combat flurries while keeping every distinct sound instant.
+      final nowMs = DateTime.now().millisecondsSinceEpoch;
+      final lastMs = _lastSfxPlayedMs[sfxFile];
+      if (lastMs != null && (nowMs - lastMs) < 42) return;
+      _lastSfxPlayedMs[sfxFile] = nowMs;
+
       final player = _sfxPool[_sfxIndex];
       _sfxIndex = (_sfxIndex + 1) % _sfxPool.length;
 
-      player.stop().then((_) async {
-        await player.setVolume(vol);
-        await player.play(
-          AssetSource(sfxFile),
-          volume: vol,
-          mode: PlayerMode.lowLatency,
-        );
-      }).catchError((_) {});
+      player
+          .play(
+            AssetSource(sfxFile),
+            volume: vol,
+            mode: PlayerMode.lowLatency,
+          )
+          .catchError((_) {});
     } catch (_) {}
   }
 

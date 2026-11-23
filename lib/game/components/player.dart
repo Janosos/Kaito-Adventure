@@ -237,10 +237,14 @@ class MangaPlayer extends PositionComponent
 
   void performJump() {
     if (isDying) return;
+    bool jumped = false;
     if (isOnGround) {
       velocity.y = jumpForce;
       isOnGround = false;
       _standingPlatform = null;
+      action = PlayerAction.jumping;
+      _tickers[PlayerAction.jumping]?.reset();
+      jumped = true;
       AudioService.playSfx(AudioService.sfxJump);
       game.add(MangaDustEffect(position: position.clone()));
       game.add(MangaTextEffect(
@@ -255,6 +259,9 @@ class MangaPlayer extends PositionComponent
       velocity.x = -wallDirection * moveSpeed * 1.3;
       facingDirection = -wallDirection;
       isTouchingWall = false;
+      action = PlayerAction.jumping;
+      _tickers[PlayerAction.jumping]?.reset();
+      jumped = true;
       AudioService.playSfx(AudioService.sfxJump);
       game.add(MangaDustEffect(position: position.clone()));
       game.add(MangaTextEffect(
@@ -264,6 +271,16 @@ class MangaPlayer extends PositionComponent
         initialScale: 0.4,
         targetScale: 0.8,
       ));
+    }
+    if (jumped && game.isMultiplayer) {
+      LanMultiplayerService.instance.sendPlayerAction(
+        actionType: 'jump',
+        x: position.x,
+        y: position.y,
+        vx: velocity.x,
+        vy: velocity.y,
+        facing: facingDirection,
+      );
     }
   }
 
@@ -295,6 +312,8 @@ class MangaPlayer extends PositionComponent
         actionType: 'dash',
         x: position.x,
         y: position.y,
+        vx: velocity.x,
+        vy: velocity.y,
         facing: facingDirection,
       );
     }
@@ -351,6 +370,8 @@ class MangaPlayer extends PositionComponent
         comboIndex: comboIndex,
         x: position.x,
         y: position.y,
+        vx: velocity.x,
+        vy: velocity.y,
         facing: facingDirection,
       );
     }
@@ -392,6 +413,8 @@ class MangaPlayer extends PositionComponent
         actionType: 'kunai',
         x: position.x,
         y: position.y,
+        vx: velocity.x,
+        vy: velocity.y,
         facing: facingDirection,
       );
       LanMultiplayerService.instance.sendSpawnKunai(
@@ -419,6 +442,8 @@ class MangaPlayer extends PositionComponent
         actionType: 'ougi',
         x: position.x,
         y: position.y,
+        vx: velocity.x,
+        vy: velocity.y,
         facing: facingDirection,
       );
     }

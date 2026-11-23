@@ -847,9 +847,10 @@ namespace KaitoOnlineServer
         public static string ServerName = "Servidor Oficial Kaito Online";
 
         // ---- Ajustes de rendimiento / red ----
-        // Intervalo minimo entre dos "state" del mismo jugador hacia el puente SSH (28 ms = ~35 Hz).
-        // Deja pasar el tick normal del juego (33 ms) con 0 ms extra y frena rafagas en ssh.exe.
-        public const int MinStateIntervalMs = 28;
+        // Umbral de micro-rafaga (14 ms): deja pasar el 100% de los paquetes de movimiento
+        // normales (~33 ms) con 0 ms de espera incluso con jitter de red, y solo fusiona
+        // rafagas duplicadas (< 14 ms) para no llenar el buffer de ssh.exe / cloudflared.exe.
+        public const int MinStateIntervalMs = 14;
         public const int PingIntervalMs = 10000;
         public const int IdleTimeoutMs = 60000;
         public const int IdleTimeoutNoPongMs = 300000;
@@ -883,6 +884,8 @@ namespace KaitoOnlineServer
         private delegate bool ConsoleCtrlDelegate(int sig);
         [DllImport("Kernel32")]
         private static extern bool SetConsoleCtrlHandler(ConsoleCtrlDelegate handler, bool add);
+        [DllImport("winmm.dll")]
+        private static extern uint timeBeginPeriod(uint uPeriod);
         private static ConsoleCtrlDelegate _consoleHandler;
 
         [ThreadStatic]
@@ -1026,6 +1029,7 @@ namespace KaitoOnlineServer
 
         private static void TuneProcess()
         {
+            try { timeBeginPeriod(1); } catch { }
             try { Process.GetCurrentProcess().PriorityClass = ProcessPriorityClass.AboveNormal; } catch { }
             try { System.Runtime.GCSettings.LatencyMode = System.Runtime.GCLatencyMode.SustainedLowLatency; } catch { }
             try { ThreadPool.SetMinThreads(24, 24); } catch { }
@@ -1081,7 +1085,7 @@ namespace KaitoOnlineServer
         {
             while (_running)
             {
-                Thread.Sleep(10);
+                Thread.Sleep(4);
                 if (!_running) break;
                 try
                 {
@@ -1269,6 +1273,75 @@ namespace KaitoOnlineServer
             _tunnelProcess = null;
         }
 
+        private static string ResolveCloudflaredPath()
+        {
+            try
+            {
+                string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+                string localCf = Path.Combine(baseDir, "cloudflared.exe");
+                if (File.Exists(localCf)) return localCf;
+                string localCf64 = Path.Combine(baseDir, "cloudflared-windows-amd64.exe");
+                if (File.Exists(localCf64)) return localCf64;
+
+                string pf = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
+                string pfCf = Path.Combine(pf, @"cloudflared\cloudflared.exe");
+                if (File.Exists(pfCf)) return pfCf;
+
+                string pf86 = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86);
+                string pf86Cf = Path.Combine(pf86, @"cloudflared\cloudflared.exe");
+                if (File.Exists(pf86Cf)) return pf86Cf;
+
+                string pathEnv = Environment.GetEnvironmentVariable("PATH") ?? "";
+                string[] dirs = pathEnv.Split(Path.PathSeparator);
+                for (int i = 0; i < dirs.Length; i++)
+                {
+                    string d = dirs[i].Trim();
+                    if (d.Length == 0) continue;
+                    string candidate = Path.Combine(d, "cloudflared.exe");
+                    if (File.Exists(candidate)) return candidate;
+                }
+            }
+            catch { }
+            return null;
+        }
+
+        private static string EnsureCloudflaredInstalled()
+        {
+            string existing = ResolveCloudflaredPath();
+            if (!string.IsNullOrEmpty(existing)) return existing;
+            if (TcpPort != 7779) return null; // En pruebas automatizadas (otro puerto) usar ssh directo
+
+            try
+            {
+                string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+                string targetPath = Path.Combine(baseDir, "cloudflared.exe");
+                string tmpPath = Path.Combine(baseDir, "cloudflared.exe.tmp");
+                LogInfo("Descargando motor Cloudflare Edge (cloudflared.exe) por unica vez para reducir la latencia...");
+                using (WebClient wc = new WebClient())
+                {
+                    wc.Headers.Add("User-Agent", "KaitoAdventureOnlineServer/2.0");
+                    wc.DownloadFile("https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe", tmpPath);
+                }
+                if (File.Exists(tmpPath))
+                {
+                    FileInfo fi = new FileInfo(tmpPath);
+                    if (fi.Length > 5 * 1024 * 1024)
+                    {
+                        if (File.Exists(targetPath)) File.Delete(targetPath);
+                        File.Move(tmpPath, targetPath);
+                        LogSuccess("Motor Cloudflare Edge instalado correctamente en servidor_online\\cloudflared.exe");
+                        return targetPath;
+                    }
+                    try { File.Delete(tmpPath); } catch { }
+                }
+            }
+            catch (Exception ex)
+            {
+                LogInfo("No se pudo descargar cloudflared automaticamente (" + ex.Message + "); se usara OpenSSH.");
+            }
+            return null;
+        }
+
         private static string ResolveWindowsSshPath()
         {
             string sys32Ssh = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), @"OpenSSH\ssh.exe");
@@ -1285,20 +1358,32 @@ namespace KaitoOnlineServer
 
         private static void StartInternetTunnelLoop()
         {
-            string sshExe = ResolveWindowsSshPath();
-            Regex urlRegex = new Regex(@"https://([a-zA-Z0-9\.-]+\.lhr\.life)", RegexOptions.IgnoreCase);
+            Regex urlRegex = new Regex(@"https://([a-zA-Z0-9\.-]+\.(?:trycloudflare\.com|lhr\.life))", RegexOptions.IgnoreCase);
             int retryDelayMs = 3000;
+            bool forceSshFallback = false;
 
             while (_running)
             {
                 Stopwatch aliveTime = Stopwatch.StartNew();
+                bool usedCloudflared = false;
                 try
                 {
-                    LogInfo("Activando puente de Internet de baja latencia (sin abrir puertos)...");
-
+                    string cfExe = forceSshFallback ? null : EnsureCloudflaredInstalled();
+                    usedCloudflared = !string.IsNullOrEmpty(cfExe);
                     ProcessStartInfo psi = new ProcessStartInfo();
-                    psi.FileName = sshExe;
-                    psi.Arguments = "-T -o StrictHostKeyChecking=no -o UserKnownHostsFile=NUL -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o ExitOnForwardFailure=yes -o IPQoS=lowdelay -o Compression=no -R 80:127.0.0.1:" + TcpPort + " nokey@localhost.run";
+                    if (usedCloudflared)
+                    {
+                        LogInfo("Activando puente Cloudflare Edge de ultra-baja latencia (cloudflared)...");
+                        psi.FileName = cfExe;
+                        psi.Arguments = "tunnel --url http://127.0.0.1:" + TcpPort + " --no-autoupdate";
+                    }
+                    else
+                    {
+                        string sshExe = ResolveWindowsSshPath();
+                        LogInfo("Activando puente de Internet OpenSSH de baja latencia...");
+                        psi.FileName = sshExe;
+                        psi.Arguments = "-T -o StrictHostKeyChecking=no -o UserKnownHostsFile=NUL -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o ExitOnForwardFailure=yes -o IPQoS=lowdelay -o Compression=no -R 80:127.0.0.1:" + TcpPort + " nokey@localhost.run";
+                    }
                     psi.UseShellExecute = false;
                     psi.RedirectStandardOutput = true;
                     psi.RedirectStandardError = true;
@@ -1353,6 +1438,10 @@ namespace KaitoOnlineServer
                 }
                 finally
                 {
+                    if (usedCloudflared && aliveTime.ElapsedMilliseconds < 10000 && string.IsNullOrEmpty(PublicTunnelWsUrl))
+                    {
+                        forceSshFallback = true;
+                    }
                     StopTunnelProcess();
                     if (_running) ClearPublicTunnelUrl();
                 }

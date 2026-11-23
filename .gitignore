@@ -56,3 +56,5 @@ flutter/
 /releases/
 *.zip
 *.apk
+servidor_online/cloudflared.exe
+servidor_online/cloudflared.exe.tmp

@@ -20,6 +20,8 @@ class MangaTextEffect extends PositionComponent {
   late final TextPainter _fillPainter;
   late final TextPainter _strokePainter;
 
+  static final Map<String, (TextPainter, TextPainter)> _painterCache = {};
+
   MangaTextEffect({
     required Vector2 position,
     required this.text,
@@ -36,42 +38,55 @@ class MangaTextEffect extends PositionComponent {
 
   @override
   Future<void> onLoad() async {
-    final textSpanFill = TextSpan(
-      text: text,
-      style: TextStyle(
-        fontFamily: 'Bangers',
-        fontSize: 32,
-        fontWeight: FontWeight.w900,
-        color: fillColor,
-        letterSpacing: 2.0,
-      ),
-    );
+    final cacheKey =
+        '$text|${fillColor.toARGB32()}|${strokeColor.toARGB32()}';
+    final cached = _painterCache[cacheKey];
+    if (cached != null) {
+      _fillPainter = cached.$1;
+      _strokePainter = cached.$2;
+    } else {
+      final textSpanFill = TextSpan(
+        text: text,
+        style: TextStyle(
+          fontFamily: 'Bangers',
+          fontSize: 32,
+          fontWeight: FontWeight.w900,
+          color: fillColor,
+          letterSpacing: 2.0,
+        ),
+      );
 
-    final textSpanStroke = TextSpan(
-      text: text,
-      style: TextStyle(
-        fontFamily: 'Bangers',
-        fontSize: 32,
-        fontWeight: FontWeight.w900,
-        letterSpacing: 2.0,
-        foreground: Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 6.0
-          ..strokeCap = StrokeCap.round
-          ..strokeJoin = StrokeJoin.round
-          ..color = strokeColor,
-      ),
-    );
+      final textSpanStroke = TextSpan(
+        text: text,
+        style: TextStyle(
+          fontFamily: 'Bangers',
+          fontSize: 32,
+          fontWeight: FontWeight.w900,
+          letterSpacing: 2.0,
+          foreground: Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 6.0
+            ..strokeCap = StrokeCap.round
+            ..strokeJoin = StrokeJoin.round
+            ..color = strokeColor,
+        ),
+      );
 
-    _fillPainter = TextPainter(
-      text: textSpanFill,
-      textDirection: TextDirection.ltr,
-    )..layout();
+      _fillPainter = TextPainter(
+        text: textSpanFill,
+        textDirection: TextDirection.ltr,
+      )..layout();
 
-    _strokePainter = TextPainter(
-      text: textSpanStroke,
-      textDirection: TextDirection.ltr,
-    )..layout();
+      _strokePainter = TextPainter(
+        text: textSpanStroke,
+        textDirection: TextDirection.ltr,
+      )..layout();
+
+      if (_painterCache.length >= 96) {
+        _painterCache.remove(_painterCache.keys.first);
+      }
+      _painterCache[cacheKey] = (_fillPainter, _strokePainter);
+    }
 
     size = Vector2(_fillPainter.width, _fillPainter.height);
     angle = rotationAngle;
