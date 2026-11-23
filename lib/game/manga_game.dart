@@ -204,6 +204,22 @@ class MangaGame extends FlameGame
     return world.descendants().whereType<T>();
   }
 
+  /// Fast flat list of direct entities in `world` and `_currentLevelComponent`
+  /// (reaches all campaign enemies/crates/switches and PvP RemotePlayers in 1 pass
+  /// without recursing into hundreds of child platform hitboxes).
+  List<Component> collectCombatTargets() {
+    final list = <Component>[];
+    for (final c in world.children) {
+      list.add(c);
+      if (c == _currentLevelComponent || c.children.isNotEmpty) {
+        for (final sub in c.children) {
+          list.add(sub);
+        }
+      }
+    }
+    return list;
+  }
+
   @override
   Future<void> onLoad() async {
     await super.onLoad();

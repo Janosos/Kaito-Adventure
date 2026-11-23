@@ -480,8 +480,8 @@ class MangaPlayer extends PositionComponent
       radius: 60,
     ));
 
-    // Single-pass world scan instead of 7 separate recursive descendants() walks
-    final worldChildren = game.world.children.toList(growable: false);
+    // Single-pass world & level scan instead of 7 separate recursive descendants() walks
+    final worldChildren = game.collectCombatTargets();
     for (int i = 0; i < worldChildren.length; i++) {
       final c = worldChildren[i];
       if (c is EnemyGrunt) {
@@ -555,8 +555,8 @@ class MangaPlayer extends PositionComponent
   void _checkMeleeHit() {
     final kbForce = 11.0 + comboIndex * 3.0;
 
-    // Single-pass scan over direct world children (eliminates 10 recursive descendants() walks per slash!)
-    final worldChildren = game.world.children.toList(growable: false);
+    // Single-pass scan over world & active level entities (eliminates 10 recursive descendants() walks per slash!)
+    final worldChildren = game.collectCombatTargets();
     for (int i = 0; i < worldChildren.length; i++) {
       final c = worldChildren[i];
       if (c is EnemyGrunt) {
