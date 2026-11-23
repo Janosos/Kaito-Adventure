@@ -21,6 +21,7 @@ class PvPArenaLevel extends Component with HasGameReference<MangaGame> {
   static const double voidDeathY = 560.0;
 
   final Map<String, RemotePlayer> remotePlayers = {};
+  final List<ComicPlatform> arenaPlatforms = [];
   bool localPlayerEliminated = false;
   late final int stageIndex;
   double? _remainingTime;
@@ -115,52 +116,32 @@ class PvPArenaLevel extends Component with HasGameReference<MangaGame> {
     ));
 
     // 2. Stage-Specific Floating Platforms Layout
+    arenaPlatforms.clear();
+    void addArenaPlatform(Vector2 pos, Vector2 sz) {
+      final plat = ComicPlatform(position: pos, size: sz);
+      arenaPlatforms.add(plat);
+      add(plat);
+    }
+
     if (stageIndex == 0) {
       // Stage 0 (Original Base): Single Central Floating Stone Platform
-      add(ComicPlatform(
-        position: Vector2(platformX, platformY),
-        size: Vector2(platformWidth, platformHeight),
-      ));
+      addArenaPlatform(
+        Vector2(platformX, platformY),
+        Vector2(platformWidth, platformHeight),
+      );
     } else if (stageIndex == 1) {
       // Stage 1 (Azoteas Neo-Tokyo): Tri-Platform Battlefield Layout
-      add(ComicPlatform(
-        position: Vector2(220, 450),
-        size: Vector2(760, 52),
-      ));
-      add(ComicPlatform(
-        position: Vector2(265, 336),
-        size: Vector2(195, 24),
-      ));
-      add(ComicPlatform(
-        position: Vector2(740, 336),
-        size: Vector2(195, 24),
-      ));
-      add(ComicPlatform(
-        position: Vector2(490, 226),
-        size: Vector2(220, 24),
-      ));
+      addArenaPlatform(Vector2(220, 450), Vector2(760, 52));
+      addArenaPlatform(Vector2(265, 336), Vector2(195, 24));
+      addArenaPlatform(Vector2(740, 336), Vector2(195, 24));
+      addArenaPlatform(Vector2(490, 226), Vector2(220, 24));
     } else {
       // Stage 2 (Fortaleza Carmesí): Twin Floating Islands + High Ledges
-      add(ComicPlatform(
-        position: Vector2(170, 448),
-        size: Vector2(360, 50),
-      ));
-      add(ComicPlatform(
-        position: Vector2(670, 448),
-        size: Vector2(360, 50),
-      ));
-      add(ComicPlatform(
-        position: Vector2(480, 342),
-        size: Vector2(240, 24),
-      ));
-      add(ComicPlatform(
-        position: Vector2(220, 240),
-        size: Vector2(170, 24),
-      ));
-      add(ComicPlatform(
-        position: Vector2(810, 240),
-        size: Vector2(170, 24),
-      ));
+      addArenaPlatform(Vector2(170, 448), Vector2(360, 50));
+      addArenaPlatform(Vector2(670, 448), Vector2(360, 50));
+      addArenaPlatform(Vector2(480, 342), Vector2(240, 24));
+      addArenaPlatform(Vector2(220, 240), Vector2(170, 24));
+      addArenaPlatform(Vector2(810, 240), Vector2(170, 24));
     }
 
     // 3. Setup Local Player on platform based on assigned slot & full match stats
@@ -245,6 +226,27 @@ class PvPArenaLevel extends Component with HasGameReference<MangaGame> {
     }
 
     final player = game.player;
+
+    // Anti-tunneling platform floor clamp: prevents players from ever clipping through
+    // arena platforms on initial spawn, respawn landing, or frame hitches.
+    if (!player.isDying && player.velocity.y >= 0) {
+      for (final plat in arenaPlatforms) {
+        final left = plat.position.x - 10.0;
+        final right = plat.position.x + plat.size.x + 10.0;
+        final top = plat.position.y;
+        final maxDepth = (plat.size.y * 0.85).clamp(24.0, 48.0);
+        if (player.position.x >= left &&
+            player.position.x <= right &&
+            player.position.y >= top - 2.0 &&
+            player.position.y <= top + maxDepth) {
+          player.position.y = top;
+          player.velocity.y = 0;
+          player.isOnGround = true;
+          player.isTouchingWall = false;
+          break;
+        }
+      }
+    }
 
     // Fall to Void / Ring Out detection for Local Player
     if (player.position.y > voidDeathY) {

@@ -33,6 +33,8 @@ class RemotePlayer extends PositionComponent
   bool isDying = false;
   bool isCelebrating = false;
   double hitFlashTimer = 0.0;
+  double respawnShieldTimer = 0.0;
+  double _animTime = 0.0;
   double _timeSinceLastState = 0.0;
   double _celebrationTime = 0.0;
   double _attackAnimLockTimer = 0.0;
@@ -423,19 +425,40 @@ class RemotePlayer extends PositionComponent
     required double fullHp,
     required int remainingLives,
     Vector2? spawnPos,
+    double? deathX,
+    double? deathY,
+    bool isRingOut = false,
   }) {
+    if (!isRingOut) {
+      final bx = (deathX != null && deathX.isFinite) ? deathX : position.x;
+      final by = (deathY != null && deathY.isFinite) ? deathY : position.y;
+      AudioService.playSfx(AudioService.sfxPlayerDeath, volume: 0.75);
+      game.add(SubtleKoExplosionEffect(
+        position: Vector2(bx, by - size.y * 0.45),
+        playerColor: playerColor,
+      ));
+      game.add(MangaDustEffect(position: Vector2(bx, by)));
+    }
+
     isDying = false;
     maxHp = fullHp;
     hp = fullHp;
     lives = remainingLives;
-    hitFlashTimer = 0.35;
+    hitFlashTimer = 0.0;
+    // 2.0 seconds of Smash Bros blinking anti-hit protection
+    respawnShieldTimer = 2.0;
     _attackAnimLockTimer = 0.0;
-    action = PlayerAction.jumping;
+    networkVelocity.setZero();
+    action = PlayerAction.idle;
     _tickers?[action]?.reset();
     if (spawnPos != null) {
       position.setFrom(spawnPos);
       targetPosition.setFrom(spawnPos);
     }
+    game.add(SmashRespawnPlatformEffect(
+      target: this,
+      playerColor: playerColor,
+    ));
     game.add(MangaDustEffect(position: position.clone()));
     game.add(MangaTextEffect(
       position: Vector2(position.x, position.y - 64),
@@ -473,6 +496,7 @@ class RemotePlayer extends PositionComponent
   void takeDamage(double dmg, {Vector2? knockback}) {
     if (isDying ||
         isCelebrating ||
+        respawnShieldTimer > 0 ||
         LanMultiplayerService.instance.victoryCelebrationNotifier.value != null) {
       return;
     }
@@ -507,9 +531,13 @@ class RemotePlayer extends PositionComponent
   @override
   void update(double dt) {
     super.update(dt);
+    _animTime += dt;
 
     if (hitFlashTimer > 0) {
       hitFlashTimer -= dt;
+    }
+    if (respawnShieldTimer > 0) {
+      respawnShieldTimer -= dt;
     }
     if (_attackAnimLockTimer > 0) {
       _attackAnimLockTimer -= dt;
@@ -555,6 +583,16 @@ class RemotePlayer extends PositionComponent
   @override
   void render(Canvas canvas) {
     super.render(canvas);
+
+    // 2.0-second Smash Bros respawn invulnerability blink (nickname tag stays visible)
+    if (!isDying &&
+        action != PlayerAction.ougi &&
+        respawnShieldTimer > 0 &&
+        hitFlashTimer <= 0 &&
+        (_animTime * 20).toInt() % 2 == 0) {
+      _renderNicknameTag(canvas);
+      return;
+    }
 
     final ticker = _tickers?[action] ?? _tickers?[PlayerAction.idle];
     if (ticker == null) {

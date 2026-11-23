@@ -42,6 +42,7 @@ class MangaPlayer extends PositionComponent
   int pvpLives = 3;
   int pvpMaxLives = 3;
   double respawnShieldTimer = 0.0;
+  double respawnPlatformTimer = 0.0;
   double spirit = 0.0; // 0 to 100
   int comboCount = 0;
   double comboTimer = 0.0;
@@ -531,6 +532,7 @@ class MangaPlayer extends PositionComponent
             (remote.position.y - position.y).abs() < 260 &&
             !remote.isDying &&
             !remote.isCelebrating &&
+            remote.respawnShieldTimer <= 0 &&
             remote.action != PlayerAction.dashing) {
           const dmg = 65.0;
           final kbDir = (remote.position.x - position.x).abs() < 8.0
@@ -643,7 +645,7 @@ class MangaPlayer extends PositionComponent
       }
     }
 
-    // 4. Hit Active Boss
+    // 4. Hit Active Boss (+30% break/stun damage from basic katana attacks)
     final boss = game.activeBoss;
     if (boss != null && !boss.isDefeated) {
       final bossCenter =
@@ -654,6 +656,7 @@ class MangaPlayer extends PositionComponent
           dmg,
           knockbackDir: facingDirection,
           knockbackForce: 7.0 + comboIndex * 2.0,
+          stunMultiplier: 1.30,
         );
         _registerHit();
       }
@@ -686,6 +689,7 @@ class MangaPlayer extends PositionComponent
       for (final remote in game.queryWorld<RemotePlayer>().toList()) {
         if (!remote.isDying &&
             !remote.isCelebrating &&
+            remote.respawnShieldTimer <= 0 &&
             remote.action != PlayerAction.dashing) {
           final remoteCenter =
               Vector2(remote.position.x, remote.position.y - remote.size.y * 0.5);
@@ -724,6 +728,7 @@ class MangaPlayer extends PositionComponent
     pvpLives = configuredLives;
     pvpMaxLives = configuredLives;
     respawnShieldTimer = 0.0;
+    respawnPlatformTimer = 0.0;
     spirit = 0.0;
     comboCount = 0;
     comboTimer = 0.0;
@@ -751,25 +756,45 @@ class MangaPlayer extends PositionComponent
     action = PlayerAction.idle;
   }
 
-  /// Decrements 1 PvP life (stock). If lives remain, respawns Kaito at full HP;
-  /// if 0 lives remain, triggers permanent elimination. Returns true if eliminated.
+  /// Decrements 1 PvP life (stock). If lives remain, respawns Kaito at full HP
+  /// with a subtle KO burst (if killed by a hit) and a Smash Bros-style respawn platform
+  /// plus 2.0 seconds of blinking anti-hit protection. Returns true if eliminated.
   bool consumeMultiplayerLifeOrEliminate({bool isRingOut = false}) {
+    final deathPos = position.clone();
     pvpLives = (pvpLives - 1).clamp(0, pvpMaxLives);
     if (pvpLives > 0) {
+      // Subtle KO explosion at death location when killed by an attack (not ring-out)
+      if (!isRingOut) {
+        AudioService.playSfx(AudioService.sfxPlayerDeath, volume: 0.8);
+        game.add(SubtleKoExplosionEffect(
+          position: Vector2(deathPos.x, deathPos.y - size.y * 0.45),
+          playerColor: LanMultiplayerService.instance.myColor,
+        ));
+        game.add(MangaDustEffect(position: deathPos));
+      }
+
       hp = maxHp;
       isDying = false;
       isDashing = false;
       hurtAnimTimer = 0.0;
-      respawnShieldTimer = 1.0;
+      // 2.0 seconds of blinking anti-hit protection (Smash Bros style)
+      respawnShieldTimer = 2.0;
+      invulnerableTimer = 2.0;
+      respawnPlatformTimer = 0.95;
+
       final respawnPos =
           game.pvpArena?.getSafeRespawnPoint() ?? Vector2(600, 300);
       position.setFrom(respawnPos);
-      velocity.setValues(0, -60);
+      velocity.setZero();
       isOnGround = false;
       _standingPlatform = null;
-      action = PlayerAction.jumping;
-      _tickers[PlayerAction.jumping]?.reset();
+      action = PlayerAction.idle;
+      _tickers[PlayerAction.idle]?.reset();
 
+      game.add(SmashRespawnPlatformEffect(
+        target: this,
+        playerColor: LanMultiplayerService.instance.myColor,
+      ));
       AudioService.playSfx(AudioService.sfxJump);
       game.add(MangaDustEffect(position: position.clone()));
       game.add(MangaTextEffect(
@@ -778,7 +803,12 @@ class MangaPlayer extends PositionComponent
         fillColor: ComicTheme.energyCyan,
         targetScale: 1.5,
       ));
-      LanMultiplayerService.instance.sendLocalPlayerStockLost(pvpLives);
+      LanMultiplayerService.instance.sendLocalPlayerStockLost(
+        pvpLives,
+        deathX: deathPos.x,
+        deathY: deathPos.y,
+        isRingOut: isRingOut,
+      );
       return false;
     } else {
       pvpLives = 0;
@@ -965,6 +995,18 @@ class MangaPlayer extends PositionComponent
 
     if (invulnerableTimer > 0) invulnerableTimer -= dt;
     if (respawnShieldTimer > 0) respawnShieldTimer -= dt;
+    if (respawnPlatformTimer > 0) {
+      respawnPlatformTimer -= dt;
+      // Release from the Smash Bros floating respawn halo early if player moves/jumps/attacks after 0.22s
+      final wantsRelease = respawnPlatformTimer < 0.73 &&
+          (moveInput.abs() > 0.1 ||
+              isDashing ||
+              attackAnimTimer > 0 ||
+              velocity.y < -50);
+      if (wantsRelease) {
+        respawnPlatformTimer = 0.0;
+      }
+    }
     if (hurtAnimTimer > 0) hurtAnimTimer -= dt;
     if (attackCooldown > 0) attackCooldown -= dt;
     if (attackAnimTimer > 0) attackAnimTimer -= dt;
@@ -1054,10 +1096,22 @@ class MangaPlayer extends PositionComponent
 
     _tickers[action]?.update(dt);
 
+    // Smash Bros floating respawn platform perch: hold vertical descent while standing on the halo
+    if (respawnPlatformTimer > 0 && !isDashing) {
+      velocity.setZero();
+      action = attackAnimTimer > 0 ? action : PlayerAction.idle;
+      _tickers[action]?.update(dt);
+      return;
+    }
+
     // Gravity
-    velocity.y += gravity * dt;
-    if (isTouchingWall && velocity.y > 60) {
-      velocity.y = 80;
+    if (isOnGround && _standingPlatform != null) {
+      velocity.y = 0;
+    } else {
+      velocity.y += gravity * dt;
+      if (isTouchingWall && velocity.y > 60) {
+        velocity.y = 80;
+      }
     }
 
     position += velocity * dt;
@@ -1080,16 +1134,30 @@ class MangaPlayer extends PositionComponent
     if (other is ComicPlatform) {
       final playerBottom = position.y;
       final platformTop = other.position.y;
+      final platformLeft = other.position.x;
+      final platformRight = other.position.x + other.size.x;
+      final horizontallyOverPlatform =
+          position.x >= platformLeft - 10.0 &&
+          position.x <= platformRight + 10.0;
+      final maxSnapDepth = (other.size.y * 0.82).clamp(26.0, 48.0);
 
-      if (velocity.y >= 0 && (playerBottom - platformTop).abs() < 22) {
+      if (velocity.y >= 0 &&
+          horizontallyOverPlatform &&
+          playerBottom >= platformTop - 8.0 &&
+          playerBottom <= platformTop + maxSnapDepth) {
         position.y = platformTop;
         velocity.y = 0;
         isOnGround = true;
+        isTouchingWall = false;
         _standingPlatform = other;
         other.stepOn();
-      } else if (position.y > other.position.y + 12) {
+      } else if (position.y > other.position.y + 14 &&
+          (position.x < platformLeft + 8.0 ||
+              position.x > platformRight - 8.0)) {
         isTouchingWall = true;
-        wallDirection = (position.x < other.position.x) ? 1 : -1;
+        wallDirection = (position.x < other.position.x + other.size.x * 0.5)
+            ? 1
+            : -1;
       }
     } else if (other is MangaSpringPad) {
       if (velocity.y >= 0) {
@@ -1132,7 +1200,7 @@ class MangaPlayer extends PositionComponent
   void render(Canvas canvas) {
     if (!isDying &&
         action != PlayerAction.ougi &&
-        invulnerableTimer > 0 &&
+        (invulnerableTimer > 0 || respawnShieldTimer > 0) &&
         hurtAnimTimer <= 0 &&
         (_animTime * 20).toInt() % 2 == 0) {
       return;

@@ -134,6 +134,7 @@ class InkKunai extends PositionComponent
           other.id == throwerId ||
           other.isDying ||
           other.isCelebrating ||
+          other.respawnShieldTimer > 0 ||
           other.action == PlayerAction.dashing) {
         return;
       }
@@ -153,6 +154,7 @@ class InkKunai extends PositionComponent
       if (isFromRemote &&
           !other.isDying &&
           !other.isCelebrating &&
+          other.respawnShieldTimer <= 0 &&
           other.action != PlayerAction.dashing) {
         _hasCollided = true;
         _impact(other.position);

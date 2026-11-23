@@ -625,6 +625,9 @@ class MangaGame extends FlameGame
                   fullHp: fullHp,
                   remainingLives: newLives,
                   spawnPos: Vector2(spawn.x, spawn.y - 75.0),
+                  deathX: (data['dx'] as num?)?.toDouble(),
+                  deathY: (data['dy'] as num?)?.toDouble(),
+                  isRingOut: (data['ringOut'] as bool?) ?? false,
                 );
               }
             }
@@ -892,7 +895,7 @@ class MangaGame extends FlameGame
     AudioService.stopBgm();
     AudioService.playSfx(AudioService.sfxVictory);
     addScore(1000 * currentLevelIndex);
-    Future.delayed(const Duration(milliseconds: 1400), () {
+    Future.delayed(const Duration(milliseconds: 1650), () {
       pauseEngine();
       if (currentLevelIndex >= totalLevels) {
         _addOverlay('story_epilogue');

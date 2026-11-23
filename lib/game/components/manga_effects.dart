@@ -643,3 +643,194 @@ class _OugiCutLine {
     required this.color,
   });
 }
+
+/// Subtle, compact comic K.O. burst when a fighter loses a stock from a hit (not ring-out)
+/// or during sequential Boss defeat explosions.
+class SubtleKoExplosionEffect extends PositionComponent {
+  final Color playerColor;
+  final double maxLifetime;
+  final double maxRadius;
+  double _timer = 0.0;
+  final List<_BlastSpark> _sparks = [];
+
+  SubtleKoExplosionEffect({
+    required Vector2 position,
+    required this.playerColor,
+    this.maxLifetime = 0.48,
+    this.maxRadius = 64.0,
+  }) : super(position: position, anchor: Anchor.center) {
+    priority = 960;
+    final rand = Random();
+    for (int i = 0; i < 12; i++) {
+      final angle = (i / 12.0) * pi * 2 + (rand.nextDouble() - 0.5) * 0.25;
+      final speed = (maxRadius * 1.6) + rand.nextDouble() * maxRadius;
+      _sparks.add(_BlastSpark(
+        vx: cos(angle) * speed,
+        vy: sin(angle) * speed - 18.0,
+        radius: 3.0 + rand.nextDouble() * 3.5,
+        isGold: i.isEven,
+      ));
+    }
+  }
+
+  @override
+  void update(double dt) {
+    super.update(dt);
+    _timer += dt;
+    if (_timer >= maxLifetime) {
+      removeFromParent();
+    }
+  }
+
+  @override
+  void render(Canvas canvas) {
+    final t = (_timer / maxLifetime).clamp(0.0, 1.0);
+    final fade = (1.0 - Curves.easeInQuad.transform(t)).clamp(0.0, 1.0);
+    final expand = Curves.easeOutCubic.transform(t);
+    final r = 14.0 + (maxRadius - 14.0) * expand;
+
+    // 1. Subtle inner flash core (shrinks quickly)
+    if (t < 0.55) {
+      final coreAlpha = ((1.0 - t / 0.55) * 0.82).clamp(0.0, 1.0);
+      final coreR = r * (0.58 - t * 0.35).clamp(0.15, 0.6);
+      canvas.drawCircle(
+        Offset.zero,
+        coreR,
+        Paint()..color = ComicTheme.comicYellow.withValues(alpha: coreAlpha),
+      );
+      canvas.drawCircle(
+        Offset.zero,
+        coreR * 0.55,
+        Paint()..color = Colors.white.withValues(alpha: coreAlpha),
+      );
+    }
+
+    // 2. Crisp comic ink & spirit shockwave ring
+    canvas.drawCircle(
+      Offset.zero,
+      r,
+      Paint()
+        ..color = ComicTheme.inkBlack.withValues(alpha: fade * 0.9)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 5.0 * (1.0 - t * 0.4),
+    );
+    canvas.drawCircle(
+      Offset.zero,
+      r,
+      Paint()
+        ..color = playerColor.withValues(alpha: fade)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.6 * (1.0 - t * 0.4),
+    );
+
+    // 3. Dispersing ink & golden embers
+    final sparkStroke = Paint()
+      ..color = ComicTheme.inkBlack.withValues(alpha: fade)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.8;
+
+    for (final s in _sparks) {
+      final sx = s.vx * _timer;
+      final sy = s.vy * _timer + 90.0 * _timer * _timer;
+      final sr = s.radius * (1.0 - t * 0.65).clamp(0.2, 1.0);
+      final fill = Paint()
+        ..color = (s.isGold ? ComicTheme.comicYellow : playerColor)
+            .withValues(alpha: fade);
+      canvas.drawCircle(Offset(sx, sy), sr, fill);
+      canvas.drawCircle(Offset(sx, sy), sr, sparkStroke);
+    }
+  }
+}
+
+/// Smash Bros-style Floating Angelic/Celestial Halo Platform under a respawning fighter
+class SmashRespawnPlatformEffect extends PositionComponent {
+  final PositionComponent target;
+  final Color playerColor;
+  final double maxLifetime;
+  double _timer = 0.0;
+
+  SmashRespawnPlatformEffect({
+    required this.target,
+    required this.playerColor,
+    this.maxLifetime = 1.05,
+  }) : super(
+          position: target.position.clone(),
+          anchor: Anchor.topCenter,
+        ) {
+    priority = 790;
+  }
+
+  @override
+  void update(double dt) {
+    super.update(dt);
+    _timer += dt;
+    if (!target.isMounted || _timer >= maxLifetime) {
+      removeFromParent();
+      return;
+    }
+    // Follow fighter while perched at the top of respawn, then fade in place when they drop/move
+    if (_timer < 0.75 &&
+        (target.position.x - position.x).abs() < 36.0 &&
+        (target.position.y - position.y).abs() < 36.0) {
+      position.setFrom(target.position);
+    }
+  }
+
+  @override
+  void render(Canvas canvas) {
+    final t = (_timer / maxLifetime).clamp(0.0, 1.0);
+    final fade = t < 0.72
+        ? 1.0
+        : (1.0 - ((t - 0.72) / 0.28)).clamp(0.0, 1.0);
+    final pulse = 1.0 + sin(_timer * 14.0) * 0.06;
+    final halfW = 36.0 * pulse;
+
+    // 1. Vertical beacon light pillars rising from the halo
+    final beamPaint = Paint()
+      ..color = ComicTheme.energyCyan.withValues(alpha: fade * 0.22)
+      ..style = PaintingStyle.fill;
+    canvas.drawRect(
+      Rect.fromLTWH(-halfW * 0.75, -58.0, halfW * 1.5, 58.0),
+      beamPaint,
+    );
+
+    // 2. Winged Celestial Halo Ring & Floating Pedestal Deck
+    final deckRect = Rect.fromCenter(
+      center: const Offset(0, 4),
+      width: halfW * 2.15,
+      height: 15.0,
+    );
+    canvas.drawOval(
+      deckRect,
+      Paint()
+        ..color = ComicTheme.inkBlack.withValues(alpha: fade)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 5.5,
+    );
+    canvas.drawOval(
+      deckRect,
+      Paint()
+        ..color = playerColor.withValues(alpha: fade * 0.88)
+        ..style = PaintingStyle.fill,
+    );
+
+    final innerHalo = Rect.fromCenter(
+      center: const Offset(0, 3),
+      width: halfW * 1.65,
+      height: 8.5,
+    );
+    canvas.drawOval(
+      innerHalo,
+      Paint()
+        ..color = ComicTheme.comicYellow.withValues(alpha: fade)
+        ..style = PaintingStyle.fill,
+    );
+    canvas.drawOval(
+      innerHalo,
+      Paint()
+        ..color = Colors.white.withValues(alpha: fade * 0.9)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.0,
+    );
+  }
+}

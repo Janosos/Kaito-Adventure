@@ -32,6 +32,9 @@ abstract class BossBase extends PositionComponent
   bool isInvulnerable = false;
   double hitFlashTimer = 0.0;
   bool isDefeated = false;
+  double _defeatAnimTimer = 0.0;
+  int _defeatBurstStage = 0;
+  static const double defeatAnimDuration = 1.45;
 
   // Dynamic animation state tracking across all 10 Bosses
   double animTime = 0.0;
@@ -91,6 +94,7 @@ abstract class BossBase extends PositionComponent
     double amount, {
     int knockbackDir = 0,
     double knockbackForce = 6.0,
+    double stunMultiplier = 1.0,
   }) {
     if (isDefeated || isInvulnerable) return;
 
@@ -119,7 +123,7 @@ abstract class BossBase extends PositionComponent
       AudioService.playSfx(AudioService.sfxKunaiHit);
       position.x = (position.x + pushDir * (knockbackForce * 0.35))
           .clamp(arenaMinX, arenaMaxX);
-      stunGauge += amount * 0.70;
+      stunGauge += amount * 0.70 * stunMultiplier;
       game.add(MangaTextEffect(
         position: Vector2(position.x, position.y - size.y - 10),
         text: 'BLOCKED! DASH BEHIND!',
@@ -136,7 +140,7 @@ abstract class BossBase extends PositionComponent
       isGuarding = false;
       isCounterStance = false;
       finalDamage = amount * 1.45;
-      stunGauge += 48.0;
+      stunGauge += 48.0 * stunMultiplier;
       AudioService.playSfx(AudioService.sfxBackstabPierce);
       AudioService.heavyHaptic();
       game.add(MangaTextEffect(
@@ -156,7 +160,7 @@ abstract class BossBase extends PositionComponent
     position.x =
         (position.x + pushDir * knockbackForce).clamp(arenaMinX, arenaMaxX);
 
-    stunGauge = (stunGauge + amount * 0.62).clamp(0.0, maxStun);
+    stunGauge = (stunGauge + amount * 0.62 * stunMultiplier).clamp(0.0, maxStun);
     if (!isStunned && stunGauge >= maxStun) {
       breakGuard();
     }
@@ -200,16 +204,28 @@ abstract class BossBase extends PositionComponent
   void defeat() {
     if (isDefeated) return;
     isDefeated = true;
+    isStunned = true;
+    isGuarding = false;
+    isCounterStance = false;
+    _defeatAnimTimer = 0.0;
+    _defeatBurstStage = 0;
+    hitFlashTimer = 0.25;
 
     AudioService.playSfx(AudioService.sfxOugiRelease);
     AudioService.heavyHaptic();
 
+    game.add(SubtleKoExplosionEffect(
+      position: Vector2(position.x, position.y - size.y * 0.55),
+      playerColor: ComicTheme.actionRed,
+      maxRadius: 92.0,
+    ));
+    game.add(MangaDustEffect(position: position.clone()));
     game.add(MangaTextEffect(
-      position: Vector2(position.x, position.y - size.y / 2),
+      position: Vector2(position.x, position.y - size.y - 18),
       text: 'DEFEATED!!',
       fillColor: ComicTheme.comicYellow,
       targetScale: 2.2,
-      maxLifetime: 1.8,
+      maxLifetime: 1.6,
     ));
 
     game.onBossDefeated(this);
@@ -224,6 +240,58 @@ abstract class BossBase extends PositionComponent
     }
     if (_attackHoldTimer > 0) {
       _attackHoldTimer -= dt;
+    }
+
+    if (isDefeated) {
+      _defeatAnimTimer += dt;
+      if (_defeatBurstStage == 0 && _defeatAnimTimer >= 0.28) {
+        _defeatBurstStage = 1;
+        hitFlashTimer = 0.18;
+        AudioService.playSfx(AudioService.sfxEnemyHit);
+        game.add(SubtleKoExplosionEffect(
+          position: Vector2(position.x - 24, position.y - size.y * 0.65),
+          playerColor: ComicTheme.comicYellow,
+          maxRadius: 72.0,
+        ));
+        game.add(SlashArcEffect(
+          position: Vector2(position.x - 18, position.y - size.y * 0.6),
+          slashColor: ComicTheme.energyCyan,
+          radius: 58,
+        ));
+      } else if (_defeatBurstStage == 1 && _defeatAnimTimer >= 0.60) {
+        _defeatBurstStage = 2;
+        hitFlashTimer = 0.18;
+        AudioService.playSfx(AudioService.sfxEnemyHit);
+        game.add(SubtleKoExplosionEffect(
+          position: Vector2(position.x + 26, position.y - size.y * 0.45),
+          playerColor: ComicTheme.energyCyan,
+          maxRadius: 78.0,
+        ));
+        game.add(MangaDustEffect(position: position.clone()));
+      } else if (_defeatBurstStage == 2 && _defeatAnimTimer >= 0.96) {
+        _defeatBurstStage = 3;
+        hitFlashTimer = 0.24;
+        AudioService.playSfx(AudioService.sfxEnemyDefeat);
+        game.add(SubtleKoExplosionEffect(
+          position: Vector2(position.x, position.y - size.y * 0.5),
+          playerColor: ComicTheme.actionRed,
+          maxRadius: 118.0,
+        ));
+        game.add(MangaDustEffect(
+          position: Vector2(position.x - 28, position.y),
+        ));
+        game.add(MangaDustEffect(
+          position: Vector2(position.x + 28, position.y),
+        ));
+        game.add(MangaTextEffect(
+          position: Vector2(position.x, position.y - size.y * 0.8),
+          text: 'K.O.!!',
+          fillColor: ComicTheme.actionRed,
+          targetScale: 2.0,
+          maxLifetime: 0.9,
+        ));
+      }
+      return;
     }
 
     if (isStunned) {
@@ -282,10 +350,10 @@ abstract class BossBase extends PositionComponent
     required double renderH,
     Paint? extraOverridePaint,
   }) {
-    if (isDefeated) return;
+    if (isDefeated && _defeatAnimTimer >= defeatAnimDuration) return;
     final activeTicker = _lastActiveTicker ?? desiredTicker;
     final sprite = activeTicker.getSprite();
-    final isCombatAction = !isStunned && activeTicker != idleTicker;
+    final isCombatAction = !isStunned && !isDefeated && activeTicker != idleTicker;
 
     // 1. Compute dynamic procedural offsets & transforms
     double offsetX = 0.0;
@@ -293,8 +361,19 @@ abstract class BossBase extends PositionComponent
     double tilt = 0.0;
     double scaleX = 1.0;
     double scaleY = 1.0;
+    double defeatAlpha = 1.0;
 
-    if (isStunned) {
+    if (isDefeated) {
+      final p = (_defeatAnimTimer / defeatAnimDuration).clamp(0.0, 1.0);
+      final collapse = Curves.easeInCubic.transform(p);
+      // Violent death shudder + kneeling collapse + ink dissolve fade
+      offsetX = sin(_defeatAnimTimer * 52.0) * 10.0 * (1.0 - p * 0.45);
+      offsetY = collapse * 28.0;
+      tilt = -0.42 * Curves.easeInQuad.transform(p);
+      scaleX = 1.0 + collapse * 0.14;
+      scaleY = (1.0 - collapse * 0.35).clamp(0.35, 1.0);
+      defeatAlpha = (1.0 - collapse).clamp(0.0, 1.0);
+    } else if (isStunned) {
       // Natural dizzy side-to-side stagger without squishing proportions
       offsetX = sin(animTime * 7.5) * 3.0;
       offsetY = sin(animTime * 6.0).abs() * 1.5;
@@ -360,7 +439,17 @@ abstract class BossBase extends PositionComponent
     canvas.scale(scaleX, scaleY);
 
     Paint? overridePaint = extraOverridePaint;
-    if (hitFlashTimer > 0) {
+    if (isDefeated) {
+      final flashWhite = ((_defeatAnimTimer * 18).toInt() % 2 == 0);
+      overridePaint = Paint()
+        ..color = Colors.white.withValues(alpha: defeatAlpha)
+        ..colorFilter = flashWhite
+            ? ColorFilter.mode(
+                ComicTheme.actionRed.withValues(alpha: 0.55 * defeatAlpha),
+                BlendMode.srcATop,
+              )
+            : null;
+    } else if (hitFlashTimer > 0) {
       overridePaint = Paint()
         ..colorFilter = const ColorFilter.mode(Colors.white, BlendMode.srcATop);
     }

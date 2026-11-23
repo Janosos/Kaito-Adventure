@@ -1961,20 +1961,28 @@ class LanMultiplayerService {
     sendRaw(packet);
   }
 
-  void sendLocalPlayerStockLost(int remainingLives) {
+  void sendLocalPlayerStockLost(
+    int remainingLives, {
+    double? deathX,
+    double? deathY,
+    bool isRingOut = false,
+  }) {
     final me = roomPlayers[myPlayerId];
     if (me != null) {
       me.lives = remainingLives;
       me.hp = configuredMaxHp;
       _updateRoomPlayersNotifier();
     }
-    final packet = {
+    final packet = <String, dynamic>{
       'type': 'player_stock_lost',
       'sessionId': matchSessionIdNotifier.value,
       'id': myPlayerId,
       'lives': remainingLives,
       'hp': configuredMaxHp,
+      'ringOut': isRingOut,
     };
+    if (deathX != null && deathX.isFinite) packet['dx'] = _round1(deathX);
+    if (deathY != null && deathY.isFinite) packet['dy'] = _round1(deathY);
     if (!isOnlineMode && role == MatchRole.host) {
       _broadcastToClients(packet);
       _matchDataController.add(packet);
