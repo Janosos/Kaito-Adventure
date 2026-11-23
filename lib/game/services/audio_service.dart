@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/services.dart';
 import '../../ui/app_localizations.dart';
@@ -5,6 +6,35 @@ import '../../ui/app_localizations.dart';
 class AudioService {
   static bool isTestMode = false;
   static bool _initialized = false;
+  static bool _audioHardwareUnavailable = false;
+  static int _retryHardwareAfterMs = 0;
+  static final List<StreamSubscription<dynamic>> _eventSubs = [];
+
+  static void _markAudioHardwareUnavailable() {
+    _audioHardwareUnavailable = true;
+    _retryHardwareAfterMs = DateTime.now().millisecondsSinceEpoch + 30000;
+  }
+
+  static bool _isAudioHardwareReady() {
+    if (!_audioHardwareUnavailable) return true;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    if (now >= _retryHardwareAfterMs) {
+      _audioHardwareUnavailable = false;
+      return true;
+    }
+    return false;
+  }
+
+  static void _guardPlayerStream(AudioPlayer player) {
+    _eventSubs.add(
+      player.eventStream.listen(
+        (_) {},
+        onError: (Object _, StackTrace _) {
+          _markAudioHardwareUnavailable();
+        },
+      ),
+    );
+  }
 
   // SFX file paths (relative to assets/audio/)
   static const String sfxClick = 'sfx/ui_click.wav';
@@ -54,25 +84,39 @@ class AudioService {
     _initialized = true;
 
     try {
+      AudioLogger.logLevel = AudioLogLevel.none;
+
       final context = AudioContextConfig(
         focus: AudioContextConfigFocus.mixWithOthers,
       ).build();
 
       // Configure global context so all players mix cleanly without dropping tracks
-      await AudioPlayer.global.setAudioContext(context);
+      await AudioPlayer.global
+          .setAudioContext(context)
+          .catchError((_) => _markAudioHardwareUnavailable());
 
       // Setup dedicated BGM player
       _bgmPlayer = AudioPlayer(playerId: 'kaito_bgm');
+      _guardPlayerStream(_bgmPlayer!);
       _bgmPlayer!.audioCache = _audioCache;
-      await _bgmPlayer!.setAudioContext(context);
-      await _bgmPlayer!.setReleaseMode(ReleaseMode.loop);
+      await _bgmPlayer!
+          .setAudioContext(context)
+          .catchError((_) => _markAudioHardwareUnavailable());
+      await _bgmPlayer!
+          .setReleaseMode(ReleaseMode.loop)
+          .catchError((_) => _markAudioHardwareUnavailable());
 
       // Setup fixed SFX pool (8 reusable players)
       for (int i = 0; i < _sfxPoolSize; i++) {
         final p = AudioPlayer(playerId: 'kaito_sfx_$i');
+        _guardPlayerStream(p);
         p.audioCache = _audioCache;
-        await p.setAudioContext(context);
-        await p.setReleaseMode(ReleaseMode.stop);
+        await p
+            .setAudioContext(context)
+            .catchError((_) => _markAudioHardwareUnavailable());
+        await p
+            .setReleaseMode(ReleaseMode.stop)
+            .catchError((_) => _markAudioHardwareUnavailable());
         _sfxPool.add(p);
       }
 
@@ -96,9 +140,13 @@ class AudioService {
         sfxOugiRelease,
         sfxBossRoar,
         sfxPickupCoin,
-      ]).catchError((_) => <Uri>[]);
+      ]).catchError((_) {
+        _markAudioHardwareUnavailable();
+        return <Uri>[];
+      });
     } catch (_) {
-      // Ignored in test/headless environments
+      // Ignored in test/headless environments or PCs without an audio output device
+      _markAudioHardwareUnavailable();
     }
   }
 
@@ -106,6 +154,7 @@ class AudioService {
   static void playSfx(String sfxFile, {double volume = 1.0}) {
     if (isTestMode) return;
     if (!AppLocalizations.sfxEnabled.value) return;
+    if (!_isAudioHardwareReady()) return;
 
     try {
       final vol = (AppLocalizations.sfxVolume.value * volume).clamp(0.0, 1.0);
@@ -129,8 +178,12 @@ class AudioService {
             volume: vol,
             mode: PlayerMode.lowLatency,
           )
-          .catchError((_) {});
-    } catch (_) {}
+          .catchError((_) {
+            _markAudioHardwareUnavailable();
+          });
+    } catch (_) {
+      _markAudioHardwareUnavailable();
+    }
   }
 
   /// Play a looping background music track seamlessly with dedicated player
@@ -142,13 +195,16 @@ class AudioService {
       stopBgm();
       return;
     }
+    if (!_isAudioHardwareReady()) return;
 
     try {
       final vol = (AppLocalizations.bgmVolume.value * volume).clamp(0.0, 1.0);
       if (_bgmPlayer == null) return;
 
       if (_currentBgm == bgmFile && _bgmIsPlaying) {
-        _bgmPlayer!.setVolume(vol).catchError((_) {});
+        _bgmPlayer!.setVolume(vol).catchError((_) {
+          _markAudioHardwareUnavailable();
+        });
         return;
       }
 
@@ -156,7 +212,7 @@ class AudioService {
       _bgmIsPlaying = true;
 
       _bgmPlayer!.stop().then((_) async {
-        if (_currentBgm != bgmFile) return;
+        if (_currentBgm != bgmFile || !_isAudioHardwareReady()) return;
         await _bgmPlayer!.setReleaseMode(ReleaseMode.loop);
         await _bgmPlayer!.setVolume(vol);
         await _bgmPlayer!.play(
@@ -164,8 +220,12 @@ class AudioService {
           volume: vol,
           mode: PlayerMode.mediaPlayer,
         );
-      }).catchError((_) {});
-    } catch (_) {}
+      }).catchError((_) {
+        _markAudioHardwareUnavailable();
+      });
+    } catch (_) {
+      _markAudioHardwareUnavailable();
+    }
   }
 
   /// Stop current BGM
@@ -191,14 +251,19 @@ class AudioService {
   static void resumeBgm() {
     if (isTestMode) return;
     if (!AppLocalizations.bgmEnabled.value) return;
+    if (!_isAudioHardwareReady()) return;
     if (_currentBgm == null && _targetBgm != null) {
       playBgm(_targetBgm!);
       return;
     }
     _bgmIsPlaying = true;
     try {
-      _bgmPlayer?.resume().catchError((_) {});
-    } catch (_) {}
+      _bgmPlayer?.resume().catchError((_) {
+        _markAudioHardwareUnavailable();
+      });
+    } catch (_) {
+      _markAudioHardwareUnavailable();
+    }
   }
 
   /// Apply volume changes from settings
@@ -243,7 +308,12 @@ class AudioService {
     _targetBgm = null;
     _bgmIsPlaying = false;
     _initialized = false;
+    _audioHardwareUnavailable = false;
     try {
+      for (final sub in _eventSubs) {
+        await sub.cancel();
+      }
+      _eventSubs.clear();
       await _bgmPlayer?.dispose();
       _bgmPlayer = null;
       for (final p in _sfxPool) {

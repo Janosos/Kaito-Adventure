@@ -94,7 +94,6 @@ abstract class BossBase extends PositionComponent
     double amount, {
     int knockbackDir = 0,
     double knockbackForce = 6.0,
-    double stunMultiplier = 1.0,
   }) {
     if (isDefeated || isInvulnerable) return;
 
@@ -119,19 +118,15 @@ abstract class BossBase extends PositionComponent
     }
 
     if (isGuarding && !isBackstab) {
-      // Guard blocks frontal damage; player must dash behind for a Backstab or break guard!
+      // Guard blocks frontal damage; player must dash behind for a Backstab or use Ougi!
       AudioService.playSfx(AudioService.sfxKunaiHit);
       position.x = (position.x + pushDir * (knockbackForce * 0.35))
           .clamp(arenaMinX, arenaMaxX);
-      stunGauge += amount * 0.70 * stunMultiplier;
       game.add(MangaTextEffect(
         position: Vector2(position.x, position.y - size.y - 10),
         text: 'BLOCKED! DASH BEHIND!',
         fillColor: ComicTheme.halftoneGray,
       ));
-      if (stunGauge >= maxStun) {
-        breakGuard();
-      }
       return;
     }
 
@@ -140,7 +135,6 @@ abstract class BossBase extends PositionComponent
       isGuarding = false;
       isCounterStance = false;
       finalDamage = amount * 1.45;
-      stunGauge += 48.0 * stunMultiplier;
       AudioService.playSfx(AudioService.sfxBackstabPierce);
       AudioService.heavyHaptic();
       game.add(MangaTextEffect(
@@ -160,11 +154,6 @@ abstract class BossBase extends PositionComponent
     position.x =
         (position.x + pushDir * knockbackForce).clamp(arenaMinX, arenaMaxX);
 
-    stunGauge = (stunGauge + amount * 0.62 * stunMultiplier).clamp(0.0, maxStun);
-    if (!isStunned && stunGauge >= maxStun) {
-      breakGuard();
-    }
-
     game.add(MangaTextEffect(
       position: Vector2(position.x, position.y - size.y * 0.7),
       text: isStunned
@@ -181,19 +170,21 @@ abstract class BossBase extends PositionComponent
     }
   }
 
+  /// Triggered exclusively by Kaito's Ultimate (Ougi) to stun the Boss
   void breakGuard() {
+    if (isDefeated) return;
     isStunned = true;
     stunDuration = 2.8;
     isGuarding = false;
     isCounterStance = false;
-    stunGauge = 0.0;
+    stunGauge = maxStun;
 
     AudioService.playSfx(AudioService.sfxParryCounter);
     AudioService.heavyHaptic();
 
     game.add(MangaTextEffect(
       position: Vector2(position.x, position.y - size.y - 20),
-      text: 'GUARD BREAK!!',
+      text: 'OUGI STUN!!',
       fillColor: ComicTheme.energyCyan,
       targetScale: 1.8,
     ));

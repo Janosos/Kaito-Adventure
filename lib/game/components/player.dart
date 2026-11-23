@@ -519,12 +519,16 @@ class MangaPlayer extends PositionComponent
       }
     }
     if (game.activeBoss != null && !game.activeBoss!.isDefeated) {
+      game.activeBoss!.isGuarding = false;
+      game.activeBoss!.isCounterStance = false;
       game.activeBoss!.takeDamage(
         90,
         knockbackDir: facingDirection,
         knockbackForce: 14,
       );
-      game.activeBoss!.breakGuard();
+      if (!game.activeBoss!.isDefeated) {
+        game.activeBoss!.breakGuard();
+      }
     }
     if (game.isMultiplayer) {
       for (final remote in game.queryWorld<RemotePlayer>().toList()) {
@@ -645,7 +649,7 @@ class MangaPlayer extends PositionComponent
       }
     }
 
-    // 4. Hit Active Boss (requires +30% more basic attack damage/hits to break/stun)
+    // 4. Hit Active Boss (basic attacks deal damage only; stun is exclusive to Ultimate)
     final boss = game.activeBoss;
     if (boss != null && !boss.isDefeated) {
       final bossCenter =
@@ -656,7 +660,6 @@ class MangaPlayer extends PositionComponent
           dmg,
           knockbackDir: facingDirection,
           knockbackForce: 7.0 + comboIndex * 2.0,
-          stunMultiplier: 1.0 / 1.30,
         );
         _registerHit();
       }

@@ -472,7 +472,6 @@ class _ComicHudState extends State<ComicHud>
 
   Widget _buildBossHud(dynamic boss) {
     final double hpRatio = (boss.currentHp / boss.maxHp).clamp(0.0, 1.0);
-    final double stunRatio = (boss.stunGauge / 100.0).clamp(0.0, 1.0);
     final isStunned = boss.isStunned as bool;
     final bossName = boss.name as String;
     final bossPortrait = _bossPortraitFor(bossName);
@@ -580,47 +579,21 @@ class _ComicHudState extends State<ComicHud>
                     ],
                   ),
                 ),
-                const SizedBox(height: 3),
-
-                // Stun / Break Gauge Bar
-                Row(
-                  children: [
-                    Text(
-                      'BREAK: ',
-                      style: ComicTheme.mangaHeader(
-                          fontSize: 10, color: Colors.grey.shade800),
-                    ),
-                    Expanded(
-                      child: Container(
-                        height: 6,
-                        decoration: BoxDecoration(
-                          color: ComicTheme.halftoneGray,
-                          border: Border.all(
-                              color: ComicTheme.inkBlack, width: 1.5),
-                        ),
-                        child: FractionallySizedBox(
-                          alignment: Alignment.centerLeft,
-                          widthFactor: stunRatio,
-                          child: Container(
-                            color: isStunned
-                                ? Colors.redAccent
-                                : ComicTheme.energyCyan,
-                          ),
-                        ),
-                      ),
-                    ),
-                    if (isStunned) ...[
-                      const SizedBox(width: 4),
+                if (isStunned) ...[
+                  const SizedBox(height: 3),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
                       Text(
-                        '2x DMG!',
+                        'OUGI STUN • 1.75x CRITICAL DMG!',
                         style: ComicTheme.comicTitle(
                           fontSize: 10,
                           color: ComicTheme.actionRed,
                         ),
                       ),
-                    ]
-                  ],
-                ),
+                    ],
+                  ),
+                ],
               ],
             ),
           ),
