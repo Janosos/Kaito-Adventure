@@ -27,6 +27,8 @@ class _VirtualJoystickOverlayState extends State<VirtualJoystickOverlay>
 
   late final AnimationController _uiTicker;
   int _lastTickMs = 0;
+  bool _lastUltReady = false;
+  int _lastKunaiDeciSec = 0;
 
   @override
   void initState() {
@@ -37,9 +39,16 @@ class _VirtualJoystickOverlayState extends State<VirtualJoystickOverlay>
     )..repeat();
     _uiTicker.addListener(() {
       final now = DateTime.now().millisecondsSinceEpoch;
-      if (now - _lastTickMs >= 80) {
+      if (now - _lastTickMs >= 100 && mounted) {
         _lastTickMs = now;
-        if (mounted) setState(() {});
+        final p = widget.game.player;
+        final ultReady = p.spirit >= 100.0;
+        final kunaiDeci = (p.kunaiCooldown.clamp(0.0, 99.0) * 10).ceil();
+        if (ultReady != _lastUltReady || kunaiDeci != _lastKunaiDeciSec) {
+          _lastUltReady = ultReady;
+          _lastKunaiDeciSec = kunaiDeci;
+          setState(() {});
+        }
       }
     });
   }
@@ -202,53 +211,63 @@ class _VirtualJoystickOverlayState extends State<VirtualJoystickOverlay>
                                           top: _joystickOrigin.dy -
                                               maxRadius * 1.35,
                                           child: IgnorePointer(
-                                            child: Opacity(
-                                              opacity: config.buttonOpacity,
-                                              child: SizedBox(
-                                                width: maxRadius * 2.7,
-                                                height: maxRadius * 2.7,
-                                                child: CustomPaint(
-                                                  painter:
-                                                      _CartoonFloatingJoystickPainter(
-                                                    knobOffset: knobDelta,
-                                                    maxRadius: maxRadius,
-                                                  ),
-                                                  child: Center(
-                                                    child: Transform.translate(
-                                                      offset: knobDelta,
-                                                      child: Container(
-                                                        width:
-                                                            maxRadius * 0.92,
-                                                        height:
-                                                            maxRadius * 0.92,
-                                                        padding: EdgeInsets.all(
-                                                          5 * uiScale,
+                                            child: SizedBox(
+                                              width: maxRadius * 2.7,
+                                              height: maxRadius * 2.7,
+                                              child: CustomPaint(
+                                                painter:
+                                                    _CartoonFloatingJoystickPainter(
+                                                  knobOffset: knobDelta,
+                                                  maxRadius: maxRadius,
+                                                ),
+                                                child: Center(
+                                                  child: Transform.translate(
+                                                    offset: knobDelta,
+                                                    child: Container(
+                                                      width:
+                                                          maxRadius * 0.92,
+                                                      height:
+                                                          maxRadius * 0.92,
+                                                      padding: EdgeInsets.all(
+                                                        5 * uiScale,
+                                                      ),
+                                                      decoration:
+                                                          BoxDecoration(
+                                                        shape:
+                                                            BoxShape.circle,
+                                                        color: ComicTheme
+                                                            .comicYellow
+                                                            .withValues(
+                                                          alpha: config
+                                                              .buttonOpacity,
                                                         ),
-                                                        decoration:
-                                                            BoxDecoration(
-                                                          shape:
-                                                              BoxShape.circle,
+                                                        border: Border.all(
                                                           color: ComicTheme
-                                                              .comicYellow,
-                                                          border: Border.all(
+                                                              .inkBlack
+                                                              .withValues(
+                                                            alpha: config
+                                                                .buttonOpacity,
+                                                          ),
+                                                          width: 2.5,
+                                                        ),
+                                                        boxShadow: const [
+                                                          BoxShadow(
                                                             color: ComicTheme
                                                                 .inkBlack,
-                                                            width: 2.5,
+                                                            offset:
+                                                                Offset(2, 2),
+                                                            blurRadius: 0,
                                                           ),
-                                                          boxShadow: const [
-                                                            BoxShadow(
-                                                              color: ComicTheme
-                                                                  .inkBlack,
-                                                              offset:
-                                                                  Offset(2, 2),
-                                                              blurRadius: 0,
-                                                            ),
-                                                          ],
-                                                        ),
-                                                        child: Image.asset(
-                                                          CartoonAssets
-                                                              .uiKaitoHead,
-                                                          fit: BoxFit.contain,
+                                                        ],
+                                                      ),
+                                                      child: Image.asset(
+                                                        CartoonAssets
+                                                            .uiKaitoHead,
+                                                        fit: BoxFit.contain,
+                                                        opacity:
+                                                            AlwaysStoppedAnimation<
+                                                                double>(
+                                                          config.buttonOpacity,
                                                         ),
                                                       ),
                                                     ),
@@ -280,7 +299,13 @@ class _VirtualJoystickOverlayState extends State<VirtualJoystickOverlay>
                             areaW: areaW,
                             areaH: areaH,
                             isEditing: isEditing,
-                            onTap: () => widget.game.player.performUltimate(),
+                            onTap: () {
+                              if (widget.game.player.spirit >= 100.0) {
+                                widget.game.player.performUltimate();
+                                _lastUltReady = false;
+                                setState(() {});
+                              }
+                            },
                           ),
 
                         _buildPositionedCartoonButton(
@@ -302,6 +327,7 @@ class _VirtualJoystickOverlayState extends State<VirtualJoystickOverlay>
                           onTap: () {
                             if (widget.game.player.kunaiCooldown <= 0) {
                               widget.game.player.performThrowKunai();
+                              _lastKunaiDeciSec = 50;
                               setState(() {});
                             }
                           },
@@ -320,7 +346,8 @@ class _VirtualJoystickOverlayState extends State<VirtualJoystickOverlay>
                           areaH: areaH,
                           isEditing: isEditing,
                           onTap: () {
-                            if (widget.game.player.dashCooldown <= 0) {
+                            if (widget.game.player.dashCooldown <= 0 &&
+                                !widget.game.player.isDashing) {
                               widget.game.player.performDash();
                             }
                           },
@@ -421,42 +448,43 @@ class _VirtualJoystickOverlayState extends State<VirtualJoystickOverlay>
             ? (config.buttonOpacity + 0.12).clamp(0.25, 1.0)
             : config.buttonOpacity);
 
-    // Classic 2D Cartoon Manga Panel Button (ComicTheme.comicButtonDecoration)
-    final Widget buttonCard = Opacity(
-      opacity: effectiveOpacity,
-      child: Container(
-        width: scaledDim,
-        height: scaledDim,
-        padding: const EdgeInsets.all(4),
-        decoration: ComicTheme.comicButtonDecoration(
-          backgroundColor: color,
-          borderColor: isEditing ? Colors.white : ComicTheme.inkBlack,
-          isPressed: isPressed,
-        ),
-        child: FittedBox(
-          fit: BoxFit.scaleDown,
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Image.asset(
-                iconAsset,
-                width: isLarge ? 34 : 28,
-                height: isLarge ? 34 : 28,
+    // Classic 2D Cartoon Manga Panel Button WITHOUT Opacity(saveLayer) offscreen GPU FBO!
+    // Uses direct color alpha + Image(opacity:) shader modulation for 60 FPS on Mali-G51 / Kirin 710F.
+    final Widget buttonCard = Container(
+      width: scaledDim,
+      height: scaledDim,
+      padding: const EdgeInsets.all(4),
+      decoration: ComicTheme.comicButtonDecoration(
+        backgroundColor: color.withValues(alpha: effectiveOpacity),
+        borderColor: (isEditing ? Colors.white : ComicTheme.inkBlack)
+            .withValues(alpha: effectiveOpacity),
+        isPressed: isPressed,
+      ),
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Image.asset(
+              iconAsset,
+              width: isLarge ? 34 : 28,
+              height: isLarge ? 34 : 28,
+              opacity: AlwaysStoppedAnimation<double>(effectiveOpacity),
+            ),
+            Text(
+              label,
+              maxLines: 1,
+              style: ComicTheme.mangaHeader(
+                fontSize: isLarge ? 10.5 : 9.5,
+                color: (isOnCooldown
+                        ? ComicTheme.actionRed
+                        : ComicTheme.inkBlack)
+                    .withValues(alpha: effectiveOpacity),
               ),
-              Text(
-                label,
-                maxLines: 1,
-                style: ComicTheme.mangaHeader(
-                  fontSize: isLarge ? 10.5 : 9.5,
-                  color: isOnCooldown
-                      ? ComicTheme.actionRed
-                      : ComicTheme.inkBlack,
-                ),
-                textAlign: TextAlign.center,
-              ),
-            ],
-          ),
+              textAlign: TextAlign.center,
+            ),
+          ],
         ),
       ),
     );

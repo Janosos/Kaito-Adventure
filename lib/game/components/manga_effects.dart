@@ -256,6 +256,12 @@ class SpeedLineStreakComponent extends PositionComponent {
   double _timer = 0.0;
   final List<double> _yOffsets = [];
   final List<double> _lengths = [];
+  final Paint _outlinePaint = Paint()
+    ..strokeWidth = 5.0
+    ..strokeCap = StrokeCap.round;
+  final Paint _linePaint = Paint()
+    ..strokeWidth = 2.8
+    ..strokeCap = StrokeCap.round;
 
   SpeedLineStreakComponent({
     required Vector2 position,
@@ -266,7 +272,7 @@ class SpeedLineStreakComponent extends PositionComponent {
   }) : super(position: position, size: size) {
     priority = 850;
     final rand = Random();
-    for (int i = 0; i < 8; i++) {
+    for (int i = 0; i < 6; i++) {
       _yOffsets.add(rand.nextDouble() * size.y);
       _lengths.add(rand.nextDouble() * 40 + 20);
     }
@@ -286,15 +292,8 @@ class SpeedLineStreakComponent extends PositionComponent {
     final progress = (_timer / duration).clamp(0.0, 1.0);
     final alpha = (1.0 - progress).clamp(0.0, 1.0);
 
-    final outlinePaint = Paint()
-      ..color = ComicTheme.inkBlack.withValues(alpha: alpha)
-      ..strokeWidth = 5.0
-      ..strokeCap = StrokeCap.round;
-
-    final paint = Paint()
-      ..color = color.withValues(alpha: alpha)
-      ..strokeWidth = 2.8
-      ..strokeCap = StrokeCap.round;
+    _outlinePaint.color = ComicTheme.inkBlack.withValues(alpha: alpha);
+    _linePaint.color = color.withValues(alpha: alpha);
 
     for (int i = 0; i < _yOffsets.length; i++) {
       final startX = size.x * (direction.x > 0 ? (1.0 - progress) : progress);
@@ -302,8 +301,8 @@ class SpeedLineStreakComponent extends PositionComponent {
       final length = _lengths[i];
       final p1 = Offset(startX, y);
       final p2 = Offset(startX + (direction.x > 0 ? -length : length), y);
-      canvas.drawLine(p1, p2, outlinePaint);
-      canvas.drawLine(p1, p2, paint);
+      canvas.drawLine(p1, p2, _outlinePaint);
+      canvas.drawLine(p1, p2, _linePaint);
     }
   }
 }
@@ -469,6 +468,11 @@ class OugiCelestialFlurryEffect extends PositionComponent {
   double _timer = 0.0;
   final List<_OugiCutLine> _cuts = [];
   final List<_BlastSpark> _sparks = [];
+  final Paint _fillPaint = Paint()..style = PaintingStyle.fill;
+  final Paint _strokePaint = Paint()..style = PaintingStyle.stroke;
+  final Paint _cutOutlinePaint = Paint()..strokeCap = StrokeCap.round;
+  final Paint _cutColorPaint = Paint()..strokeCap = StrokeCap.round;
+  final Paint _cutWhitePaint = Paint()..strokeCap = StrokeCap.round;
 
   OugiCelestialFlurryEffect({
     required Vector2 position,
@@ -483,23 +487,23 @@ class OugiCelestialFlurryEffect extends PositionComponent {
       ComicTheme.actionRed,
       Colors.white,
     ];
-    for (int i = 0; i < 14; i++) {
-      final angle = (i * 0.45) + (rand.nextDouble() - 0.5) * 0.35;
-      final cx = (rand.nextDouble() - 0.45) * 340.0 * facingDirection;
-      final cy = (rand.nextDouble() - 0.5) * 150.0;
-      final halfLen = 95.0 + rand.nextDouble() * 115.0;
+    for (int i = 0; i < 9; i++) {
+      final angle = (i * 0.65) + (rand.nextDouble() - 0.5) * 0.35;
+      final cx = (rand.nextDouble() - 0.45) * 320.0 * facingDirection;
+      final cy = (rand.nextDouble() - 0.5) * 140.0;
+      final halfLen = 95.0 + rand.nextDouble() * 110.0;
       _cuts.add(_OugiCutLine(
         cx: cx,
         cy: cy,
         cosA: cos(angle),
         sinA: sin(angle),
         halfLen: halfLen,
-        startDelay: (i / 14.0) * 0.34,
+        startDelay: (i / 9.0) * 0.34,
         color: palette[i % palette.length],
       ));
     }
-    for (int i = 0; i < 24; i++) {
-      final a = (i / 24.0) * pi * 2;
+    for (int i = 0; i < 12; i++) {
+      final a = (i / 12.0) * pi * 2;
       final speed = 180.0 + (i % 5) * 65.0;
       _sparks.add(_BlastSpark(
         vx: cos(a) * speed * 1.35,
@@ -525,45 +529,34 @@ class OugiCelestialFlurryEffect extends PositionComponent {
     final fade = (1.0 - Curves.easeInCubic.transform(t)).clamp(0.0, 1.0);
     final domeScale = Curves.easeOutQuart.transform((t * 1.45).clamp(0.0, 1.0));
 
-    // 1. Expanding Celestial Spirit Dome & Twin Shockwave Rings
+    // 1. Expanding Celestial Spirit Dome & Twin Shockwave Rings (zero Paint allocations)
     final domeW = 540.0 * domeScale;
     final domeH = 220.0 * domeScale;
     final domeRect =
         Rect.fromCenter(center: Offset.zero, width: domeW, height: domeH);
 
-    canvas.drawOval(
-      domeRect,
-      Paint()
-        ..color = ComicTheme.energyCyan.withValues(alpha: fade * 0.16)
-        ..style = PaintingStyle.fill,
-    );
-    canvas.drawOval(
-      domeRect,
-      Paint()
-        ..color = ComicTheme.inkBlack.withValues(alpha: fade * 0.9)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 6.0,
-    );
-    canvas.drawOval(
-      domeRect,
-      Paint()
-        ..color = ComicTheme.comicYellow.withValues(alpha: fade)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 3.0,
-    );
+    _fillPaint.color = ComicTheme.energyCyan.withValues(alpha: fade * 0.16);
+    canvas.drawOval(domeRect, _fillPaint);
+
+    _strokePaint
+      ..color = ComicTheme.inkBlack.withValues(alpha: fade * 0.9)
+      ..strokeWidth = 6.0;
+    canvas.drawOval(domeRect, _strokePaint);
+
+    _strokePaint
+      ..color = ComicTheme.comicYellow.withValues(alpha: fade)
+      ..strokeWidth = 3.0;
+    canvas.drawOval(domeRect, _strokePaint);
 
     final innerRect = Rect.fromCenter(
       center: Offset.zero,
       width: domeW * 0.68,
       height: domeH * 0.68,
     );
-    canvas.drawOval(
-      innerRect,
-      Paint()
-        ..color = ComicTheme.energyCyan.withValues(alpha: fade * 0.85)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2.5,
-    );
+    _strokePaint
+      ..color = ComicTheme.energyCyan.withValues(alpha: fade * 0.85)
+      ..strokeWidth = 2.5;
+    canvas.drawOval(innerRect, _strokePaint);
 
     // 2. Criss-Crossing Dimensional Katana Judgment Cuts
     for (final c in _cuts) {
@@ -576,50 +569,36 @@ class OugiCelestialFlurryEffect extends PositionComponent {
       final p2 = Offset(c.cx + c.cosA * len, c.cy + c.sinA * len);
       final thickness = (7.5 * (1.0 - localT * 0.65)).clamp(1.8, 8.0);
 
-      // Ink black comic outline
-      canvas.drawLine(
-        p1,
-        p2,
-        Paint()
-          ..color = ComicTheme.inkBlack.withValues(alpha: cutAlpha)
-          ..strokeWidth = thickness + 4.5
-          ..strokeCap = StrokeCap.round,
-      );
-      // Colored blade energy
-      canvas.drawLine(
-        p1,
-        p2,
-        Paint()
-          ..color = c.color.withValues(alpha: cutAlpha)
-          ..strokeWidth = thickness
-          ..strokeCap = StrokeCap.round,
-      );
-      // White-hot katana core
-      canvas.drawLine(
-        p1,
-        p2,
-        Paint()
-          ..color = Colors.white.withValues(alpha: cutAlpha)
-          ..strokeWidth = (thickness * 0.42).clamp(1.0, 3.5)
-          ..strokeCap = StrokeCap.round,
-      );
+      _cutOutlinePaint
+        ..color = ComicTheme.inkBlack.withValues(alpha: cutAlpha)
+        ..strokeWidth = thickness + 4.5;
+      canvas.drawLine(p1, p2, _cutOutlinePaint);
+
+      _cutColorPaint
+        ..color = c.color.withValues(alpha: cutAlpha)
+        ..strokeWidth = thickness;
+      canvas.drawLine(p1, p2, _cutColorPaint);
+
+      _cutWhitePaint
+        ..color = Colors.white.withValues(alpha: cutAlpha)
+        ..strokeWidth = (thickness * 0.42).clamp(1.0, 3.5);
+      canvas.drawLine(p1, p2, _cutWhitePaint);
     }
 
     // 3. Radiating Golden & Cyan Spirit Sparks
-    final sparkBorder = Paint()
+    _strokePaint
       ..color = ComicTheme.inkBlack.withValues(alpha: fade)
-      ..style = PaintingStyle.stroke
       ..strokeWidth = 2.0;
 
     for (final s in _sparks) {
       final sx = s.vx * _timer;
       final sy = s.vy * _timer;
       final r = s.radius * (1.0 - t * 0.55).clamp(0.25, 1.0);
-      final fill = Paint()
-        ..color = (s.isGold ? ComicTheme.comicYellow : ComicTheme.energyCyan)
-            .withValues(alpha: fade);
-      canvas.drawCircle(Offset(sx, sy), r, fill);
-      canvas.drawCircle(Offset(sx, sy), r, sparkBorder);
+      _fillPaint.color =
+          (s.isGold ? ComicTheme.comicYellow : ComicTheme.energyCyan)
+              .withValues(alpha: fade);
+      canvas.drawCircle(Offset(sx, sy), r, _fillPaint);
+      canvas.drawCircle(Offset(sx, sy), r, _strokePaint);
     }
   }
 }

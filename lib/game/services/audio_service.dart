@@ -29,7 +29,7 @@ class AudioService {
     _eventSubs.add(
       player.eventStream.listen(
         (_) {},
-        onError: (Object _, StackTrace _) {
+        onError: (Object _, StackTrace __) {
           _markAudioHardwareUnavailable();
         },
       ),
@@ -69,11 +69,39 @@ class AudioService {
   static String? _targetBgm;
   static bool _bgmIsPlaying = false;
 
-  // Reusable SFX AudioPlayer Pool (Fixed 8 players - zero allocations, zero leaks)
-  static const int _sfxPoolSize = 8;
-  static final List<AudioPlayer> _sfxPool = [];
-  static int _sfxIndex = 0;
+  // Dedicated pre-loaded SFX players keyed by asset path (1 player per sound).
+  // Calling setSource() ONCE per SFX prevents Android SoundPool / MediaPlayer from
+  // unloading, re-extracting from the APK, and re-decoding WAVs during combat!
+  static final Map<String, AudioPlayer> _sfxPlayers = {};
+  static final Set<String> _sfxLoaded = {};
+  static final Set<String> _sfxInFlight = {};
   static final Map<String, int> _lastSfxPlayedMs = {};
+  static final Map<String, double> _lastSfxVolume = {};
+  static int _lastAnySfxMs = 0;
+  static int _lastHapticMs = 0;
+
+  static const List<String> _coreSfxFiles = [
+    sfxClick,
+    sfxStart,
+    sfxSlash,
+    sfxSlashHeavy,
+    sfxJump,
+    sfxDash,
+    sfxKunaiThrow,
+    sfxKunaiHit,
+    sfxEnemyHit,
+    sfxEnemyDefeat,
+    sfxPlayerHurt,
+    sfxPlayerDeath,
+    sfxParryCounter,
+    sfxBackstabPierce,
+    sfxOugiCharge,
+    sfxOugiRelease,
+    sfxBossRoar,
+    sfxPickupCoin,
+    sfxVictory,
+    sfxGameOver,
+  ];
 
   // Audio Cache configured with asset prefix
   static final AudioCache _audioCache = AudioCache(prefix: 'assets/audio/');
@@ -106,51 +134,46 @@ class AudioService {
           .setReleaseMode(ReleaseMode.loop)
           .catchError((_) => _markAudioHardwareUnavailable());
 
-      // Setup fixed SFX pool (8 reusable players)
-      for (int i = 0; i < _sfxPoolSize; i++) {
-        final p = AudioPlayer(playerId: 'kaito_sfx_$i');
-        _guardPlayerStream(p);
-        p.audioCache = _audioCache;
-        await p
-            .setAudioContext(context)
-            .catchError((_) => _markAudioHardwareUnavailable());
-        await p
-            .setReleaseMode(ReleaseMode.stop)
-            .catchError((_) => _markAudioHardwareUnavailable());
-        _sfxPool.add(p);
-      }
-
-      // Preload critical assets in background without blocking startup
-      _audioCache.loadAll([
-        sfxClick,
-        sfxStart,
-        sfxSlash,
-        sfxSlashHeavy,
-        sfxJump,
-        sfxDash,
-        sfxKunaiThrow,
-        sfxKunaiHit,
-        sfxEnemyHit,
-        sfxEnemyDefeat,
-        sfxPlayerHurt,
-        sfxPlayerDeath,
-        sfxParryCounter,
-        sfxBackstabPierce,
-        sfxOugiCharge,
-        sfxOugiRelease,
-        sfxBossRoar,
-        sfxPickupCoin,
-      ]).catchError((_) {
-        _markAudioHardwareUnavailable();
-        return <Uri>[];
-      });
+      // Pre-create and pre-load 1 dedicated low-latency AudioPlayer per SFX in background
+      // so gameplay never triggers APK extraction or SoundPool.load() on Kirin/Mali devices.
+      _preloadSfxPlayersInBackground(context);
     } catch (_) {
       // Ignored in test/headless environments or PCs without an audio output device
       _markAudioHardwareUnavailable();
     }
   }
 
-  /// Play a sound effect using pre-allocated round-robin audio player pool
+  static Future<void> _preloadSfxPlayersInBackground(
+      AudioContext context) async {
+    try {
+      await _audioCache.loadAll(_coreSfxFiles).catchError((_) {
+        _markAudioHardwareUnavailable();
+        return <Uri>[];
+      });
+      for (int i = 0; i < _coreSfxFiles.length; i++) {
+        if (!_isAudioHardwareReady() || !_initialized) return;
+        final sfxFile = _coreSfxFiles[i];
+        final p = AudioPlayer(playerId: 'kaito_sfx_$i');
+        _guardPlayerStream(p);
+        p.audioCache = _audioCache;
+        _sfxPlayers[sfxFile] = p;
+        try {
+          await p.setAudioContext(context);
+          await p.setPlayerMode(PlayerMode.lowLatency);
+          await p.setReleaseMode(ReleaseMode.stop);
+          await p.setSource(AssetSource(sfxFile));
+          _sfxLoaded.add(sfxFile);
+        } catch (_) {
+          _markAudioHardwareUnavailable();
+          return;
+        }
+      }
+    } catch (_) {
+      _markAudioHardwareUnavailable();
+    }
+  }
+
+  /// Play a sound effect using its pre-loaded dedicated AudioPlayer (zero re-decoding)
   static void playSfx(String sfxFile, {double volume = 1.0}) {
     if (isTestMode) return;
     if (!AppLocalizations.sfxEnabled.value) return;
@@ -160,28 +183,45 @@ class AudioService {
       final vol = (AppLocalizations.sfxVolume.value * volume).clamp(0.0, 1.0);
       if (vol <= 0.001) return;
 
-      if (_sfxPool.isEmpty) return;
+      // Drop overlapping calls if this SFX is still awaiting native JNI response
+      // or if >= 3 SFX calls are simultaneously in flight (protects Kirin 710F audio thread).
+      if (_sfxInFlight.contains(sfxFile) || _sfxInFlight.length >= 3) return;
 
-      // Per-sound micro-debounce (42ms) prevents platform-channel saturation during
-      // multi-player combat flurries while keeping every distinct sound instant.
       final nowMs = DateTime.now().millisecondsSinceEpoch;
+      if ((nowMs - _lastAnySfxMs) < 24) return;
       final lastMs = _lastSfxPlayedMs[sfxFile];
-      if (lastMs != null && (nowMs - lastMs) < 42) return;
+      if (lastMs != null && (nowMs - lastMs) < 88) return;
+
+      final player = _sfxPlayers[sfxFile];
+      if (player == null || !_sfxLoaded.contains(sfxFile)) return;
+
+      _lastAnySfxMs = nowMs;
       _lastSfxPlayedMs[sfxFile] = nowMs;
+      _sfxInFlight.add(sfxFile);
 
-      final player = _sfxPool[_sfxIndex];
-      _sfxIndex = (_sfxIndex + 1) % _sfxPool.length;
+      final prevVol = _lastSfxVolume[sfxFile];
+      final needVolUpdate = prevVol == null || (prevVol - vol).abs() > 0.04;
+      if (needVolUpdate) {
+        _lastSfxVolume[sfxFile] = vol;
+      }
 
-      player
-          .play(
-            AssetSource(sfxFile),
-            volume: vol,
-            mode: PlayerMode.lowLatency,
-          )
-          .catchError((_) {
-            _markAudioHardwareUnavailable();
-          });
+      Future<void> trigger() async {
+        try {
+          if (needVolUpdate) {
+            await player.setVolume(vol);
+          }
+          await player.stop();
+          await player.resume();
+        } catch (_) {
+          _markAudioHardwareUnavailable();
+        } finally {
+          _sfxInFlight.remove(sfxFile);
+        }
+      }
+
+      trigger();
     } catch (_) {
+      _sfxInFlight.remove(sfxFile);
       _markAudioHardwareUnavailable();
     }
   }
@@ -282,11 +322,14 @@ class AudioService {
     } catch (_) {}
   }
 
-  /// Button press haptic feedback (Light impact)
+  /// Button press haptic feedback (Light impact, throttled for low-end mobile SoCs)
   static void buttonHaptic() {
     if (isTestMode) return;
     try {
       if (AppLocalizations.hapticsEnabled.value) {
+        final now = DateTime.now().millisecondsSinceEpoch;
+        if (now - _lastHapticMs < 65) return;
+        _lastHapticMs = now;
         HapticFeedback.lightImpact();
       }
     } catch (_) {}
@@ -297,6 +340,9 @@ class AudioService {
     if (isTestMode) return;
     try {
       if (AppLocalizations.hapticsEnabled.value) {
+        final now = DateTime.now().millisecondsSinceEpoch;
+        if (now - _lastHapticMs < 65) return;
+        _lastHapticMs = now;
         HapticFeedback.mediumImpact();
       }
     } catch (_) {}
@@ -309,6 +355,9 @@ class AudioService {
     _bgmIsPlaying = false;
     _initialized = false;
     _audioHardwareUnavailable = false;
+    _sfxLoaded.clear();
+    _sfxInFlight.clear();
+    _lastSfxVolume.clear();
     try {
       for (final sub in _eventSubs) {
         await sub.cancel();
@@ -316,10 +365,10 @@ class AudioService {
       _eventSubs.clear();
       await _bgmPlayer?.dispose();
       _bgmPlayer = null;
-      for (final p in _sfxPool) {
+      for (final p in _sfxPlayers.values) {
         await p.dispose();
       }
-      _sfxPool.clear();
+      _sfxPlayers.clear();
     } catch (_) {}
   }
 }

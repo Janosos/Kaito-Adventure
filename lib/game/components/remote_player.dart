@@ -301,28 +301,18 @@ class RemotePlayer extends PositionComponent
     ));
     game.add(MangaDustEffect(position: Vector2(position.x - 38, position.y)));
     game.add(MangaDustEffect(position: Vector2(position.x + 38, position.y)));
-
-    final arcColors = [
-      ComicTheme.energyCyan,
-      ComicTheme.comicYellow,
-      ComicTheme.actionRed,
-      ComicTheme.energyCyan,
-      ComicTheme.comicYellow,
-      ComicTheme.actionRed,
-    ];
-    for (int i = 0; i < 6; i++) {
-      final xOffset = (i - 2.5) * 48.0;
-      final yOffset = (i.isEven ? -22.0 : 8.0);
-      game.add(SlashArcEffect(
-        position: Vector2(
-          position.x + xOffset,
-          position.y - size.y * 0.5 + yOffset,
-        ),
-        slashColor: arcColors[i],
-        slashFlipped: i.isOdd,
-        radius: 64,
-      ));
-    }
+    game.add(SlashArcEffect(
+      position: Vector2(position.x - 56, position.y - size.y * 0.55),
+      slashColor: ComicTheme.energyCyan,
+      slashFlipped: true,
+      radius: 60,
+    ));
+    game.add(SlashArcEffect(
+      position: Vector2(position.x + 56, position.y - size.y * 0.55),
+      slashColor: ComicTheme.comicYellow,
+      slashFlipped: false,
+      radius: 60,
+    ));
   }
 
   /// Immediately plays attack/dash/jump/ougi animation and spawns comic VFX when remote player acts

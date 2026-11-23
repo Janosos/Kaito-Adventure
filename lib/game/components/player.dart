@@ -286,7 +286,7 @@ class MangaPlayer extends PositionComponent
   }
 
   void performDash() {
-    if (isDying) return;
+    if (isDying || isDashing || dashCooldown > 0) return;
     isDashing = true;
     dashTimer = dashDuration;
     dashCooldown = 0.65;
@@ -321,7 +321,7 @@ class MangaPlayer extends PositionComponent
   }
 
   void performAttack() {
-    if (isDying) return;
+    if (isDying || attackCooldown > 0) return;
     attackCooldown = 0.25;
     attackAnimTimer = 0.26;
 
@@ -428,7 +428,7 @@ class MangaPlayer extends PositionComponent
   }
 
   void performUltimate() {
-    if (isDying) return;
+    if (isDying || spirit < 100.0) return;
     spirit = 0.0;
     invulnerableTimer = 2.0;
     attackAnimTimer = 0.68;
@@ -464,58 +464,71 @@ class MangaPlayer extends PositionComponent
       maxLifetime: 1.15,
     ));
 
-    // Dual ground dust bursts radiating from Kaito's stance
+    // Dual ground dust bursts + 2 flank slash arcs (optimized for Mali/Kirin GPUs)
     game.add(MangaDustEffect(position: Vector2(position.x - 38, position.y)));
     game.add(MangaDustEffect(position: Vector2(position.x + 38, position.y)));
+    game.add(SlashArcEffect(
+      position: Vector2(position.x - 56, position.y - size.y * 0.55),
+      slashColor: ComicTheme.energyCyan,
+      slashFlipped: true,
+      radius: 60,
+    ));
+    game.add(SlashArcEffect(
+      position: Vector2(position.x + 56, position.y - size.y * 0.55),
+      slashColor: ComicTheme.comicYellow,
+      slashFlipped: false,
+      radius: 60,
+    ));
 
-    // Multi-angle vibrant slash arcs radiating around Kaito
-    final arcColors = [
-      ComicTheme.energyCyan,
-      ComicTheme.comicYellow,
-      ComicTheme.actionRed,
-      ComicTheme.energyCyan,
-      ComicTheme.comicYellow,
-      ComicTheme.actionRed,
-    ];
-    for (int i = 0; i < 6; i++) {
-      final xOffset = (i - 2.5) * 48.0;
-      final yOffset = ((i % 2 == 0) ? -22.0 : 8.0);
-      game.add(SlashArcEffect(
-        position: Vector2(position.x + xOffset, position.y - size.y * 0.5 + yOffset),
-        slashColor: arcColors[i],
-        slashFlipped: i.isOdd,
-        radius: 64,
-      ));
-    }
-
-    for (final grunt in game.queryWorld<EnemyGrunt>().toList()) {
-      if ((grunt.position.x - position.x).abs() < 420) {
-        grunt.takeDamage(120, knockbackDir: facingDirection, knockbackForce: 20);
-      }
-    }
-    for (final drone in game.queryWorld<EnemyDrone>().toList()) {
-      if ((drone.position.x - position.x).abs() < 420) {
-        drone.takeDamage(120, knockbackDir: facingDirection, knockbackForce: 20);
-      }
-    }
-    for (final archer in game.queryWorld<EnemyOniArcher>().toList()) {
-      if ((archer.position.x - position.x).abs() < 420) {
-        archer.takeDamage(120, knockbackDir: facingDirection, knockbackForce: 20);
-      }
-    }
-    for (final samurai in game.queryWorld<EnemySamuraiShield>().toList()) {
-      if ((samurai.position.x - position.x).abs() < 420) {
-        samurai.takeDamage(120, knockbackDir: facingDirection, knockbackForce: 20);
-      }
-    }
-    for (final kitsune in game.queryWorld<EnemyKitsuneMage>().toList()) {
-      if ((kitsune.position.x - position.x).abs() < 420) {
-        kitsune.takeDamage(120, knockbackDir: facingDirection, knockbackForce: 20);
-      }
-    }
-    for (final karakuri in game.queryWorld<EnemyKarakuriAutomaton>().toList()) {
-      if ((karakuri.position.x - position.x).abs() < 420) {
-        karakuri.takeDamage(120, knockbackDir: facingDirection, knockbackForce: 20);
+    // Single-pass world scan instead of 7 separate recursive descendants() walks
+    final worldChildren = game.world.children.toList(growable: false);
+    for (int i = 0; i < worldChildren.length; i++) {
+      final c = worldChildren[i];
+      if (c is EnemyGrunt) {
+        if ((c.position.x - position.x).abs() < 420) {
+          c.takeDamage(120, knockbackDir: facingDirection, knockbackForce: 20);
+        }
+      } else if (c is EnemyDrone) {
+        if ((c.position.x - position.x).abs() < 420) {
+          c.takeDamage(120, knockbackDir: facingDirection, knockbackForce: 20);
+        }
+      } else if (c is EnemyOniArcher) {
+        if ((c.position.x - position.x).abs() < 420) {
+          c.takeDamage(120, knockbackDir: facingDirection, knockbackForce: 20);
+        }
+      } else if (c is EnemySamuraiShield) {
+        if ((c.position.x - position.x).abs() < 420) {
+          c.takeDamage(120, knockbackDir: facingDirection, knockbackForce: 20);
+        }
+      } else if (c is EnemyKitsuneMage) {
+        if ((c.position.x - position.x).abs() < 420) {
+          c.takeDamage(120, knockbackDir: facingDirection, knockbackForce: 20);
+        }
+      } else if (c is EnemyKarakuriAutomaton) {
+        if ((c.position.x - position.x).abs() < 420) {
+          c.takeDamage(120, knockbackDir: facingDirection, knockbackForce: 20);
+        }
+      } else if (game.isMultiplayer && c is RemotePlayer) {
+        if ((c.position.x - position.x).abs() < 420 &&
+            (c.position.y - position.y).abs() < 260 &&
+            !c.isDying &&
+            !c.isCelebrating &&
+            c.respawnShieldTimer <= 0 &&
+            c.action != PlayerAction.dashing) {
+          const dmg = 65.0;
+          final kbDir = (c.position.x - position.x).abs() < 8.0
+              ? facingDirection
+              : (c.position.x > position.x ? 1 : -1);
+          final kb = Vector2(kbDir * 24.0, -10.0);
+          c.takeDamage(dmg, knockback: kb);
+          LanMultiplayerService.instance.sendHitDamage(
+            targetId: c.id,
+            damage: dmg,
+            knockbackX: kb.x,
+            knockbackY: kb.y,
+            targetRemainingHp: c.hp,
+          );
+        }
       }
     }
     if (game.activeBoss != null && !game.activeBoss!.isDefeated) {
@@ -530,30 +543,6 @@ class MangaPlayer extends PositionComponent
         game.activeBoss!.breakGuard();
       }
     }
-    if (game.isMultiplayer) {
-      for (final remote in game.queryWorld<RemotePlayer>().toList()) {
-        if ((remote.position.x - position.x).abs() < 420 &&
-            (remote.position.y - position.y).abs() < 260 &&
-            !remote.isDying &&
-            !remote.isCelebrating &&
-            remote.respawnShieldTimer <= 0 &&
-            remote.action != PlayerAction.dashing) {
-          const dmg = 65.0;
-          final kbDir = (remote.position.x - position.x).abs() < 8.0
-              ? facingDirection
-              : (remote.position.x > position.x ? 1 : -1);
-          final kb = Vector2(kbDir * 24.0, -10.0);
-          remote.takeDamage(dmg, knockback: kb);
-          LanMultiplayerService.instance.sendHitDamage(
-            targetId: remote.id,
-            damage: dmg,
-            knockbackX: kb.x,
-            knockbackY: kb.y,
-            targetRemainingHp: remote.hp,
-          );
-        }
-      }
-    }
   }
 
   bool _isInSlashArc(Vector2 targetCenter, {double extraReach = 0.0}) {
@@ -566,90 +555,109 @@ class MangaPlayer extends PositionComponent
   void _checkMeleeHit() {
     final kbForce = 11.0 + comboIndex * 3.0;
 
-    // 1. Hit Enemy Grunts (Shadow Ninjas)
-    for (final grunt in game.queryWorld<EnemyGrunt>().toList()) {
-      final center = Vector2(grunt.position.x, grunt.position.y - grunt.size.y * 0.5);
-      if (_isInSlashArc(center)) {
-        final dmg = 22.0 + comboIndex * 10.0;
-        grunt.takeDamage(
-          dmg,
-          knockbackDir: facingDirection,
-          knockbackForce: kbForce,
-        );
-        _registerHit();
+    // Single-pass scan over direct world children (eliminates 10 recursive descendants() walks per slash!)
+    final worldChildren = game.world.children.toList(growable: false);
+    for (int i = 0; i < worldChildren.length; i++) {
+      final c = worldChildren[i];
+      if (c is EnemyGrunt) {
+        final center = Vector2(c.position.x, c.position.y - c.size.y * 0.5);
+        if (_isInSlashArc(center)) {
+          c.takeDamage(
+            22.0 + comboIndex * 10.0,
+            knockbackDir: facingDirection,
+            knockbackForce: kbForce,
+          );
+          _registerHit();
+        }
+      } else if (c is EnemyDrone) {
+        if (_isInSlashArc(c.position, extraReach: 12.0)) {
+          c.takeDamage(
+            25.0 + comboIndex * 10.0,
+            knockbackDir: facingDirection,
+            knockbackForce: kbForce,
+          );
+          _registerHit();
+        }
+      } else if (c is EnemyOniArcher) {
+        final center = Vector2(c.position.x, c.position.y - c.size.y * 0.5);
+        if (_isInSlashArc(center)) {
+          c.takeDamage(
+            24.0 + comboIndex * 10.0,
+            knockbackDir: facingDirection,
+            knockbackForce: kbForce,
+          );
+          _registerHit();
+        }
+      } else if (c is EnemySamuraiShield) {
+        final center = Vector2(c.position.x, c.position.y - c.size.y * 0.5);
+        if (_isInSlashArc(center)) {
+          c.takeDamage(
+            24.0 + comboIndex * 12.0,
+            knockbackDir: facingDirection,
+            knockbackForce: kbForce,
+          );
+          _registerHit();
+        }
+      } else if (c is EnemyKitsuneMage) {
+        final center = Vector2(c.position.x, c.position.y - c.size.y * 0.5);
+        if (_isInSlashArc(center, extraReach: 14.0)) {
+          c.takeDamage(
+            26.0 + comboIndex * 10.0,
+            knockbackDir: facingDirection,
+            knockbackForce: kbForce,
+          );
+          _registerHit();
+        }
+      } else if (c is EnemyKarakuriAutomaton) {
+        final center = Vector2(c.position.x, c.position.y - c.size.y * 0.5);
+        if (_isInSlashArc(center)) {
+          c.takeDamage(
+            24.0 + comboIndex * 11.0,
+            knockbackDir: facingDirection,
+            knockbackForce: kbForce,
+          );
+          _registerHit();
+        }
+      } else if (c is BreakableCrate) {
+        final center = Vector2(c.position.x, c.position.y - c.size.y * 0.5);
+        if (_isInSlashArc(center)) {
+          c.hit();
+        }
+      } else if (c is SwitchOrb) {
+        final center = Vector2(c.position.x, c.position.y - c.size.y * 0.5);
+        if (_isInSlashArc(center)) {
+          c.triggerSwitch();
+        }
+      } else if (c is TaikoBounceDrum) {
+        if (_isInSlashArc(c.position, extraReach: 10.0)) {
+          c.triggerBounce();
+        }
+      } else if (game.isMultiplayer && c is RemotePlayer) {
+        if (!c.isDying &&
+            !c.isCelebrating &&
+            c.respawnShieldTimer <= 0 &&
+            c.action != PlayerAction.dashing) {
+          final remoteCenter =
+              Vector2(c.position.x, c.position.y - c.size.y * 0.5);
+          if (_isInSlashArc(remoteCenter, extraReach: 15.0)) {
+            final dmg = 15.0 + comboIndex * 8.0;
+            final kbDir = facingDirection;
+            final kb = 12.0 + comboIndex * 4.0;
+            c.takeDamage(dmg, knockback: Vector2(kbDir * kb, -4.0));
+            _registerHit();
+            LanMultiplayerService.instance.sendHitDamage(
+              targetId: c.id,
+              damage: dmg,
+              knockbackX: kbDir * kb,
+              knockbackY: -4.0,
+              targetRemainingHp: c.hp,
+            );
+          }
+        }
       }
     }
 
-    // 2. Hit Enemy Drones (Tengu Flyers - Anchor.center)
-    for (final drone in game.queryWorld<EnemyDrone>().toList()) {
-      if (_isInSlashArc(drone.position, extraReach: 12.0)) {
-        final dmg = 25.0 + comboIndex * 10.0;
-        drone.takeDamage(
-          dmg,
-          knockbackDir: facingDirection,
-          knockbackForce: kbForce,
-        );
-        _registerHit();
-      }
-    }
-
-    // 3. Hit Enemy Oni Archers
-    for (final archer in game.queryWorld<EnemyOniArcher>().toList()) {
-      final center =
-          Vector2(archer.position.x, archer.position.y - archer.size.y * 0.5);
-      if (_isInSlashArc(center)) {
-        final dmg = 24.0 + comboIndex * 10.0;
-        archer.takeDamage(
-          dmg,
-          knockbackDir: facingDirection,
-          knockbackForce: kbForce,
-        );
-        _registerHit();
-      }
-    }
-
-    // 3b. Hit Enemy Samurai Shield-Bearers, Kitsune Mages & Karakuri Automatons
-    for (final samurai in game.queryWorld<EnemySamuraiShield>().toList()) {
-      final center = Vector2(
-          samurai.position.x, samurai.position.y - samurai.size.y * 0.5);
-      if (_isInSlashArc(center)) {
-        final dmg = 24.0 + comboIndex * 12.0;
-        samurai.takeDamage(
-          dmg,
-          knockbackDir: facingDirection,
-          knockbackForce: kbForce,
-        );
-        _registerHit();
-      }
-    }
-    for (final kitsune in game.queryWorld<EnemyKitsuneMage>().toList()) {
-      final center = Vector2(
-          kitsune.position.x, kitsune.position.y - kitsune.size.y * 0.5);
-      if (_isInSlashArc(center, extraReach: 14.0)) {
-        final dmg = 26.0 + comboIndex * 10.0;
-        kitsune.takeDamage(
-          dmg,
-          knockbackDir: facingDirection,
-          knockbackForce: kbForce,
-        );
-        _registerHit();
-      }
-    }
-    for (final karakuri in game.queryWorld<EnemyKarakuriAutomaton>().toList()) {
-      final center = Vector2(
-          karakuri.position.x, karakuri.position.y - karakuri.size.y * 0.5);
-      if (_isInSlashArc(center)) {
-        final dmg = 24.0 + comboIndex * 11.0;
-        karakuri.takeDamage(
-          dmg,
-          knockbackDir: facingDirection,
-          knockbackForce: kbForce,
-        );
-        _registerHit();
-      }
-    }
-
-    // 4. Hit Active Boss (basic attacks deal damage only; stun is exclusive to Ultimate)
+    // Hit Active Boss (basic attacks deal damage only; stun is exclusive to Ultimate)
     final boss = game.activeBoss;
     if (boss != null && !boss.isDefeated) {
       final bossCenter =
@@ -662,55 +670,6 @@ class MangaPlayer extends PositionComponent
           knockbackForce: 7.0 + comboIndex * 2.0,
         );
         _registerHit();
-      }
-    }
-
-    // 5. Smash Breakable Supply Crates
-    for (final crate in game.queryWorld<BreakableCrate>().toList()) {
-      final center =
-          Vector2(crate.position.x, crate.position.y - crate.size.y * 0.5);
-      if (_isInSlashArc(center)) {
-        crate.hit();
-      }
-    }
-
-    // 6. Activate Switch Orbs & Taiko Bounce Drums with Slash!
-    for (final sw in game.queryWorld<SwitchOrb>().toList()) {
-      final center = Vector2(sw.position.x, sw.position.y - sw.size.y * 0.5);
-      if (_isInSlashArc(center)) {
-        sw.triggerSwitch();
-      }
-    }
-    for (final drum in game.queryWorld<TaikoBounceDrum>().toList()) {
-      if (_isInSlashArc(drum.position, extraReach: 10.0)) {
-        drum.triggerBounce();
-      }
-    }
-
-    // 7. PvP Duel & Battle Royale: Hit Remote Opponents
-    if (game.isMultiplayer) {
-      for (final remote in game.queryWorld<RemotePlayer>().toList()) {
-        if (!remote.isDying &&
-            !remote.isCelebrating &&
-            remote.respawnShieldTimer <= 0 &&
-            remote.action != PlayerAction.dashing) {
-          final remoteCenter =
-              Vector2(remote.position.x, remote.position.y - remote.size.y * 0.5);
-          if (_isInSlashArc(remoteCenter, extraReach: 15.0)) {
-            final dmg = 15.0 + comboIndex * 8.0;
-            final kbDir = facingDirection;
-            final kbForce = 12.0 + comboIndex * 4.0;
-            remote.takeDamage(dmg, knockback: Vector2(kbDir * kbForce, -4.0));
-            _registerHit();
-            LanMultiplayerService.instance.sendHitDamage(
-              targetId: remote.id,
-              damage: dmg,
-              knockbackX: kbDir * kbForce,
-              knockbackY: -4.0,
-              targetRemainingHp: remote.hp,
-            );
-          }
-        }
       }
     }
   }

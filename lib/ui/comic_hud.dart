@@ -17,6 +17,27 @@ class _ComicHudState extends State<ComicHud>
     with SingleTickerProviderStateMixin {
   late final AnimationController _ticker;
   int _lastTickMs = 0;
+  int _lastDigest = 0;
+
+  int _computeHudDigest() {
+    final g = widget.game;
+    final p = g.player;
+    final b = g.activeBoss;
+    return Object.hash(
+      p.hp,
+      p.maxHp,
+      p.spirit.toInt(),
+      (p.kunaiCooldown * 10).ceil(),
+      p.comboCount,
+      g.score,
+      g.currentLevelIndex,
+      (g.stageProgress * 100).toInt(),
+      b != null && !b.isDefeated,
+      b?.currentHp.toInt() ?? 0,
+      b?.currentPhase ?? 0,
+      b?.isStunned ?? false,
+    );
+  }
 
   @override
   void initState() {
@@ -25,11 +46,15 @@ class _ComicHudState extends State<ComicHud>
         AnimationController(vsync: this, duration: const Duration(seconds: 1))
           ..repeat();
     _ticker.addListener(() {
-      // Throttle HUD widget rebuilds to ~20 FPS for smooth Mali/Adreno/Web performance
+      // Only rebuild HUD widget tree when displayed values actually change (~12 Hz check)
       final now = DateTime.now().millisecondsSinceEpoch;
-      if (now - _lastTickMs >= 50) {
+      if (now - _lastTickMs >= 80 && mounted) {
         _lastTickMs = now;
-        if (mounted) setState(() {});
+        final digest = _computeHudDigest();
+        if (digest != _lastDigest) {
+          _lastDigest = digest;
+          setState(() {});
+        }
       }
     });
   }

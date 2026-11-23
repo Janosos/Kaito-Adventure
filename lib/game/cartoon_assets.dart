@@ -230,7 +230,10 @@ class CartoonAssets {
   static const String bgLevel10 =
       'assets/images/illustrations/bg_level10_void.png';
 
+  static final Map<String, SpriteAnimation> _animCache = {};
+
   static Future<void> preloadAll(Images images) async {
+    _animCache.clear();
     await images.loadAll(allFlameImages);
   }
 
@@ -243,7 +246,11 @@ class CartoonAssets {
     bool loop = true,
   }) {
     final img = images.fromCache(path);
-    return SpriteAnimation.fromFrameData(
+    final key =
+        '${identityHashCode(img)}|$path|$frames|${textureSize.x}|${textureSize.y}|$stepTime|$loop';
+    final cached = _animCache[key];
+    if (cached != null) return cached;
+    final anim = SpriteAnimation.fromFrameData(
       img,
       SpriteAnimationData.sequenced(
         amount: frames,
@@ -252,6 +259,8 @@ class CartoonAssets {
         loop: loop,
       ),
     );
+    _animCache[key] = anim;
+    return anim;
   }
 
   static Sprite sprite(Images images, String path) {

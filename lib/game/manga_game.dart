@@ -176,17 +176,25 @@ class MangaGame extends FlameGame
     }
     if (component is MangaTextEffect) {
       final activeTexts = world.children.whereType<MangaTextEffect>().length;
-      if (activeTexts >= 6) return null;
+      if (activeTexts >= 4) return null;
     } else if (component is MangaDustEffect) {
       final activeDust = world.children.whereType<MangaDustEffect>().length;
-      if (activeDust >= 5) return null;
+      if (activeDust >= 3) return null;
     } else if (component is SlashArcEffect) {
       final activeSlashes = world.children.whereType<SlashArcEffect>().length;
-      if (activeSlashes >= 10) return null;
+      if (activeSlashes >= 4) return null;
     } else if (component is SpeedLineStreakComponent) {
       final activeStreaks =
           world.children.whereType<SpeedLineStreakComponent>().length;
-      if (activeStreaks >= 4) return null;
+      if (activeStreaks >= 2) return null;
+    } else if (component is OugiCelestialFlurryEffect) {
+      final activeOugi =
+          world.children.whereType<OugiCelestialFlurryEffect>().length;
+      if (activeOugi >= 1) return null;
+    } else if (component is SubtleKoExplosionEffect) {
+      final activeKo =
+          world.children.whereType<SubtleKoExplosionEffect>().length;
+      if (activeKo >= 3) return null;
     }
     return world.add(component);
   }
